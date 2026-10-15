@@ -1,0 +1,178 @@
+{
+ "name": "NightOfTheDead",
+ "className": "DataModel",
+ "children": [
+  {
+   "name": "ReplicatedStorage",
+   "className": "ReplicatedStorage",
+   "children": [
+    {
+     "name": "Shared",
+     "className": "Folder",
+     "children": [
+      {
+       "name": "Config",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/shared/Config.luau"
+       ]
+      },
+      {
+       "name": "RateLimit",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/shared/RateLimit.luau"
+       ]
+      },
+      {
+       "name": "Remotes",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/shared/Remotes.luau"
+       ]
+      },
+      {
+       "name": "WaveMath",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/shared/WaveMath.luau"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ServerScriptService",
+   "className": "ServerScriptService",
+   "children": [
+    {
+     "name": "Server",
+     "className": "Script",
+     "filePaths": [
+      "src/server/init.server.luau"
+     ],
+     "children": [
+      {
+       "name": "Services",
+       "className": "Folder",
+       "children": [
+        {
+         "name": "BarricadeService",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/server/Services/BarricadeService.luau"
+         ]
+        },
+        {
+         "name": "DataService",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/server/Services/DataService.luau"
+         ]
+        },
+        {
+         "name": "EconomyService",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/server/Services/EconomyService.luau"
+         ]
+        },
+        {
+         "name": "MapBuilder",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/server/Services/MapBuilder.luau"
+         ]
+        },
+        {
+         "name": "PlayerService",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/server/Services/PlayerService.luau"
+         ]
+        },
+        {
+         "name": "RoundService",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/server/Services/RoundService.luau"
+         ]
+        },
+        {
+         "name": "WeaponService",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/server/Services/WeaponService.luau"
+         ]
+        },
+        {
+         "name": "ZombieService",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/server/Services/ZombieService.luau"
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Types",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/server/Types.luau"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "StarterPlayer",
+   "className": "StarterPlayer",
+   "children": [
+    {
+     "name": "StarterPlayerScripts",
+     "className": "StarterPlayerScripts",
+     "children": [
+      {
+       "name": "Client",
+       "className": "LocalScript",
+       "filePaths": [
+        "src/client/init.client.luau"
+       ],
+       "children": [
+        {
+         "name": "Controllers",
+         "className": "Folder",
+         "children": [
+          {
+           "name": "EffectsController",
+           "className": "ModuleScript",
+           "filePaths": [
+            "src/client/Controllers/EffectsController.luau"
+           ]
+          },
+          {
+           "name": "HUDController",
+           "className": "ModuleScript",
+           "filePaths": [
+            "src/client/Controllers/HUDController.luau"
+           ]
+          },
+          {
+           "name": "WeaponController",
+           "className": "ModuleScript",
+           "filePaths": [
+            "src/client/Controllers/WeaponController.luau"
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
