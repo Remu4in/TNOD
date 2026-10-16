@@ -143,7 +143,7 @@ function HUDController.start()
 
 	-- подсказка по движению (на телефоне есть кнопки, там не нужна)
 	if not (UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled) then
-		label(gui, {
+		local hint = label(gui, {
 			Name = "MoveHint",
 			AnchorPoint = Vector2.new(0.5, 1),
 			Position = UDim2.fromScale(0.5, 0.985),
@@ -153,6 +153,24 @@ function HUDController.start()
 			TextStrokeTransparency = 0.7,
 			TextColor3 = Color3.fromRGB(230, 230, 230),
 		})
+		local normalText = hint.Text
+		local hintToken = 0
+		-- отказ подката/кувырка (нет энергии, пауза) — красным вместо молчания
+		player:GetAttributeChangedSignal("DodgeDenied"):Connect(function()
+			local reason = tostring(player:GetAttribute("DodgeDenied")):match("^(.-)|") or ""
+			hintToken += 1
+			local token = hintToken
+			hint.Text = reason
+			hint.TextColor3 = Color3.fromRGB(255, 120, 100)
+			hint.TextTransparency = 0
+			task.delay(1.6, function()
+				if token == hintToken then
+					hint.Text = normalText
+					hint.TextColor3 = Color3.fromRGB(230, 230, 230)
+					hint.TextTransparency = 0.35
+				end
+			end)
+		end)
 	end
 
 	-- центр: уведомления и экран падения

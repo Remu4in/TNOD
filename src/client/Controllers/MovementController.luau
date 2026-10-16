@@ -131,19 +131,27 @@ local function doRoll()
 	dodging = false
 end
 
+-- Отказ показываем в подсказке внизу экрана (HUDController слушает атрибут DodgeDenied), чтобы кнопка не «молчала»
+local function deny(reason: string)
+	player:SetAttribute("DodgeDenied", reason .. "|" .. tostring(os.clock()))
+end
+
 local function tryDodge()
 	local hum, root = aliveHumanoid()
 	if dodging or not hum or not root or player:GetAttribute("Downed") == true then
 		return
 	end
 	if os.clock() - lastDodge < P.DodgeCooldown then
+		deny("Рано: пауза между подкатом и кувырком")
 		return
 	end
 	local energy = (player:GetAttribute("Energy") :: number?) or 0
 	-- подкат — если бежим (атрибут Sprinting приходит с сервера с задержкой, поэтому смотрим и на скорость)
 	local flatSpeed = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude
 	local slide = player:GetAttribute("Sprinting") == true or flatSpeed > P.SprintSpeed - 3
-	if energy < (if slide then P.SlideEnergy else P.RollEnergy) then
+	local need = if slide then P.SlideEnergy else P.RollEnergy
+	if energy < need then
+		deny(string.format("Не хватает энергии (нужно %d)", need))
 		return
 	end
 	dodging = true
@@ -160,10 +168,11 @@ function MovementController.start()
 
 	ContextActionService:BindAction("NotdDodge", function(_, state)
 		if state == Enum.UserInputState.Begin then
+			player:SetAttribute("DodgeKeyPresses", ((player:GetAttribute("DodgeKeyPresses") :: number?) or 0) + 1) -- диагностика: дошла ли клавиша
 			tryDodge()
 		end
 		return Enum.ContextActionResult.Pass
-	end, true, Enum.KeyCode.C, Enum.KeyCode.ButtonB)
+	end, true, Enum.KeyCode.C, Enum.KeyCode.LeftControl, Enum.KeyCode.ButtonB)
 	ContextActionService:SetTitle("NotdDodge", "Кувырок")
 	-- то же через атрибут игрока RequestDodge (кнопки интерфейса и автотесты: Studio не эмулирует клавиши в игре)
 	player:GetAttributeChangedSignal("RequestDodge"):Connect(tryDodge)

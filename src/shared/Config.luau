@@ -109,14 +109,14 @@ Config.Player = {
 	SprintMinEnergy = 15, -- с меньшей энергией спринт не начать
 	-- Подкат (спринт + C): низкий скользящий рывок, проходит под баррикадой с выбитыми нижними досками.
 	-- Кувырок (C без спринта): рывок с неуязвимостью в первые секунды — уклонение от замаха зомби.
-	SlideEnergy = 15,
+	SlideEnergy = 10,
 	SlideSeconds = 1.0,
 	SlideSpeed = 34,
-	RollEnergy = 20,
+	RollEnergy = 12,
 	RollSeconds = 0.5,
 	RollSpeed = 26,
 	RollInvulnSeconds = 0.4,
-	DodgeCooldown = 1.4, -- общая пауза между подкатом и кувырком
+	DodgeCooldown = 1.0, -- общая пауза между подкатом и кувырком
 	BleedOutTime = 30,
 	ReviveHoldTime = 3,
 	ReviveHealth = 50,

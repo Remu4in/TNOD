@@ -35,8 +35,8 @@
 ## Архитектура
 - Сервер: `MapBuilder` (серая карта) → `BarricadeService`, `PlayerService` (HP, падение/поднятие, реген, возрождение), `ZombieService` (очередь, пул, единый цикл ИИ), `WeaponService` (стрельба, покупка со стен), `EconomyService` (монеты), `BuildingService` (здания за монеты, закрытие магазина), `ItemService` (аптечка, энергетик), `DataService` (статистика, UpdateAsync + блокировка сессии), `RoundService` (Перерыв → День → Ночь → … → Конец).
 - Сервер дополнительно: `StaminaService` (энергия и спринт), `ScoreService` (личные очки и командная копилка, leaderstats); локации — `Locations/*` (`MapBuilder` — диспетчер).
-- Клиент: `HUDController`, `WeaponController` (ввод, прицел, ближний бой), `EffectsController` (трассеры, цифры урона, звуки), `ArmsController` (руки от 1 лица, анимации), `MovementController` (спринт).
-- Состояние для клиентов — атрибуты (`ReplicatedStorage`: Phase, Wave, PhaseEndsAt, ZombiesLeft, LastRoundWave, Location, TeamPoints, TeamTotal; `Player`: Coins, Score, Energy, Sprinting, Downed, RoundKills, Revives, BestWave; `Tool`: Mag, Reserve, Melee). События — `Shared/Remotes`.
+- Клиент: `HUDController`, `WeaponController` (ввод, прицел, ближний бой), `EffectsController` (трассеры, цифры урона, звуки), `ArmsController` (руки от 1 лица, анимации), `MovementController` (спринт, подкат, кувырок, камера кувырка), `FxController` (отдача, вспышки, трассеры).
+- Состояние для клиентов — атрибуты (`ReplicatedStorage`: Phase, Wave, PhaseEndsAt, ZombiesLeft, LastRoundWave, Location, TeamPoints, TeamTotal; `Player`: Coins, Score, Energy, Sprinting, Dodge, Downed, RoundKills, Revives, BestWave; `Tool`: Mag, Reserve, Melee). События — `Shared/Remotes`.
 - Все числа баланса — `src/shared/Config.luau`; формулы волн — `src/shared/WaveMath.luau` (тестируется без Roblox).
 
 ## Правила кода
