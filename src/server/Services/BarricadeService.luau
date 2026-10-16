@@ -1,8 +1,10 @@
 --!strict
 -- Баррикады на входах: зомби ломают доски, игроки чинят и могут сами разобрать (ProximityPrompt).
 
+local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Config"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 local EconomyService = require(script.Parent:WaitForChild("EconomyService"))
+local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 
 local BarricadeService = {}
 
@@ -48,6 +50,7 @@ function BarricadeService.setMap(map: Types.MapInfo)
 				if brokenByZombies[w.id] > 0 then
 					brokenByZombies[w.id] -= 1
 					EconomyService.addRepairReward(player)
+					ScoreService.add(player, Config.Score.Repair)
 				end
 				refresh(w)
 			end

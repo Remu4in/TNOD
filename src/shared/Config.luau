@@ -14,8 +14,13 @@ export type WeaponDef = {
 	magSize: number,
 	reserve: number, -- -1 = бесконечно
 	reloadTime: number,
-	range: number,
+	range: number, -- дальность выстрела; у ближнего боя — длина удара
 	color: Color3,
+	-- ближний бой (fireRate — взмахов в секунду, патроны не нужны)
+	melee: boolean?,
+	arcDeg: number?, -- ширина сектора удара
+	maxTargets: number?, -- сколько зомби задевает один взмах
+	knockback: number?, -- отбрасывание зомби
 }
 
 -- Одна деталь внешнего вида оружия: меш в системе координат рукояти Handle (дуло — в сторону -Z)
@@ -42,7 +47,8 @@ export type ZombieDef = {
 	speed: number,
 	damage: number,
 	attackCooldown: number,
-	reward: number,
+	reward: number, -- монеты убийце
+	points: number, -- очки убийце (и в общий командный счёт)
 	scale: number,
 	color: Color3,
 	planksPerHit: number,
@@ -73,11 +79,26 @@ Config.Player = {
 	MaxHealth = 100,
 	RegenDelay = 5,
 	RegenPerSecond = 8,
+	-- Движение: зомби быстрее ходьбы (Ходок 14 > 13), но спринт за энергию их обгоняет
+	WalkSpeed = 13,
+	SprintSpeed = 21,
 	DownedWalkSpeed = 4,
+	-- Энергия: 10 с непрерывного спринта тратят всю, полностью восстанавливается за 30 с
+	EnergyMax = 100,
+	SprintSeconds = 10,
+	EnergyRegenSeconds = 30,
+	EnergyRegenDelay = 1, -- пауза после спринта перед восстановлением
+	SprintMinEnergy = 15, -- с меньшей энергией спринт не начать
 	BleedOutTime = 30,
 	ReviveHoldTime = 3,
 	ReviveHealth = 50,
 	StartCoins = 500,
+}
+
+-- Очки: личные (таблица игроков) и в общий командный счёт (потом — на открытие зданий)
+Config.Score = {
+	Repair = 2, -- за доску, выбитую зомби
+	Revive = 50, -- за поднятие товарища
 }
 
 Config.Economy = {
@@ -120,7 +141,50 @@ local Weapons: { [string]: WeaponDef } = {
 		magSize = 20, reserve = 120, reloadTime = 2.0, range = 400,
 		color = Color3.fromRGB(60, 80, 50),
 	},
+	Revolver = {
+		id = "Revolver", name = "Револьвер", price = 400,
+		damage = 55, pellets = 1, spreadDeg = 0.8, fireRate = 1.6, automatic = false,
+		magSize = 6, reserve = 42, reloadTime = 2.4, range = 300,
+		color = Color3.fromRGB(90, 90, 95),
+	},
+	LMG = {
+		id = "LMG", name = "Пулемёт", price = 1800,
+		damage = 22, pellets = 1, spreadDeg = 4, fireRate = 11, automatic = true,
+		magSize = 75, reserve = 300, reloadTime = 4.2, range = 250,
+		color = Color3.fromRGB(50, 55, 60),
+	},
+	Sniper = {
+		id = "Sniper", name = "Снайперская винтовка", price = 1500,
+		damage = 150, pellets = 1, spreadDeg = 0.1, fireRate = 0.9, automatic = false,
+		magSize = 5, reserve = 30, reloadTime = 3.0, range = 600,
+		color = Color3.fromRGB(70, 60, 45),
+	},
+	-- Ближний бой: патронов нет, бьёт по сектору перед игроком
+	Knife = {
+		id = "Knife", name = "Нож", price = 0,
+		damage = 25, pellets = 1, spreadDeg = 0, fireRate = 2.5, automatic = false,
+		magSize = 0, reserve = -1, reloadTime = 0, range = 5.5,
+		color = Color3.fromRGB(150, 150, 155),
+		melee = true, arcDeg = 70, maxTargets = 1, knockback = 20,
+	},
+	Bat = {
+		id = "Bat", name = "Бита", price = 300,
+		damage = 45, pellets = 1, spreadDeg = 0, fireRate = 1.4, automatic = false,
+		magSize = 0, reserve = -1, reloadTime = 0, range = 6.5,
+		color = Color3.fromRGB(150, 110, 60),
+		melee = true, arcDeg = 110, maxTargets = 3, knockback = 45,
+	},
+	Machete = {
+		id = "Machete", name = "Мачете", price = 600,
+		damage = 70, pellets = 1, spreadDeg = 0, fireRate = 1.8, automatic = false,
+		magSize = 0, reserve = -1, reloadTime = 0, range = 6.5,
+		color = Color3.fromRGB(130, 135, 140),
+		melee = true, arcDeg = 100, maxTargets = 2, knockback = 30,
+	},
 }
+
+-- Что выдаётся каждому в начале раунда (остальное покупается на стенах)
+Config.StartWeapons = { "Pistol", "Knife" }
 
 Config.Weapons = Weapons
 
@@ -162,6 +226,45 @@ local Visuals: { [string]: { VisualPart } } = {
 			size = Vector3.new(0.257, 0.935, 2.071), offset = CFrame.new(0, 0.2, -0.75),
 		},
 	},
+	-- Сгенерированы в Studio (generate_mesh, 2026-10-16, этап 1). Нож и мачете пришли «стоя» — повёрнуты в offset
+	Revolver = {
+		{
+			mesh = "rbxassetid://94099447863607", texture = "rbxassetid://110820817042114",
+			size = Vector3.new(0.322, 1.12, 1.316), offset = CFrame.new(0, 0.4, -0.35),
+		},
+	},
+	LMG = {
+		{
+			mesh = "rbxassetid://91186817484981", texture = "rbxassetid://70401107133536",
+			size = Vector3.new(0.32, 1.27, 2.7), offset = CFrame.new(0, 0.25, -1.05),
+		},
+	},
+	Sniper = {
+		{
+			mesh = "rbxassetid://74974681462741", texture = "rbxassetid://113329805495926",
+			size = Vector3.new(0.46, 1.17, 3.13), offset = CFrame.new(0, 0.3, -1.35),
+		},
+	},
+	Bat = {
+		{
+			mesh = "rbxassetid://98332557332517", texture = "rbxassetid://126428980485328",
+			size = Vector3.new(0.35, 0.346, 2.721), offset = CFrame.new(0, 0, -1.0),
+		},
+	},
+	Knife = {
+		{
+			mesh = "rbxassetid://72884341636124", texture = "rbxassetid://118523366975863",
+			size = Vector3.new(1.12, 1.165, 1.064),
+			offset = CFrame.new(0, 0.05, -0.55) * CFrame.Angles(0, math.rad(-33.5), 0) * CFrame.Angles(math.rad(90), 0, 0),
+		},
+	},
+	Machete = {
+		{
+			mesh = "rbxassetid://112017706644243", texture = "rbxassetid://90489625632426",
+			size = Vector3.new(1.7, 1.86, 1.125),
+			offset = CFrame.new(0, 0.05, -0.9) * CFrame.Angles(0, math.rad(33), 0) * CFrame.Angles(math.rad(-90), 0, 0),
+		},
+	},
 }
 Config.WeaponVisuals = Visuals
 
@@ -177,6 +280,7 @@ Config.Sounds = {
 	reload = "rbxassetid://3821789416",
 	hit = "rbxassetid://1489924400",
 	click = "rbxassetid://3909012115", -- сухой щелчок при пустом магазине
+	swing = "rbxasset://sounds/swordslash.wav", -- взмах ближнего боя (встроенный звук Roblox)
 }
 
 local WeaponSounds: { [string]: WeaponSound } = {
@@ -184,24 +288,27 @@ local WeaponSounds: { [string]: WeaponSound } = {
 	SMG = { fireVolume = 0.55, firePitch = 1.35, fireTrim = 0.3, reloadVolume = 0.8, reloadPitch = 1.15 },
 	Shotgun = { fireVolume = 1.0, firePitch = 0.65, fireTrim = 1.1, reloadVolume = 0.9, reloadPitch = 0.8 },
 	Rifle = { fireVolume = 0.8, firePitch = 0.85, fireTrim = 0.5, reloadVolume = 0.9, reloadPitch = 0.9 },
+	Revolver = { fireVolume = 0.9, firePitch = 0.8, fireTrim = 0.9, reloadVolume = 0.8, reloadPitch = 0.95 },
+	LMG = { fireVolume = 0.7, firePitch = 0.95, fireTrim = 0.35, reloadVolume = 0.9, reloadPitch = 0.75 },
+	Sniper = { fireVolume = 1.0, firePitch = 0.55, fireTrim = 1.4, reloadVolume = 0.9, reloadPitch = 0.7 },
 }
 Config.WeaponSounds = WeaponSounds
 
--- Порядок стен с оружием на карте
-Config.WallBuys = { "SMG", "Shotgun", "Rifle", "SMG" }
+-- Порядок стен с оружием в магазине (8 мест, см. BuildKit.shop)
+Config.WallBuys = { "Bat", "Machete", "Revolver", "SMG", "Shotgun", "Rifle", "LMG", "Sniper" }
 
 local Zombies: { [string]: ZombieDef } = {
 	Walker = {
-		id = "Walker", name = "Ходок", hp = 60, speed = 8, damage = 15, attackCooldown = 1,
-		reward = 50, scale = 1, color = Color3.fromRGB(95, 140, 80), planksPerHit = 1,
+		id = "Walker", name = "Ходок", hp = 60, speed = 14, damage = 15, attackCooldown = 1,
+		reward = 50, points = 10, scale = 1, color = Color3.fromRGB(95, 140, 80), planksPerHit = 1,
 	},
 	Runner = {
-		id = "Runner", name = "Бегун", hp = 40, speed = 15, damage = 10, attackCooldown = 0.8,
-		reward = 60, scale = 0.9, color = Color3.fromRGB(150, 160, 70), planksPerHit = 1,
+		id = "Runner", name = "Бегун", hp = 40, speed = 19, damage = 10, attackCooldown = 0.8,
+		reward = 60, points = 15, scale = 0.9, color = Color3.fromRGB(150, 160, 70), planksPerHit = 1,
 	},
 	Brute = {
-		id = "Brute", name = "Громила", hp = 600, speed = 7, damage = 35, attackCooldown = 1.5,
-		reward = 400, scale = 1.8, color = Color3.fromRGB(110, 50, 50), planksPerHit = 5,
+		id = "Brute", name = "Громила", hp = 600, speed = 12, damage = 35, attackCooldown = 1.5,
+		reward = 400, points = 100, scale = 1.8, color = Color3.fromRGB(110, 50, 50), planksPerHit = 5,
 	},
 }
 

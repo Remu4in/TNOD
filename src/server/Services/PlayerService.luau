@@ -4,6 +4,7 @@
 
 local Players = game:GetService("Players")
 local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Config"))
+local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 
 local PlayerService = {}
 
@@ -81,10 +82,11 @@ local function down(player: Player, h: Humanoid)
 			end
 			clearDowned(player)
 			h.Health = Config.Player.ReviveHealth
-			h.WalkSpeed = 16
+			h.WalkSpeed = Config.Player.WalkSpeed
 			h.JumpPower = 50
 			bleedToken[player] = (bleedToken[player] or 0) + 1
 			helper:SetAttribute("Revives", ((helper:GetAttribute("Revives") :: number?) or 0) + 1)
+			ScoreService.add(helper, Config.Score.Revive)
 		end)
 	end
 	-- истечение кровью
@@ -136,7 +138,7 @@ function PlayerService.respawnDead()
 			-- упавших в конце волны поднимаем автоматически
 			clearDowned(p)
 			h.Health = Config.Player.ReviveHealth
-			h.WalkSpeed = 16
+			h.WalkSpeed = Config.Player.WalkSpeed
 			h.JumpPower = 50
 		end
 	end
@@ -161,6 +163,7 @@ function PlayerService.init(spawnAt: Vector3, allDownCallback: () -> ())
 		local h = char:WaitForChild("Humanoid") :: Humanoid
 		h.MaxHealth = Config.Player.MaxHealth
 		h.Health = Config.Player.MaxHealth
+		h.WalkSpeed = Config.Player.WalkSpeed
 		h.BreakJointsOnDeath = false
 		char:PivotTo(CFrame.new(spawnPoint + Vector3.new(math.random(-6, 6), 0, math.random(-4, 4))))
 		-- встроенный реген отключаем: свой, с задержкой после урона

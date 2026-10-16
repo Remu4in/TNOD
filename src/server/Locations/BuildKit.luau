@@ -257,6 +257,10 @@ function BuildKit.shop(parent: Instance): ({ Types.Window }, { { weaponId: strin
 		{ Vector3.new(hx - 6, 5, -hz + 0.8), Vector3.new(0, 0, 1) },
 		{ Vector3.new(hx - 0.8, 5, hz - 6), Vector3.new(-1, 0, 0) },
 		{ Vector3.new(-hx + 0.8, 5, -hz + 6), Vector3.new(1, 0, 0) },
+		{ Vector3.new(hx - 6, 5, hz - 0.8), Vector3.new(0, 0, -1) },
+		{ Vector3.new(-hx + 6, 5, -hz + 0.8), Vector3.new(0, 0, 1) },
+		{ Vector3.new(hx - 0.8, 5, -hz + 6), Vector3.new(-1, 0, 0) },
+		{ Vector3.new(-hx + 0.8, 5, hz - 6), Vector3.new(1, 0, 0) },
 	}
 	for i, weaponId in Config.WallBuys do
 		local spot = spots[i]

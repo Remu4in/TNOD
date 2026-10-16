@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
 local HUDController = {}
 
@@ -97,6 +98,39 @@ function HUDController.start()
 		TextColor3 = Color3.fromRGB(255, 215, 90),
 	})
 
+	-- энергия (спринт) — тонкая полоска под здоровьем
+	local energyBack = Instance.new("Frame")
+	energyBack.Name = "Energy"
+	energyBack.AnchorPoint = Vector2.new(0, 1)
+	energyBack.Position = UDim2.fromScale(0.02, 0.978)
+	energyBack.Size = UDim2.fromScale(0.22, 0.016)
+	energyBack.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	energyBack.BackgroundTransparency = 0.3
+	energyBack.Parent = gui
+	local energyFill = Instance.new("Frame")
+	energyFill.Size = UDim2.fromScale(1, 1)
+	energyFill.BackgroundColor3 = Color3.fromRGB(80, 170, 255)
+	energyFill.BorderSizePixel = 0
+	energyFill.Parent = energyBack
+
+	-- очки: личные и командные (справа сверху)
+	local scoreLabel = label(gui, {
+		Name = "Score",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(0.98, 0.02),
+		Size = UDim2.fromScale(0.2, 0.04),
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = Color3.fromRGB(255, 215, 90),
+	})
+	local teamLabel = label(gui, {
+		Name = "Team",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(0.98, 0.063),
+		Size = UDim2.fromScale(0.2, 0.03),
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = Color3.fromRGB(190, 215, 255),
+	})
+
 	-- низ справа: патроны
 	local ammo = label(gui, {
 		Name = "Ammo",
@@ -168,11 +202,26 @@ function HUDController.start()
 		coins.Text = string.format("● %d", (player:GetAttribute("Coins") :: number?) or 0)
 		downed.Visible = player:GetAttribute("Downed") == true
 
+		-- энергия: синяя, при спринте ярче, на исходе — красная
+		local energy = (player:GetAttribute("Energy") :: number?) or Config.Player.EnergyMax
+		energyFill.Size = UDim2.fromScale(math.clamp(energy / Config.Player.EnergyMax, 0, 1), 1)
+		energyFill.BackgroundColor3 = if energy < Config.Player.SprintMinEnergy
+			then Color3.fromRGB(230, 90, 70)
+			elseif player:GetAttribute("Sprinting") == true then Color3.fromRGB(130, 210, 255)
+			else Color3.fromRGB(80, 170, 255)
+
+		scoreLabel.Text = string.format("Очки: %d", (player:GetAttribute("Score") :: number?) or 0)
+		teamLabel.Text = string.format("Команда: %d", (ReplicatedStorage:GetAttribute("TeamPoints") :: number?) or 0)
+
 		local tool = currentTool()
 		if tool then
-			local mag = (tool:GetAttribute("Mag") :: number?) or 0
-			local reserve = (tool:GetAttribute("Reserve") :: number?) or 0
-			ammo.Text = string.format("%d / %s", mag, if reserve < 0 then "∞" else tostring(reserve))
+			if tool:GetAttribute("Melee") == true then
+				ammo.Text = tool.Name
+			else
+				local mag = (tool:GetAttribute("Mag") :: number?) or 0
+				local reserve = (tool:GetAttribute("Reserve") :: number?) or 0
+				ammo.Text = string.format("%d / %s", mag, if reserve < 0 then "∞" else tostring(reserve))
+			end
 		else
 			ammo.Text = ""
 		end

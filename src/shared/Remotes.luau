@@ -8,6 +8,9 @@ local RunService = game:GetService("RunService")
 local NAMES = {
 	"Fire", -- клиент → сервер: (origin: Vector3, direction: Vector3)
 	"Reload", -- клиент → сервер: ()
+	"Melee", -- клиент → сервер: (direction: Vector3) — взмах оружием ближнего боя
+	"Sprint", -- клиент → сервер: (on: boolean) — хочу спринтовать (энергию считает сервер)
+	"MeleeFx", -- сервер → всем: (attacker: Player, weaponId: string) — звук взмаха
 	"HitFeedback", -- сервер → стрелку: (position: Vector3, damage: number, killed: boolean, headshot: boolean)
 	"ShotFx", -- сервер → всем: (shooter: Player, origin: Vector3, hits: {Vector3}, weaponId: string)
 	"ReloadFx", -- сервер → всем: (player: Player, weaponId: string) — звук перезарядки

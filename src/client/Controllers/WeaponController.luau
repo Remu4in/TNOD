@@ -2,6 +2,7 @@
 -- Стрельба на клиенте: прицел по камере, запрос на сервер, автоматический огонь при удержании.
 -- Урон считает сервер; здесь только ввод и мгновенный визуальный отклик.
 
+local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
@@ -36,11 +37,36 @@ local function aimPoint(): Vector3
 	return if result then result.Position else ray.Origin + ray.Direction * 500
 end
 
+local lastSwing = 0
+
+-- Ближний бой: звук и анимация взмаха сразу, урон считает сервер по направлению взгляда
+local function tryMelee(tool: Tool)
+	local rate = (tool:GetAttribute("FireRate") :: number?) or 2
+	local now = os.clock()
+	if now - lastSwing < 1 / rate then
+		return
+	end
+	lastSwing = now
+	WeaponSfx.swing(nil)
+	-- стандартный скрипт Animate персонажа проигрывает взмах, когда в инструменте появляется StringValue "toolanim"
+	local anim = Instance.new("StringValue")
+	anim.Name = "toolanim"
+	anim.Value = "Slash"
+	anim.Parent = tool
+	Debris:AddItem(anim, 0.5)
+	local camera = workspace.CurrentCamera
+	Remotes.get("Melee"):FireServer(camera.CFrame.LookVector)
+end
+
 local function tryShoot()
 	local tool = equipped()
 	local char = player.Character
 	local head = char and char:FindFirstChild("Head") :: BasePart?
 	if not tool or not head or player:GetAttribute("Downed") then
+		return
+	end
+	if tool:GetAttribute("Melee") == true then
+		tryMelee(tool)
 		return
 	end
 	local rate = (tool:GetAttribute("FireRate") :: number?) or 4

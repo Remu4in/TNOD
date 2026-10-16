@@ -49,7 +49,8 @@ end
 local function heldWeapon(): Tool?
 	local char = player.Character
 	local tool = char and char:FindFirstChildOfClass("Tool")
-	if tool and tool:GetAttribute("WeaponId") then
+	-- стойка «ствол в руках» только для огнестрела; нож и бита держатся стандартной позой Roblox
+	if tool and tool:GetAttribute("WeaponId") and tool:GetAttribute("Melee") ~= true then
 		return tool
 	end
 	return nil

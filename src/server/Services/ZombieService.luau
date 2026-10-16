@@ -357,6 +357,17 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?): 
 	return true, false
 end
 
+-- Живые зомби в радиусе от точки (для ближнего боя и ловушек): модель и корневая часть
+function ZombieService.queryNear(pos: Vector3, radius: number): { { model: Model, root: BasePart } }
+	local result: { { model: Model, root: BasePart } } = {}
+	for model, z in active do
+		if z.alive and (z.root.Position - pos).Magnitude <= radius then
+			table.insert(result, { model = model, root = z.root })
+		end
+	end
+	return result
+end
+
 function ZombieService.isZombiePart(part: BasePart): (Model?, boolean)
 	local model = part:FindFirstAncestorOfClass("Model")
 	if model and active[model] then

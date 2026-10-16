@@ -61,6 +61,7 @@ local function buildTool(def: Config.WeaponDef): Tool
 	tool:SetAttribute("WeaponId", def.id)
 	tool:SetAttribute("Automatic", def.automatic)
 	tool:SetAttribute("FireRate", def.fireRate)
+	tool:SetAttribute("Melee", def.melee == true)
 	local handle = Instance.new("Part")
 	handle.Name = "Handle"
 	handle.Size = Vector3.one
@@ -283,12 +284,107 @@ local function onFire(player: Player, origin: unknown, direction: unknown)
 	end
 end
 
+-- Ближний бой: клиент присылает только направление взгляда; сектор, дальность, видимость и урон считает сервер.
+local function onMelee(player: Player, direction: unknown)
+	if typeof(direction) ~= "Vector3" then
+		return
+	end
+	local d = direction :: Vector3
+	if not isFiniteVector(d) or d.Magnitude < 0.5 or d.Magnitude > 1.5 then
+		return
+	end
+	d = d.Unit
+	if not PlayerService.isUp(player) then
+		return
+	end
+	local weaponId = equippedWeapon(player)
+	local inv = owned[player]
+	if not weaponId or not inv or not inv[weaponId] then
+		return
+	end
+	local def = Config.Weapons[weaponId]
+	if not def.melee then
+		return
+	end
+	local st = inv[weaponId]
+	local now = os.clock()
+	if now - st.lastShot < (1 / def.fireRate) * 0.8 or not RateLimit.allow(player, "Melee", 0.08) then
+		return
+	end
+	local head = player.Character and player.Character:FindFirstChild("Head") :: BasePart?
+	if not head then
+		return
+	end
+	st.lastShot = now
+
+	local origin = head.Position
+	local halfArc = math.rad((def.arcDeg or 90) / 2)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local exclude: { Instance } = {}
+	for _, p in Players:GetPlayers() do
+		if p.Character then
+			table.insert(exclude, p.Character)
+		end
+	end
+	local zombiesFolder = workspace:FindFirstChild("Zombies")
+	if zombiesFolder then
+		table.insert(exclude, zombiesFolder)
+	end
+	params.FilterDescendantsInstances = exclude
+
+	-- кандидаты: в радиусе, внутри сектора и без стены между игроком и зомби
+	local candidates: { { model: Model, root: BasePart, dist: number } } = {}
+	for _, z in ZombieService.queryNear(origin, def.range + 3) do
+		local toZombie = z.root.Position - origin
+		local dist = toZombie.Magnitude
+		if dist > 0.01 and dist - 1.5 <= def.range then
+			local angle = math.acos(math.clamp(d:Dot(toZombie.Unit), -1, 1))
+			if angle <= halfArc and not workspace:Raycast(origin, toZombie, params) then
+				table.insert(candidates, { model = z.model, root = z.root, dist = dist })
+			end
+		end
+	end
+	table.sort(candidates, function(a, b)
+		return a.dist < b.dist
+	end)
+
+	local totalDamage = 0
+	local killedAny = false
+	local firstPos: Vector3? = nil
+	for i = 1, math.min(#candidates, def.maxTargets or 1) do
+		local c = candidates[i]
+		local applied, killed = ZombieService.damage(c.model, def.damage, player)
+		if applied then
+			totalDamage += def.damage
+			killedAny = killedAny or killed
+			firstPos = firstPos or c.root.Position
+			if not killed then
+				local away = Vector3.new(c.root.Position.X - origin.X, 0, c.root.Position.Z - origin.Z)
+				if away.Magnitude > 0.01 then
+					c.root:ApplyImpulse(away.Unit * (def.knockback or 0) * c.root.AssemblyMass)
+				end
+			end
+		end
+	end
+	if totalDamage > 0 then
+		EconomyService.add(player, Config.Economy.CoinsPerHit)
+		Remotes.get("HitFeedback"):FireClient(player, firstPos, totalDamage, killedAny, false)
+	end
+	Remotes.get("MeleeFx"):FireAllClients(player, weaponId)
+end
+
 local function onWallBuy(player: Player, weaponId: string)
 	if not PlayerService.isUp(player) then
 		return
 	end
 	local def = Config.Weapons[weaponId]
 	local inv = owned[player]
+	if inv and inv[weaponId] and def.melee then
+		-- патроны не нужны: второй раз то же самое не покупаем
+		Remotes.get("Notify"):FireClient(player, "Уже есть", 1.5)
+		return
+	end
 	if inv and inv[weaponId] then
 		-- уже есть — пополнение патронов за часть цены
 		local price = math.floor(def.price * Config.Economy.RefillPriceFactor)
@@ -341,6 +437,7 @@ function WeaponService.init(map: Types.MapInfo)
 		end
 	end)
 	Remotes.get("Fire").OnServerEvent:Connect(onFire)
+	Remotes.get("Melee").OnServerEvent:Connect(onMelee)
 	Remotes.get("Reload").OnServerEvent:Connect(function(player: Player)
 		if not RateLimit.allow(player, "Reload", 0.3) then
 			return
@@ -361,8 +458,10 @@ function WeaponService.init(map: Types.MapInfo)
 				inv = {}
 				owned[player] = inv
 			end
-			if not inv.Pistol then
-				grant(player, "Pistol")
+			for _, weaponId in Config.StartWeapons do
+				if not inv[weaponId] then
+					grant(player, weaponId)
+				end
 			end
 			for weaponId in inv do
 				giveTool(player, weaponId)

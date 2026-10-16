@@ -16,6 +16,7 @@ local EconomyService = require(script.Parent:WaitForChild("EconomyService"))
 local WeaponService = require(script.Parent:WaitForChild("WeaponService"))
 local DataService = require(script.Parent:WaitForChild("DataService"))
 local MapBuilder = require(script.Parent:WaitForChild("MapBuilder"))
+local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 
 local RoundService = {}
 
@@ -105,6 +106,7 @@ local function startRound()
 	end
 	BarricadeService.repairAll()
 	EconomyService.resetRound(players)
+	ScoreService.resetRound(players)
 	WeaponService.resetRound(players)
 	for _, p in players do
 		p:SetAttribute("Revives", 0)
@@ -163,6 +165,17 @@ local function finishRound()
 	local reached = math.max(0, if fellAtNight then wave - 1 else wave)
 	ReplicatedStorage:SetAttribute("LastRoundWave", reached)
 	notifyAll(string.format("Все пали. Продержались %d ночей", reached), Config.Round.GameOverTime)
+	-- через несколько секунд — итоги по очкам
+	local bestPlayer, bestScore, bestKills = ScoreService.best()
+	if bestPlayer then
+		local team = (ReplicatedStorage:GetAttribute("TeamTotal") :: number?) or 0
+		task.delay(4, function()
+			notifyAll(
+				string.format("Лучший: %s — %d очков, %d убийств. Команда набрала %d", bestPlayer.DisplayName, bestScore, bestKills, team),
+				Config.Round.GameOverTime - 4
+			)
+		end)
+	end
 	for _, p in Players:GetPlayers() do
 		DataService.recordRound(
 			p,
@@ -185,7 +198,7 @@ end
 function RoundService.onZombieKilled(player: Player?, zombie: any)
 	if player then
 		EconomyService.add(player, zombie.def.reward)
-		player:SetAttribute("RoundKills", ((player:GetAttribute("RoundKills") :: number?) or 0) + 1)
+		ScoreService.recordKill(player, zombie.def.points)
 	end
 end
 

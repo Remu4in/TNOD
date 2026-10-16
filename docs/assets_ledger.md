@@ -9,3 +9,10 @@
 | Меш SMG `rbxassetid://128177867774908`, текстура `110408941174746` | Studio `generate_mesh`, промпт «stylized low-poly submachine gun…» | Сгенерировано (аккаунт Руслана) | Принадлежит проекту | да | 2026-10-16 | Подключён (`Config.WeaponVisuals.SMG`) |
 | Меш дробовика `rbxassetid://114620737768018`, текстура `94497357292282` | Studio `generate_mesh`, «stylized low-poly pump-action shotgun…» | Сгенерировано | Принадлежит проекту | да | 2026-10-16 | Подключён |
 | Меш винтовки `rbxassetid://100306694258708`, текстура `91475282685455` | Studio `generate_mesh`, «stylized low-poly assault rifle…» | Сгенерировано | Принадлежит проекту | да | 2026-10-16 | Подключён |
+| Меш револьвера `94099447863607`, текстура `110820817042114` | Studio `generate_mesh`, «stylized low-poly revolver…» | Сгенерировано | Принадлежит проекту | да | 2026-10-16 | Подключён (`Config.WeaponVisuals.Revolver`) |
+| Меш пулемёта `91186817484981`, текстура `70401107133536` | Studio `generate_mesh`, «stylized low-poly light machine gun…» | Сгенерировано | Принадлежит проекту | да | 2026-10-16 | Подключён |
+| Меш снайперской винтовки `74974681462741`, текстура `113329805495926` | Studio `generate_mesh`, «stylized low-poly bolt-action sniper rifle…» | Сгенерировано | Принадлежит проекту | да | 2026-10-16 | Подключён |
+| Меш ножа `72884341636124`, текстура `118523366975863` | Studio `generate_mesh`, «stylized low-poly combat knife…» | Сгенерировано | Принадлежит проекту | да | 2026-10-16 | Подключён; пришёл «стоя» и крошечным — повёрнут и увеличен в `offset`/`size` |
+| Меш биты `98332557332517`, текстура `126428980485328` | Studio `generate_mesh`, «stylized low-poly wooden baseball bat…» | Сгенерировано | Принадлежит проекту | да | 2026-10-16 | Подключён |
+| Меш мачете `112017706644243`, текстура `90489625632426` | Studio `generate_mesh`, «stylized low-poly machete…» | Сгенерировано | Принадлежит проекту | да | 2026-10-16 | Подключён; повёрнут и увеличен, как нож |
+| Звук взмаха `rbxasset://sounds/swordslash.wav` | Встроенные звуки Roblox | Roblox | Часть клиента Roblox | нет | 2026-10-16 | Подключён (`Config.Sounds.swing`) |

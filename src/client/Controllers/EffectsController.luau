@@ -104,6 +104,11 @@ function EffectsController.start()
 			WeaponSfx.fire(weaponId, origin)
 		end
 	end)
+	Remotes.get("MeleeFx").OnClientEvent:Connect(function(attacker: Player, _weaponId: string)
+		if attacker ~= player then
+			WeaponSfx.swing(headPosition(attacker))
+		end
+	end)
 	Remotes.get("ReloadFx").OnClientEvent:Connect(function(who: Player, weaponId: string)
 		if who == player then
 			WeaponSfx.reload(weaponId, nil)

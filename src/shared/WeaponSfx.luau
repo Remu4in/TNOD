@@ -58,6 +58,11 @@ function WeaponSfx.reload(weaponId: string, position: Vector3?)
 	end
 end
 
+-- Взмах оружием ближнего боя (position = nil — свой взмах)
+function WeaponSfx.swing(position: Vector3?)
+	emit(Config.Sounds.swing, 0.6, 1.0, position, 0.5)
+end
+
 -- Попадание по зомби: выше тон при хедшоте, тише при обычном
 function WeaponSfx.hit(headshot: boolean, killed: boolean)
 	emit(Config.Sounds.hit, if killed then 0.7 else 0.45, if headshot then 1.5 else 1.0, nil, 0.3)
@@ -75,28 +80,27 @@ end
 
 -- Предзагрузка звуков и мешей/текстур оружия, чтобы при первой покупке ствол не появлялся с задержкой
 function WeaponSfx.preload()
-	local list: { any } = {}
-	local sounds: { Instance } = {}
+	-- временные объекты нужного типа: строки без типа ContentProvider считает картинками и ругается в консоль
+	local list: { Instance } = {}
 	for _, id in Config.Sounds do
 		local s = Instance.new("Sound")
 		s.SoundId = id
-		table.insert(sounds, s)
 		table.insert(list, s)
 	end
 	for _, parts in Config.WeaponVisuals do
 		for _, vp in parts do
-			table.insert(list, vp.mesh)
-			if vp.texture then
-				table.insert(list, vp.texture)
-			end
+			local m = Instance.new("SpecialMesh")
+			m.MeshId = vp.mesh
+			m.TextureId = vp.texture or ""
+			table.insert(list, m)
 		end
 	end
 	task.spawn(function()
 		pcall(function()
 			ContentProvider:PreloadAsync(list)
 		end)
-		for _, s in sounds do
-			s:Destroy()
+		for _, obj in list do
+			obj:Destroy()
 		end
 	end)
 end
