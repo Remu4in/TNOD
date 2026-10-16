@@ -70,11 +70,13 @@ local function buildTool(def: Config.WeaponDef): Tool
 	handle.Parent = tool
 
 	local built = 0
+	local hold = Config.WeaponHold[def.id]
+	local scale = if hold then hold.scale else 1
 	for _, vp in Config.WeaponVisuals[def.id] or {} do
 		local template = loadMesh(vp.mesh)
 		if template then
 			local part = template:Clone()
-			part.Size = vp.size
+			part.Size = vp.size * scale
 			part.TextureID = vp.texture or ""
 			part.CanCollide = false
 			part.CanQuery = false
@@ -84,7 +86,7 @@ local function buildTool(def: Config.WeaponDef): Tool
 			local weld = Instance.new("Weld")
 			weld.Part0 = handle
 			weld.Part1 = part
-			weld.C0 = vp.offset
+			weld.C0 = vp.offset.Rotation + vp.offset.Position * scale
 			weld.Parent = part
 			part.Parent = tool
 			built += 1

@@ -260,65 +260,90 @@ local Visuals: { [string]: { VisualPart } } = {
 			offset = CFrame.new(-0.068, 0.432, -0.319) * CFrame.Angles(0, math.pi, 0),
 		},
 	},
+	-- Новые модели (этап 1.5, generate_mesh, 2026-10-16): начало координат Handle — место хвата, ствол/клинок смотрит в -Z.
+	-- Значения получены скриптом из сгенерированных моделей (масштаб k, хват, поворот); нож, мачете, бита — тоже.
 	SMG = {
-		{
-			mesh = "rbxassetid://128177867774908", texture = "rbxassetid://110408941174746",
-			size = Vector3.new(0.218, 0.9, 1.725), offset = CFrame.new(0, 0.22, -0.4),
-		},
+		{ mesh = "rbxassetid://86180393992531", texture = "rbxassetid://77745462030465", size = Vector3.new(0.2400, 0.9769, 2.0078),
+			offset = CFrame.new(0.0000, 0.1200, -0.5040) },
 	},
 	Shotgun = {
-		{
-			mesh = "rbxassetid://114620737768018", texture = "rbxassetid://94497357292282",
-			size = Vector3.new(0.189, 0.72, 1.889), offset = CFrame.new(0, 0.14, -0.7),
-		},
+		{ mesh = "rbxassetid://72409578915987", texture = "rbxassetid://134995232020072", size = Vector3.new(0.2200, 0.7644, 3.3747),
+			offset = CFrame.new(0, 0.0550, -0.7150) },
 	},
 	Rifle = {
-		{
-			mesh = "rbxassetid://100306694258708", texture = "rbxassetid://91475282685455",
-			size = Vector3.new(0.257, 0.935, 2.071), offset = CFrame.new(0, 0.2, -0.75),
-		},
-	},
-	-- Сгенерированы в Studio (generate_mesh, 2026-10-16, этап 1). Нож и мачете пришли «стоя» — повёрнуты в offset
-	Revolver = {
-		{
-			mesh = "rbxassetid://94099447863607", texture = "rbxassetid://110820817042114",
-			size = Vector3.new(0.322, 1.12, 1.316), offset = CFrame.new(0, 0.4, -0.35),
-		},
+		{ mesh = "rbxassetid://109394360456042", texture = "rbxassetid://126271532108495", size = Vector3.new(0.1890, 1.2003, 0.5919),
+			offset = CFrame.new(-0.0121, -0.2934, -0.4867) },
+		{ mesh = "rbxassetid://115271859157501", texture = "rbxassetid://83729228976662", size = Vector3.new(0.3200, 1.1387, 2.9236),
+			offset = CFrame.new(0, 0.2023, -0.2400) },
 	},
 	LMG = {
-		{
-			mesh = "rbxassetid://91186817484981", texture = "rbxassetid://70401107133536",
-			size = Vector3.new(0.32, 1.27, 2.7), offset = CFrame.new(0, 0.25, -1.05),
-		},
+		{ mesh = "rbxassetid://94831980243151", texture = "rbxassetid://108981689744397", size = Vector3.new(0.2704, 0.7522, 0.4631),
+			offset = CFrame.new(-0.0002, -0.0070, -0.0133) },
+		{ mesh = "rbxassetid://115117388427607", texture = "rbxassetid://113148434788766", size = Vector3.new(1.2000, 1.7084, 2.8051),
+			offset = CFrame.new(0, -0.0600, -0.3726) },
+		{ mesh = "rbxassetid://116538760803965", texture = "rbxassetid://107363929925152", size = Vector3.new(0.1729, 0.4111, 1.7150),
+			offset = CFrame.new(-0.0008, 0.5714, -1.6725) },
 	},
 	Sniper = {
-		{
-			mesh = "rbxassetid://74974681462741", texture = "rbxassetid://113329805495926",
-			size = Vector3.new(0.46, 1.17, 3.13), offset = CFrame.new(0, 0.3, -1.35),
-		},
+		{ mesh = "rbxassetid://118201601639438", texture = "rbxassetid://115761728350604", size = Vector3.new(0.3333, 0.7161, 0.5944),
+			offset = CFrame.new(-0.0054, -0.0061, -0.0051) },
+		{ mesh = "rbxassetid://105579768282482", texture = "rbxassetid://103194693022178", size = Vector3.new(0.5000, 0.8137, 2.7741),
+			offset = CFrame.new(0.0250, 0.0625, -0.4729) },
+		{ mesh = "rbxassetid://135394950602850", texture = "rbxassetid://132150245465704", size = Vector3.new(0.1890, 0.2815, 1.9736),
+			offset = CFrame.new(-0.0042, 0.4183, -1.7273) },
+		{ mesh = "rbxassetid://80440239887468", texture = "rbxassetid://73752518295586", size = Vector3.new(0.4418, 0.5242, 1.1523),
+			offset = CFrame.new(-0.0030, 0.6771, -0.5260) },
 	},
-	Bat = {
-		{
-			mesh = "rbxassetid://98332557332517", texture = "rbxassetid://126428980485328",
-			size = Vector3.new(0.35, 0.346, 2.721), offset = CFrame.new(0, 0, -1.0),
-		},
+	Revolver = {
+		{ mesh = "rbxassetid://89695116920427", texture = "rbxassetid://114436493381492", size = Vector3.new(0.2349, 0.7267, 0.4427),
+			offset = CFrame.new(0.0004, -0.0029, -0.0015) },
+		{ mesh = "rbxassetid://133687885069902", texture = "rbxassetid://137133591885506", size = Vector3.new(0.2800, 0.7327, 0.6994),
+			offset = CFrame.new(0, 0.2709, -0.3486) },
+		{ mesh = "rbxassetid://79231535056305", texture = "rbxassetid://133850275004083", size = Vector3.new(0.1295, 0.2289, 0.5241),
+			offset = CFrame.new(0, 0.5318, -0.8678) },
 	},
 	Knife = {
-		{
-			mesh = "rbxassetid://72884341636124", texture = "rbxassetid://118523366975863",
-			size = Vector3.new(1.12, 1.165, 1.064),
-			offset = CFrame.new(0, 0.05, -0.55) * CFrame.Angles(0, math.rad(-33.5), 0) * CFrame.Angles(math.rad(90), 0, 0),
-		},
+		{ mesh = "rbxassetid://83287424896071", texture = "rbxassetid://104557653597097", size = Vector3.new(1.4900, 0.5149, 0.2400),
+			offset = CFrame.Angles(math.rad(20), 0, 0) * CFrame.new(0, 0, -0.4800) * CFrame.Angles(0, math.rad(90), 0) }, -- клинок приподнят на 20°, чтобы был виден из-за кисти
 	},
 	Machete = {
-		{
-			mesh = "rbxassetid://112017706644243", texture = "rbxassetid://90489625632426",
-			size = Vector3.new(1.7, 1.86, 1.125),
-			offset = CFrame.new(0, 0.05, -0.9) * CFrame.Angles(0, math.rad(33), 0) * CFrame.Angles(math.rad(-90), 0, 0),
-		},
+		{ mesh = "rbxassetid://73914981913805", texture = "rbxassetid://126655934720778", size = Vector3.new(1.3906, 1.7482, 0.1511),
+			offset = CFrame.new(-0.0009, 0.0003, -1.4293, 0.0000, -0.0000, 1.0000, -0.8131, -0.5821, 0.0000, 0.5821, -0.8131, -0.0000) },
+		{ mesh = "rbxassetid://107034107062962", texture = "rbxassetid://82015346137372", size = Vector3.new(1.1839, 1.1031, 0.4001),
+			offset = CFrame.new(0.0000, 0.0062, 0.0012, 0.0000, -0.0000, 1.0000, -0.8131, -0.5821, 0.0000, 0.5821, -0.8131, -0.0000) },
+		{ mesh = "rbxassetid://89913069161620", texture = "rbxassetid://97834968452305", size = Vector3.new(0.5965, 0.3496, 0.2869),
+			offset = CFrame.new(-0.0002, 0.0250, -0.5027, 0.0000, -0.0000, 1.0000, -0.8131, -0.5821, 0.0000, 0.5821, -0.8131, -0.0000) },
+	},
+	Bat = {
+		{ mesh = "rbxassetid://128014260046754", texture = "rbxassetid://80520276839389", size = Vector3.new(0.6385, 0.5600, 2.7633),
+			offset = CFrame.new(0, 0, -1.1200) },
 	},
 }
 Config.WeaponVisuals = Visuals
+
+-- Хват: scale — общий масштаб модели в руках; foregrip — точка опоры левой руки в системе рукояти (до масштаба);
+-- gripRot — поворот ладони левой руки (подбирается в плейтесте). Без foregrip оружие одноручное.
+-- view — где рукоять относительно камеры (вправо, вверх, вперёд); tilt — наклон оружия; mag — точка магазина (перезарядка).
+export type WeaponHold = {
+	scale: number,
+	foregrip: Vector3?,
+	handRoll: number?,
+	view: Vector3?,
+	tilt: CFrame?,
+	mag: Vector3?,
+}
+Config.WeaponHold = {
+	Pistol = { scale = 1, foregrip = Vector3.new(-0.05, -0.3, -0.1), mag = Vector3.new(0, -0.45, 0.05), view = Vector3.new(0.4, -0.5, -1.1) },
+	SMG = { scale = 0.75, foregrip = Vector3.new(0, 0.22, -0.85), mag = Vector3.new(0, -0.4, -0.35), view = Vector3.new(0.4, -0.5, -1.1) },
+	Shotgun = { scale = 0.8, foregrip = Vector3.new(0, 0.15, -1.4), mag = Vector3.new(0, -0.2, -0.2), view = Vector3.new(0.4, -0.5, -1.1) },
+	Rifle = { scale = 0.8, foregrip = Vector3.new(0, 0.1, -1.0), mag = Vector3.new(0, -0.5, -0.45), view = Vector3.new(0.4, -0.5, -1.1) },
+	LMG = { scale = 0.7, foregrip = Vector3.new(0, -0.2, -0.8), mag = Vector3.new(0, -0.3, -0.35), view = Vector3.new(0.4, -0.5, -1.1) },
+	Sniper = { scale = 0.8, foregrip = Vector3.new(0, -0.05, -1.0), mag = Vector3.new(0, -0.1, -0.3), view = Vector3.new(0.4, -0.5, -1.1) },
+	Revolver = { scale = 0.9, foregrip = Vector3.new(-0.05, -0.3, -0.1), mag = Vector3.new(0, -0.2, -0.3), view = Vector3.new(0.4, -0.5, -1.1) },
+	Knife = { scale = 1, view = Vector3.new(0.5, -0.5, -1.1), tilt = CFrame.Angles(math.rad(25), math.rad(10), math.rad(-10)) },
+	Bat = { scale = 1, view = Vector3.new(0.5, -0.5, -1.1), tilt = CFrame.Angles(math.rad(45), math.rad(8), math.rad(-5)) },
+	Machete = { scale = 1, view = Vector3.new(0.5, -0.5, -1.1), tilt = CFrame.Angles(math.rad(30), math.rad(8), math.rad(-8)) },
+} :: { [string]: WeaponHold }
 
 -- Анимации персонажа (R15): официальные из Roblox Weapons Kit
 Config.Animations = {

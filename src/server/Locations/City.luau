@@ -12,8 +12,10 @@ local City = {}
 
 local HALF = 90 -- половина стороны квартала
 local GATE = 12 -- ширина прохода в ограде
-local ASPHALT = Color3.fromRGB(58, 60, 64)
-local SIDEWALK = Color3.fromRGB(125, 125, 120)
+local ASPHALT = Color3.fromRGB(46, 48, 52)
+local COURTYARD = Color3.fromRGB(98, 99, 95) -- дворы между дорогами
+local SIDEWALK = Color3.fromRGB(150, 150, 144)
+local PAINT = Color3.fromRGB(215, 185, 60)
 local CONCRETE = Color3.fromRGB(110, 110, 108)
 
 local function costOf(id: string): number
@@ -32,13 +34,54 @@ function City.build(): Types.MapInfo
 	local P = BuildKit.part
 	local rng = Random.new(7)
 
-	-- земля и разметка вдоль подходов к магазину
-	P({ Name = "Ground", Size = Vector3.new(300, 2, 300), Position = Vector3.new(0, -1, 0), Color = ASPHALT, Material = Enum.Material.Asphalt }, root)
-	local paint = Color3.fromRGB(215, 185, 60)
-	for d = 30, HALF - 4, 8 do
+	-- земля: бетонные дворы. Дороги — асфальтовые полосы (две оси от проходов в ограде + кольцо у ограды),
+	-- вдоль осей — приподнятые тротуары, у площади магазина — пешеходные переходы.
+	P({ Name = "Ground", Size = Vector3.new(300, 2, 300), Position = Vector3.new(0, -1, 0), Color = COURTYARD, Material = Enum.Material.Pavement }, root)
+	local function road(cx: number, cz: number, sx: number, sz: number)
+		P({ Name = "Road", Size = Vector3.new(sx, 0.1, sz), Position = Vector3.new(cx, 0.05, cz), Color = ASPHALT, Material = Enum.Material.Asphalt, CanCollide = false, CanQuery = false }, root)
+	end
+	local function walk(cx: number, cz: number, sx: number, sz: number)
+		P({ Name = "Sidewalk", Size = Vector3.new(sx, 0.3, sz), Position = Vector3.new(cx, 0.15, cz), Color = SIDEWALK, Material = Enum.Material.Concrete }, root)
+	end
+	local function paint(name: string, cx: number, cz: number, sx: number, sz: number)
+		P({ Name = name, Size = Vector3.new(sx, 0.04, sz), Position = Vector3.new(cx, 0.12, cz), Color = PAINT, CanCollide = false, CanQuery = false }, root)
+	end
+	local ROAD_W = GATE -- ширина оси = ширина прохода в ограде
+	local RING = HALF - 5 -- кольцо у ограды: центр 85, ширина 6
+	road(0, 0, ROAD_W, 2 * (HALF - 2))
+	road(0, 0, 2 * (HALF - 2), ROAD_W)
+	road(0, RING, 2 * (HALF - 2), 6)
+	road(0, -RING, 2 * (HALF - 2), 6)
+	road(RING, 0, 6, 2 * (HALF - 2))
+	road(-RING, 0, 6, 2 * (HALF - 2))
+	-- тротуары вдоль осей (от площади магазина до кольца), по 4 студа с каждой стороны
+	local wLen = (RING - 4) - 19
+	local wMid = 19 + wLen / 2
+	for _, s in { 1, -1 } do
+		for _, side in { 1, -1 } do
+			walk(side * (ROAD_W / 2 + 2), s * wMid, 4, wLen)
+			walk(s * wMid, side * (ROAD_W / 2 + 2), wLen, 4)
+		end
+	end
+	-- осевые пунктиры и «зебры» у площади
+	for d = 32, RING - 6, 8 do
 		for _, s in { 1, -1 } do
-			P({ Name = "Marking", Size = Vector3.new(0.8, 0.1, 4), Position = Vector3.new(0, 0.05, s * d), Color = paint, CanCollide = false }, root)
-			P({ Name = "Marking", Size = Vector3.new(4, 0.1, 0.8), Position = Vector3.new(s * (d - 2), 0.05, 0), Color = paint, CanCollide = false }, root)
+			paint("Dash", 0, s * d, 0.5, 3.5)
+			paint("Dash", s * d, 0, 3.5, 0.5)
+		end
+	end
+	for t = -76, 76, 8 do
+		if math.abs(t) > 10 then
+			for _, s in { 1, -1 } do
+				paint("Dash", t, s * RING, 3.5, 0.4)
+				paint("Dash", s * RING, t, 0.4, 3.5)
+			end
+		end
+	end
+	for i = -3, 3 do
+		for _, s in { 1, -1 } do
+			paint("Crosswalk", i * 1.6, s * 23.5, 1, 3)
+			paint("Crosswalk", s * 28.5, i * 1.6, 3, 1)
 		end
 	end
 
@@ -210,7 +253,7 @@ function City.build(): Types.MapInfo
 	end
 
 	-- глухие дома-декорации (повторяющиеся блоки)
-	for _, spot in { Vector3.new(-24, 0, -72), Vector3.new(28, 0, 78), Vector3.new(-24, 0, 76) } do
+	for _, spot in { Vector3.new(-24, 0, -72), Vector3.new(28, 0, 70), Vector3.new(-24, 0, 68) } do
 		local shade = rng:NextInteger(90, 140)
 		BuildKit.block(root, spot, 16, 14, 10, Color3.fromRGB(shade, shade - 10, shade - 20))
 	end
