@@ -40,6 +40,22 @@ export type WeaponSound = {
 	reloadPitch: number,
 }
 
+-- Отдача и эффекты выстрела (клиент)
+export type WeaponFxDef = {
+	kickBack: number, -- откат ствола назад, студов
+	kickRot: number, -- подброс ствола, градусов
+	camPitch: number, -- толчок камеры вверх, градусов
+	camYaw: number, -- случайный толчок в сторону, градусов
+	flash: number, -- размер вспышки у дула
+	shell: boolean, -- вылетает ли гильза
+}
+
+export type MeleeFxDef = {
+	style: string, -- "stab" | "slash" | "smash"
+	time: number,
+	shake: number,
+}
+
 export type ZombieDef = {
 	id: string,
 	name: string,
@@ -83,9 +99,9 @@ Config.Player = {
 	WalkSpeed = 13,
 	SprintSpeed = 21,
 	DownedWalkSpeed = 4,
-	-- Энергия: 10 с непрерывного спринта тратят всю, полностью восстанавливается за 30 с
+	-- Энергия: 5 с непрерывного спринта тратят всю, полностью восстанавливается за 30 с
 	EnergyMax = 100,
-	SprintSeconds = 10,
+	SprintSeconds = 5, -- было 10: спринт в 2 раза короче (запрос Руслана 2026-10-16)
 	EnergyRegenSeconds = 30,
 	EnergyRegenDelay = 1, -- пауза после спринта перед восстановлением
 	SprintMinEnergy = 15, -- с меньшей энергией спринт не начать
@@ -94,6 +110,42 @@ Config.Player = {
 	ReviveHealth = 50,
 	StartCoins = 500,
 }
+
+-- Здания: открываются «скидыванием» монет (любой игрок вкладывает часть суммы через вывеску).
+-- Бесплатное (cost = 0) открыто с начала раунда. Склады выдают набор один раз за игру при открытии.
+-- bonus: "medkits" — аптечки и энергетики, "melee" — по одному холодному оружию на игрока,
+-- "teamLife" — дополнительная жизнь команды; "wire" и "turret" — содержимое появится с этапом «Оборудование».
+export type BuildingDef = {
+	id: string,
+	name: string,
+	cost: number,
+	bonus: string?,
+	info: string, -- что внутри (для вывески и уведомления)
+}
+
+local Buildings: { BuildingDef } = {
+	{ id = "Cafe", name = "Кафе", cost = 0, info = "Стартовое укрытие" },
+	{ id = "Pharmacy", name = "Медпункт", cost = 500, bonus = "medkits", info = "Аптечки и энергетики" },
+	{ id = "ColdStore", name = "Склад холодного оружия", cost = 1000, bonus = "melee", info = "Холодное оружие бесплатно" },
+	{ id = "Garage", name = "Склад проволоки", cost = 2000, bonus = "wire", info = "Колючая и электро-проволока (скоро)" },
+	{ id = "Armory", name = "Оружейная", cost = 3000, bonus = "turret", info = "Турель (скоро)" },
+	{ id = "Shelter", name = "Убежище", cost = 4000, bonus = "teamLife", info = "Дополнительная жизнь команды" },
+}
+Config.Buildings = Buildings
+
+-- Предметы-расходники (выдаются складами, потом — донатом)
+export type ItemDef = {
+	name: string,
+	heal: number?, -- здоровье
+	energy: number?, -- энергия спринта
+	color: Color3,
+}
+
+local Items: { [string]: ItemDef } = {
+	Medkit = { name = "Аптечка", heal = 60, color = Color3.fromRGB(235, 235, 235) },
+	EnergyDrink = { name = "Энергетик", energy = 70, color = Color3.fromRGB(60, 190, 255) },
+}
+Config.Items = Items
 
 -- Очки: личные (таблица игроков) и в общий командный счёт (потом — на открытие зданий)
 Config.Score = {
@@ -293,6 +345,26 @@ local WeaponSounds: { [string]: WeaponSound } = {
 	Sniper = { fireVolume = 1.0, firePitch = 0.55, fireTrim = 1.4, reloadVolume = 0.9, reloadPitch = 0.7 },
 }
 Config.WeaponSounds = WeaponSounds
+
+-- «Сочность» выстрела (клиентский FxController): отдача ствола (вдоль -Z рукояти, град.), толчок камеры, вспышка, гильзы
+local WeaponFx: { [string]: WeaponFxDef } = {
+	Pistol = { kickBack = 0.22, kickRot = 7, camPitch = 1.4, camYaw = 0.4, flash = 0.55, shell = true },
+	SMG = { kickBack = 0.12, kickRot = 4, camPitch = 0.7, camYaw = 0.5, flash = 0.5, shell = true },
+	Shotgun = { kickBack = 0.5, kickRot = 14, camPitch = 3.2, camYaw = 0.8, flash = 1.0, shell = true },
+	Rifle = { kickBack = 0.2, kickRot = 6, camPitch = 1.3, camYaw = 0.6, flash = 0.7, shell = true },
+	Revolver = { kickBack = 0.35, kickRot = 12, camPitch = 2.6, camYaw = 0.5, flash = 0.8, shell = false },
+	LMG = { kickBack = 0.14, kickRot = 4, camPitch = 0.8, camYaw = 0.7, flash = 0.7, shell = true },
+	Sniper = { kickBack = 0.55, kickRot = 14, camPitch = 4.0, camYaw = 0.3, flash = 1.0, shell = true },
+}
+Config.WeaponFx = WeaponFx
+
+-- Взмах ближнего боя: стиль анимации, длительность (сек.) и сила тряски камеры при попадании
+local MeleeFx: { [string]: MeleeFxDef } = {
+	Knife = { style = "stab", time = 0.26, shake = 1.6 },
+	Bat = { style = "smash", time = 0.42, shake = 3.2 },
+	Machete = { style = "slash", time = 0.34, shake = 2.4 },
+}
+Config.MeleeFx = MeleeFx
 
 -- Порядок стен с оружием в магазине (8 мест, см. BuildKit.shop)
 Config.WallBuys = { "Bat", "Machete", "Revolver", "SMG", "Shotgun", "Rifle", "LMG", "Sniper" }

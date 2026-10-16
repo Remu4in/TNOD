@@ -112,12 +112,25 @@ local function entrance(parent: Instance, id: number, point: string, weight: num
 	dismantle.Enabled = false
 	dismantle.Parent = anchor
 
+	-- Стальной щит: закрывает проём, пока здание не открыто (невидим и проходим, пока вход рабочий)
+	local shutter = BuildKit.part({
+		Name = "Shutter",
+		Size = if alongX then Vector3.new(width + 0.4, OPEN_H, 0.6) else Vector3.new(0.6, OPEN_H, width + 0.4),
+		Position = wallPos + Vector3.new(0, OPEN_H / 2, 0),
+		Color = Color3.fromRGB(70, 75, 80),
+		Material = Enum.Material.Metal,
+		Transparency = 1,
+		CanCollide = false,
+		CanQuery = false,
+	}, model)
+
 	return {
 		id = id,
 		model = model,
 		planks = planks,
 		outside = at(5),
 		inside = at(-5),
+		shutter = shutter,
 		prompt = prompt,
 		dismantle = dismantle,
 		point = point,
@@ -326,6 +339,52 @@ function BuildKit.lamppost(parent: Instance, x: number, z: number)
 		CanCollide = false,
 	}, parent)
 	pointLight(head, 30, 1, Color3.fromRGB(255, 215, 160))
+end
+
+-- Вывеска здания на столбе: название и прогресс «скидывания» монет + подсказка «Вложить».
+-- facing — куда смотрит лицевая сторона (обычно к центру локации, откуда подходят игроки).
+function BuildKit.sign(parent: Instance, text: string, pos: Vector3, facing: Vector3): (ProximityPrompt, TextLabel)
+	BuildKit.box(parent, "SignPost", Vector3.new(0.5, 4.5, 0.5), pos, Color3.fromRGB(45, 45, 50), Enum.Material.Metal)
+	local board = BuildKit.part({
+		Name = "Sign",
+		Size = Vector3.new(8, 3.6, 0.4),
+		Color = Color3.fromRGB(30, 30, 34),
+	}, parent)
+	local center = pos + Vector3.new(0, 5.2, 0)
+	board.CFrame = CFrame.lookAt(center, center + Vector3.new(facing.X, 0, facing.Z))
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Front
+	gui.Parent = board
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBold
+	label.TextColor3 = Color3.fromRGB(255, 220, 120)
+	label.Text = text
+	label.Parent = gui
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Вложить монеты"
+	prompt.ObjectText = text
+	prompt.HoldDuration = 0.3
+	prompt.MaxActivationDistance = 10
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = board
+	return prompt, label
+end
+
+-- Место с действием внутри здания (стеллаж, прилавок): небольшой блок + подсказка.
+function BuildKit.interact(parent: Instance, name: string, pos: Vector3, size: Vector3, color: Color3, actionText: string, objectText: string): ProximityPrompt
+	local block = BuildKit.box(parent, name, size, pos, color, Enum.Material.Metal)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = actionText
+	prompt.ObjectText = objectText
+	prompt.HoldDuration = 0.3
+	prompt.MaxActivationDistance = 8
+	prompt.RequiresLineOfSight = false
+	prompt.Enabled = false
+	prompt.Parent = block
+	return prompt
 end
 
 -- Маркер под будущие турели/ловушки (невидимый, виден по атрибуту SlotType).

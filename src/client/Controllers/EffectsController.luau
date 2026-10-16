@@ -8,6 +8,7 @@ local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
 local WeaponSfx = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("WeaponSfx"))
+local FxController = require(script.Parent:WaitForChild("FxController"))
 
 local EffectsController = {}
 
@@ -18,25 +19,6 @@ local numbersAlive = 0
 local fxFolder = Instance.new("Folder")
 fxFolder.Name = "ClientFx"
 fxFolder.Parent = workspace
-
-local function tracer(from: Vector3, to: Vector3, mine: boolean)
-	local len = (to - from).Magnitude
-	if len < 0.5 then
-		return
-	end
-	local p = Instance.new("Part")
-	p.Anchored = true
-	p.CanCollide = false
-	p.CanQuery = false
-	p.CanTouch = false
-	p.Material = Enum.Material.Neon
-	p.Color = if mine then Color3.fromRGB(255, 230, 150) else Color3.fromRGB(200, 200, 200)
-	p.Size = Vector3.new(0.08, 0.08, len)
-	p.CFrame = CFrame.lookAt((from + to) / 2, to)
-	p.Parent = fxFolder
-	TweenService:Create(p, TweenInfo.new(0.08), { Transparency = 1 }):Play()
-	Debris:AddItem(p, 0.1)
-end
 
 local function damageNumber(pos: Vector3, amount: number, killed: boolean, headshot: boolean)
 	if numbersAlive >= MAX_NUMBERS then
@@ -97,11 +79,13 @@ function EffectsController.start()
 	WeaponSfx.preload()
 	Remotes.get("ShotFx").OnClientEvent:Connect(function(shooter: Player, origin: Vector3, hits: { Vector3 }, weaponId: string)
 		for _, h in hits do
-			tracer(origin, h, shooter == player)
+			FxController.tracer(shooter, origin, h)
+			FxController.impact(h)
 		end
-		-- свой выстрел уже прозвучал сразу при нажатии (WeaponController), чужие — объёмно из точки выстрела
+		-- свой выстрел уже прозвучал и вспыхнул сразу при нажатии (WeaponController), чужие — из точки выстрела
 		if shooter ~= player then
 			WeaponSfx.fire(weaponId, origin)
+			FxController.onRemoteShot(shooter, weaponId)
 		end
 	end)
 	Remotes.get("MeleeFx").OnClientEvent:Connect(function(attacker: Player, _weaponId: string)
@@ -118,9 +102,9 @@ function EffectsController.start()
 	end)
 	Remotes.get("HitFeedback").OnClientEvent:Connect(function(pos: Vector3?, dmg: number, killed: boolean, headshot: boolean)
 		if pos then
-			hitFlash(pos)
 			damageNumber(pos, dmg, killed, headshot)
 			WeaponSfx.hit(headshot, killed)
+			FxController.onHit(pos, dmg, killed, headshot)
 		end
 	end)
 end

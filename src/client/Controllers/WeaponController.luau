@@ -9,6 +9,7 @@ local ContextActionService = game:GetService("ContextActionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
 local WeaponSfx = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("WeaponSfx"))
+local FxController = require(script.Parent:WaitForChild("FxController"))
 
 local WeaponController = {}
 
@@ -48,6 +49,7 @@ local function tryMelee(tool: Tool)
 	end
 	lastSwing = now
 	WeaponSfx.swing(nil)
+	FxController.onLocalSwing(tool, tostring(tool:GetAttribute("WeaponId")))
 	-- стандартный скрипт Animate персонажа проигрывает взмах, когда в инструменте появляется StringValue "toolanim"
 	local anim = Instance.new("StringValue")
 	anim.Name = "toolanim"
@@ -83,6 +85,7 @@ local function tryShoot()
 	local weaponId = tool:GetAttribute("WeaponId")
 	if typeof(weaponId) == "string" then
 		WeaponSfx.fire(weaponId, nil)
+		FxController.onLocalShot(tool, weaponId)
 	end
 	local origin = head.Position
 	local dir = (aimPoint() - origin).Unit

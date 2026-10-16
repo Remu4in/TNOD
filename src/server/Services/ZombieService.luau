@@ -4,6 +4,8 @@
 
 local PhysicsService = game:GetService("PhysicsService")
 local PathfindingService = game:GetService("PathfindingService")
+local Debris = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
@@ -35,6 +37,7 @@ type Zombie = {
 	pathAt: number,
 	pathBusy: boolean,
 	pathFailed: boolean, -- последний расчёт пути не нашёл маршрут (цель за баррикадой)
+	staggerUntil: number, -- до этого момента зомби «вздрогнул» от попадания и стоит
 }
 
 local map: Types.MapInfo
@@ -150,6 +153,7 @@ local function acquire(typeId: string): Zombie
 		pathAt = 0,
 		pathBusy = false,
 		pathFailed = false,
+		staggerUntil = 0,
 	}
 end
 
@@ -234,8 +238,10 @@ local function spawnOne(typeId: string)
 		+ Vector3.new(math.random(-5, 5), 0, math.random(-5, 5))
 	z.maxHp = math.floor(z.def.hp * hpMultiplier + 0.5)
 	z.hp = z.maxHp
-	z.state = "ToWindow"
-	z.window = BarricadeService.pickEntrance(spawnPos)
+	-- сразу охотимся на игрока; к баррикадам идём, только если они закрывают путь к нему (см. Hunt)
+	z.state = "Hunt"
+	z.window = nil
+	z.staggerUntil = 0
 	z.gen += 1
 	z.waypoints = nil
 	z.pathBusy = false
@@ -273,6 +279,12 @@ end
 local function think(z: Zombie, now: number, dt: number)
 	local pos = z.root.Position
 	local reach = 3.5 * z.def.scale + 1.5
+
+	-- после попадания зомби на миг замирает (чувствуется удар)
+	if now < z.staggerUntil then
+		z.humanoid:MoveTo(pos)
+		return
+	end
 
 	-- застревание: долго почти не двигаемся — прыгаем
 	if (pos - z.lastPos).Magnitude < 0.3 and z.state ~= "Breaking" then
@@ -320,6 +332,17 @@ local function think(z: Zombie, now: number, dt: number)
 		if not player or not targetRoot then
 			return
 		end
+		-- упёрся в баррикаду (почти не двигаемся, а рядом закрытый вход): ломаем её
+		if z.stuckTime > 0.6 then
+			local near = BarricadeService.closedEntranceNear(pos, 8)
+			if near then
+				z.window = near
+				z.state = "ToWindow"
+				z.waypoints = nil
+				z.stuckTime = 0
+				return
+			end
+		end
 		-- пути к игроку нет (он за баррикадой): идём ломать вход, который его защищает, где бы зомби ни стоял
 		if z.pathFailed and not z.pathBusy then
 			local w = BarricadeService.guardingEntrance(targetRoot.Position, 45)
@@ -339,15 +362,106 @@ local function think(z: Zombie, now: number, dt: number)
 	end
 end
 
+-- Тело убитого зомби: на миг замирает, затем отлетает от стрелка (клон модели, живёт пару секунд)
+local MAX_CORPSES = 10
+local corpses: { Model } = {}
+
+local function spawnCorpse(z: Zombie, dir: Vector3)
+	local folder = workspace:FindFirstChild("Corpses")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "Corpses"
+		folder.Parent = workspace
+	end
+	if #corpses >= MAX_CORPSES then
+		local oldest = table.remove(corpses, 1)
+		if oldest then
+			oldest:Destroy()
+		end
+	end
+	local c = z.model:Clone()
+	c.Name = "Corpse"
+	local hum = c:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum:Destroy()
+	end
+	local root = c:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local parts: { BasePart } = {}
+	for _, d in c:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.CollisionGroup = "Default"
+			table.insert(parts, d)
+		end
+	end
+	if not root then
+		c:Destroy()
+		return
+	end
+	root.CanCollide = true
+	root.Transparency = 1
+	c.Parent = folder
+	table.insert(corpses, c)
+	-- «заморозка» на 0,07 с, потом бросок
+	task.delay(0.07, function()
+		if not c.Parent then
+			return
+		end
+		for _, p in parts do
+			p.Anchored = false
+		end
+		local mass = root.AssemblyMass
+		root:ApplyImpulse((dir * 34 + Vector3.new(0, 20, 0)) * mass)
+		root.AssemblyAngularVelocity = Vector3.new(math.random(-8, 8), math.random(-4, 4), math.random(-8, 8))
+	end)
+	task.delay(2.4, function()
+		for _, p in parts do
+			if p.Parent then
+				TweenService:Create(p, TweenInfo.new(0.8), { Transparency = 1 }):Play()
+			end
+		end
+	end)
+	Debris:AddItem(c, 3.4)
+end
+
+export type Impact = {
+	dir: Vector3?, -- направление удара/выстрела (от стрелка к зомби)
+	push: number?, -- отбрасывание, студов/с
+	stagger: number?, -- на сколько секунд зомби замирает
+}
+
 -- Урон по зомби (только сервер). Возвращает: нанесён ли урон, убит ли.
-function ZombieService.damage(model: Model, amount: number, attacker: Player?): (boolean, boolean)
+function ZombieService.damage(model: Model, amount: number, attacker: Player?, impact: Impact?): (boolean, boolean)
 	local z = active[model]
 	if not z or not z.alive then
 		return false, false
 	end
 	z.hp -= amount
 	z.model:SetAttribute("Hp", math.max(0, z.hp))
+	-- горизонтальное направление удара: из импакта или от стрелка к зомби
+	local flat = Vector3.zero
+	if impact and impact.dir then
+		flat = Vector3.new(impact.dir.X, 0, impact.dir.Z)
+	elseif attacker and attacker.Character then
+		local ar = attacker.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if ar then
+			flat = Vector3.new(z.root.Position.X - ar.Position.X, 0, z.root.Position.Z - ar.Position.Z)
+		end
+	end
+	flat = if flat.Magnitude > 0.01 then flat.Unit else Vector3.zero
+	if z.hp > 0 and impact then
+		if impact.stagger then
+			z.staggerUntil = math.max(z.staggerUntil, os.clock() + impact.stagger)
+		end
+		if impact.push and flat ~= Vector3.zero then
+			z.root:ApplyImpulse(flat * impact.push * z.root.AssemblyMass)
+		end
+	end
 	if z.hp <= 0 then
+		spawnCorpse(z, flat)
 		release(z)
 		if onKilled then
 			(onKilled :: (Player?, Zombie) -> ())(attacker, z)

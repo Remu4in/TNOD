@@ -17,9 +17,13 @@ local WeaponService = require(script.Parent:WaitForChild("WeaponService"))
 local DataService = require(script.Parent:WaitForChild("DataService"))
 local MapBuilder = require(script.Parent:WaitForChild("MapBuilder"))
 local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
+local BuildingService = require(script.Parent:WaitForChild("BuildingService"))
+local Types = require(script.Parent.Parent:WaitForChild("Types"))
 
 local RoundService = {}
 
+local currentMap: Types.MapInfo? = nil
+local reviveLockUntil = 0 -- пока идёт воскрешение командой, повторные «все пали» игнорируем
 local wave = 0
 local locationIndex = 1 -- init.server строит первую локацию из Config.Locations
 local gameOver = false
@@ -59,6 +63,8 @@ local function loadLocation(idx: number)
 	BarricadeService.setMap(map)
 	ZombieService.setMap(map)
 	WeaponService.setMap(map)
+	BuildingService.setMap(map)
+	currentMap = map
 	PlayerService.setSpawn(map.playerSpawn)
 	ReplicatedStorage:SetAttribute("Location", loc.name)
 	-- живых игроков переносим в новый магазин
@@ -84,6 +90,7 @@ local function intermission()
 		loadLocation(1)
 	end
 	BarricadeService.setOpen(true)
+	BuildingService.openShop()
 	setNight(false)
 	ReplicatedStorage:SetAttribute("Wave", 0)
 	ReplicatedStorage:SetAttribute("ZombiesLeft", 0)
@@ -91,6 +98,9 @@ local function intermission()
 		task.wait(1)
 	end
 	setPhase("Intermission", Config.Round.IntermissionTime)
+	if currentMap then
+		PlayerService.setSpawn(currentMap.playerSpawn) -- днём (и в перерыве) появляемся в магазине
+	end
 	PlayerService.spawnAll()
 	notifyAll("Новый раунд скоро начнётся", 3)
 	task.wait(Config.Round.IntermissionTime)
@@ -105,11 +115,15 @@ local function startRound()
 		loadLocation(1)
 	end
 	BarricadeService.repairAll()
+	BuildingService.reset()
 	EconomyService.resetRound(players)
 	ScoreService.resetRound(players)
 	WeaponService.resetRound(players)
 	for _, p in players do
 		p:SetAttribute("Revives", 0)
+	end
+	if currentMap then
+		PlayerService.setSpawn(currentMap.playerSpawn)
 	end
 	PlayerService.spawnAll()
 end
@@ -120,17 +134,21 @@ local function day(first: boolean)
 		loadLocation(want)
 	end
 	EconomyService.newDay()
+	BuildingService.openShop()
+	if currentMap then
+		PlayerService.setSpawn(currentMap.playerSpawn)
+	end
 	PlayerService.respawnDead()
 	setNight(false)
 	BarricadeService.setOpen(true)
 	local t = if first then Config.Round.FirstDayTime else Config.Round.DayTime
 	setPhase("Day", t)
-	notifyAll(if first then "Закупайтесь в доме и займите точки обороны" else "Рассвет. Баррикады убраны — бегите за покупками!", 4)
+	notifyAll(if first then "Закупайтесь в магазине и открывайте здания — вносите монеты у вывесок" else "Рассвет. Баррикады убраны — бегите за покупками!", 4)
 	local warn = Config.Round.DayWarnSeconds
 	if t > warn + 2 then
 		waitPhase(t - warn)
 		if not gameOver then
-			notifyAll(string.format("Через %d секунд баррикады встанут. Кто снаружи — останется снаружи!", warn), 4)
+			notifyAll(string.format("Через %d секунд магазин закроется, баррикады встанут. Кто снаружи — останется снаружи!", warn), 4)
 		end
 		waitPhase(warn)
 	else
@@ -142,6 +160,10 @@ local function night()
 	wave += 1
 	ReplicatedStorage:SetAttribute("Wave", wave)
 	BarricadeService.setOpen(false)
+	BuildingService.closeShop() -- магазин на ночь закрыт, оставшихся внутри выталкивает на улицу
+	if currentMap then
+		PlayerService.setSpawn(currentMap.nightSpawn) -- ночью (воскрешение командой) появляемся в стартовом укрытии
+	end
 	setNight(true)
 	setPhase("Night", nil)
 	local players = #Players:GetPlayers()
@@ -190,6 +212,18 @@ end
 function RoundService.onAllDown()
 	local phase = ReplicatedStorage:GetAttribute("Phase")
 	if phase == "Night" or phase == "Day" then
+		if os.clock() < reviveLockUntil then
+			return
+		end
+		-- дополнительная жизнь команды (Убежище): все поднимаются, раунд продолжается
+		local lives = (ReplicatedStorage:GetAttribute("TeamLives") :: number?) or 0
+		if lives > 0 then
+			ReplicatedStorage:SetAttribute("TeamLives", lives - 1)
+			reviveLockUntil = os.clock() + 5
+			notifyAll("Дополнительная жизнь! Команда поднимается", 4)
+			PlayerService.reviveAll()
+			return
+		end
 		fellAtNight = phase == "Night"
 		gameOver = true
 	end
@@ -202,7 +236,9 @@ function RoundService.onZombieKilled(player: Player?, zombie: any)
 	end
 end
 
-function RoundService.start()
+function RoundService.start(map: Types.MapInfo)
+	currentMap = map
+	BuildingService.setMap(map)
 	-- зашедшие в перерыв или днём сразу получают персонажа; ночью — ждут рассвета
 	Players.PlayerAdded:Connect(function(player)
 		local phase = ReplicatedStorage:GetAttribute("Phase")

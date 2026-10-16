@@ -261,7 +261,11 @@ local function onFire(player: Player, origin: unknown, direction: unknown)
 			local model, isHead = ZombieService.isZombiePart(result.Instance :: BasePart)
 			if model then
 				local dmg = def.damage * (if isHead then Config.Economy.HeadshotMultiplier else 1)
-				local applied, killed = ZombieService.damage(model, dmg, player)
+				local applied, killed = ZombieService.damage(model, dmg, player, {
+					dir = dir,
+					push = math.min(14, def.damage * 0.25), -- попадание чуть отбрасывает и на миг останавливает зомби
+					stagger = 0.1,
+				})
 				if applied then
 					totalDamage += dmg
 					killedAny = killedAny or killed
@@ -354,17 +358,16 @@ local function onMelee(player: Player, direction: unknown)
 	local firstPos: Vector3? = nil
 	for i = 1, math.min(#candidates, def.maxTargets or 1) do
 		local c = candidates[i]
-		local applied, killed = ZombieService.damage(c.model, def.damage, player)
+		local away = Vector3.new(c.root.Position.X - origin.X, 0, c.root.Position.Z - origin.Z)
+		local applied, killed = ZombieService.damage(c.model, def.damage, player, {
+			dir = away,
+			push = def.knockback,
+			stagger = 0.35,
+		})
 		if applied then
 			totalDamage += def.damage
 			killedAny = killedAny or killed
 			firstPos = firstPos or c.root.Position
-			if not killed then
-				local away = Vector3.new(c.root.Position.X - origin.X, 0, c.root.Position.Z - origin.Z)
-				if away.Magnitude > 0.01 then
-					c.root:ApplyImpulse(away.Unit * (def.knockback or 0) * c.root.AssemblyMass)
-				end
-			end
 		end
 	end
 	if totalDamage > 0 then
@@ -376,6 +379,10 @@ end
 
 local function onWallBuy(player: Player, weaponId: string)
 	if not PlayerService.isUp(player) then
+		return
+	end
+	if game:GetService("ReplicatedStorage"):GetAttribute("Phase") == "Night" then
+		Remotes.get("Notify"):FireClient(player, "Магазин закрыт ночью", 1.5)
 		return
 	end
 	local def = Config.Weapons[weaponId]

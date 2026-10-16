@@ -47,7 +47,8 @@ end
 function WeaponSfx.fire(weaponId: string, position: Vector3?)
 	local s = Config.WeaponSounds[weaponId]
 	if s then
-		emit(Config.Sounds.fire, s.fireVolume, s.firePitch, position, s.fireTrim)
+		-- лёгкий случайный разброс тона: очередь не звучит как один и тот же клип
+		emit(Config.Sounds.fire, s.fireVolume, s.firePitch * (0.94 + math.random() * 0.12), position, s.fireTrim)
 	end
 end
 
@@ -65,7 +66,12 @@ end
 
 -- Попадание по зомби: выше тон при хедшоте, тише при обычном
 function WeaponSfx.hit(headshot: boolean, killed: boolean)
-	emit(Config.Sounds.hit, if killed then 0.7 else 0.45, if headshot then 1.5 else 1.0, nil, 0.3)
+	emit(Config.Sounds.hit, if killed then 0.7 else 0.45, if headshot then 1.5 else 0.85, nil, 0.3)
+end
+
+-- «Пинг» пули о поверхность в точке попадания
+function WeaponSfx.ping(position: Vector3)
+	emit(Config.Sounds.hit, 0.22, 1.9 + math.random() * 0.3, position, 0.25)
 end
 
 -- Сухой щелчок при пустом магазине (не чаще раза в 0,35 с)

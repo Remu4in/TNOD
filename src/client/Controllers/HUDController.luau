@@ -211,7 +211,9 @@ function HUDController.start()
 			else Color3.fromRGB(80, 170, 255)
 
 		scoreLabel.Text = string.format("Очки: %d", (player:GetAttribute("Score") :: number?) or 0)
+		local lives = (ReplicatedStorage:GetAttribute("TeamLives") :: number?) or 0
 		teamLabel.Text = string.format("Команда: %d", (ReplicatedStorage:GetAttribute("TeamPoints") :: number?) or 0)
+			.. (if lives > 0 then string.format("   ♥ жизнь: %d", lives) else "")
 
 		local tool = currentTool()
 		if tool then

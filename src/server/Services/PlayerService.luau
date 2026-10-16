@@ -144,6 +144,22 @@ function PlayerService.respawnDead()
 	end
 end
 
+-- Дополнительная жизнь команды: погибшие возрождаются, упавшие поднимаются
+function PlayerService.reviveAll()
+	for _, p in Players:GetPlayers() do
+		local h = humanoidOf(p)
+		if not h or h.Health <= 0 then
+			task.spawn(PlayerService.spawn, p)
+		elseif p:GetAttribute("Downed") then
+			clearDowned(p)
+			bleedToken[p] = (bleedToken[p] or 0) + 1
+			h.Health = Config.Player.ReviveHealth
+			h.WalkSpeed = Config.Player.WalkSpeed
+			h.JumpPower = 50
+		end
+	end
+end
+
 function PlayerService.spawnAll()
 	for _, p in Players:GetPlayers() do
 		PlayerService.spawn(p)

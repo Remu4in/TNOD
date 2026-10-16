@@ -34,6 +34,6 @@ WeaponService.init(map)
 DataService.init()
 ScoreService.init()
 StaminaService.init()
-RoundService.start()
+RoundService.start(map)
 
 print("[NightOfTheDead] сервер запущен, локация: " .. first.name)
