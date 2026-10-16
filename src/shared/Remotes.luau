@@ -9,7 +9,8 @@ local NAMES = {
 	"Fire", -- клиент → сервер: (origin: Vector3, direction: Vector3)
 	"Reload", -- клиент → сервер: ()
 	"HitFeedback", -- сервер → стрелку: (position: Vector3, damage: number, killed: boolean, headshot: boolean)
-	"ShotFx", -- сервер → всем: (shooter: Player, origin: Vector3, hits: {Vector3})
+	"ShotFx", -- сервер → всем: (shooter: Player, origin: Vector3, hits: {Vector3}, weaponId: string)
+	"ReloadFx", -- сервер → всем: (player: Player, weaponId: string) — звук перезарядки
 	"Notify", -- сервер → клиенту/всем: (text: string, seconds: number)
 }
 

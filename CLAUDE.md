@@ -19,6 +19,7 @@
 | `src/server/init.server.luau` | `ServerScriptService.Server` (Script) |
 | `src/server/Types.luau` | `ServerScriptService.Server.Types` (ModuleScript) |
 | `src/server/Services/*.luau` | `ServerScriptService.Server.Services.<Имя>` (Folder → ModuleScript) |
+| `src/server/Locations/*.luau` | `ServerScriptService.Server.Locations.<Имя>` (Folder → ModuleScript; `BuildKit` — общий набор, остальные — локации по id из `Config.Locations`) |
 | `src/client/init.client.luau` | `StarterPlayer.StarterPlayerScripts.Client` (LocalScript) |
 | `src/client/Controllers/*.luau` | `…Client.Controllers.<Имя>` (Folder → ModuleScript) |
 

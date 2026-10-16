@@ -15,10 +15,12 @@ local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
 local EconomyService = require(script.Parent:WaitForChild("EconomyService"))
 local WeaponService = require(script.Parent:WaitForChild("WeaponService"))
 local DataService = require(script.Parent:WaitForChild("DataService"))
+local MapBuilder = require(script.Parent:WaitForChild("MapBuilder"))
 
 local RoundService = {}
 
 local wave = 0
+local locationIndex = 1 -- init.server строит первую локацию из Config.Locations
 local gameOver = false
 local fellAtNight = false
 local rng = Random.new()
@@ -40,6 +42,34 @@ local function setNight(night: boolean)
 	Lighting.FogColor = if night then Color3.fromRGB(15, 18, 30) else Color3.fromRGB(190, 170, 150)
 end
 
+-- Какая локация нужна для ночи N: смена каждые LocationNights ночей; ещё не построенные пропускаем.
+local function locationFor(night: number): number
+	local idx = math.min(math.floor((night - 1) / Config.LocationNights) + 1, #Config.Locations)
+	while idx > 1 and not MapBuilder.has(Config.Locations[idx].id) do
+		idx -= 1
+	end
+	return idx
+end
+
+local function loadLocation(idx: number)
+	local loc = Config.Locations[idx]
+	local map = MapBuilder.build(loc.id)
+	locationIndex = idx
+	BarricadeService.setMap(map)
+	ZombieService.setMap(map)
+	WeaponService.setMap(map)
+	PlayerService.setSpawn(map.playerSpawn)
+	ReplicatedStorage:SetAttribute("Location", loc.name)
+	-- живых игроков переносим в новый магазин
+	for _, p in Players:GetPlayers() do
+		local char = p.Character
+		if char then
+			char:PivotTo(CFrame.new(map.playerSpawn + Vector3.new(math.random(-6, 6), 0, math.random(-4, 4))))
+		end
+	end
+	notifyAll("Новая локация: " .. loc.name, 5)
+end
+
 local function waitPhase(seconds: number)
 	local endsAt = os.clock() + seconds
 	while os.clock() < endsAt and not gameOver do
@@ -49,6 +79,10 @@ end
 
 local function intermission()
 	ZombieService.clearAll()
+	if locationIndex ~= 1 then
+		loadLocation(1)
+	end
+	BarricadeService.setOpen(true)
 	setNight(false)
 	ReplicatedStorage:SetAttribute("Wave", 0)
 	ReplicatedStorage:SetAttribute("ZombiesLeft", 0)
@@ -66,6 +100,9 @@ local function startRound()
 	fellAtNight = false
 	wave = 0
 	local players = Players:GetPlayers()
+	if locationIndex ~= 1 then
+		loadLocation(1)
+	end
 	BarricadeService.repairAll()
 	EconomyService.resetRound(players)
 	WeaponService.resetRound(players)
@@ -76,18 +113,33 @@ local function startRound()
 end
 
 local function day(first: boolean)
+	local want = locationFor(wave + 1)
+	if want ~= locationIndex then
+		loadLocation(want)
+	end
 	EconomyService.newDay()
 	PlayerService.respawnDead()
 	setNight(false)
+	BarricadeService.setOpen(true)
 	local t = if first then Config.Round.FirstDayTime else Config.Round.DayTime
 	setPhase("Day", t)
-	notifyAll(if first then "Готовьтесь: покупайте оружие и держите окна" else "Рассвет. Чините баррикады!", 3)
-	waitPhase(t)
+	notifyAll(if first then "Закупайтесь в доме и займите точки обороны" else "Рассвет. Баррикады убраны — бегите за покупками!", 4)
+	local warn = Config.Round.DayWarnSeconds
+	if t > warn + 2 then
+		waitPhase(t - warn)
+		if not gameOver then
+			notifyAll(string.format("Через %d секунд баррикады встанут. Кто снаружи — останется снаружи!", warn), 4)
+		end
+		waitPhase(warn)
+	else
+		waitPhase(t)
+	end
 end
 
 local function night()
 	wave += 1
 	ReplicatedStorage:SetAttribute("Wave", wave)
+	BarricadeService.setOpen(false)
 	setNight(true)
 	setPhase("Night", nil)
 	local players = #Players:GetPlayers()

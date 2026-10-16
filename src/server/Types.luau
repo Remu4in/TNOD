@@ -6,11 +6,16 @@ export type Window = {
 	model: Model,
 	planks: { BasePart },
 	outside: Vector3, -- точка снаружи, куда идут зомби
-	inside: Vector3, -- точка внутри дома за окном
-	prompt: ProximityPrompt,
+	inside: Vector3, -- точка внутри за входом
+	prompt: ProximityPrompt, -- «Починить» (E)
+	dismantle: ProximityPrompt, -- «Разобрать» (F): игрок сам снимает баррикаду, чтобы выйти
+	point: string, -- к какой точке обороны относится вход ("shop" — центральный магазин)
+	weight: number, -- шанс, что зомби выберут этот вход
 }
 
 export type MapInfo = {
+	id: string,
+	name: string,
 	root: Model,
 	windows: { Window },
 	zombieSpawns: { Vector3 },

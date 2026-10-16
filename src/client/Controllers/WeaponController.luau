@@ -7,6 +7,7 @@ local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
+local WeaponSfx = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("WeaponSfx"))
 
 local WeaponController = {}
 
@@ -25,10 +26,8 @@ end
 
 local function aimPoint(): Vector3
 	local camera = workspace.CurrentCamera
-	local pos = UserInputService:GetMouseLocation()
-	if UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
-		pos = camera.ViewportSize / 2 -- на телефоне стреляем в центр экрана
-	end
+	-- вид от 1 лица: всегда стреляем в центр экрана (прицел)
+	local pos = camera.ViewportSize / 2
 	local ray = camera:ViewportPointToRay(pos.X, pos.Y)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -50,10 +49,15 @@ local function tryShoot()
 		return
 	end
 	if ((tool:GetAttribute("Mag") :: number?) or 0) <= 0 then
+		WeaponSfx.click()
 		Remotes.get("Reload"):FireServer()
 		return
 	end
 	lastShot = now
+	local weaponId = tool:GetAttribute("WeaponId")
+	if typeof(weaponId) == "string" then
+		WeaponSfx.fire(weaponId, nil)
+	end
 	local origin = head.Position
 	local dir = (aimPoint() - origin).Unit
 	Remotes.get("Fire"):FireServer(origin, dir)

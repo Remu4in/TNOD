@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
+local WeaponSfx = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("WeaponSfx"))
 
 local EffectsController = {}
 
@@ -86,16 +87,35 @@ local function hitFlash(pos: Vector3)
 	Debris:AddItem(p, 0.15)
 end
 
+local function headPosition(who: Player): Vector3?
+	local char = who.Character
+	local head = char and char:FindFirstChild("Head") :: BasePart?
+	return if head then head.Position else nil
+end
+
 function EffectsController.start()
-	Remotes.get("ShotFx").OnClientEvent:Connect(function(shooter: Player, origin: Vector3, hits: { Vector3 })
+	WeaponSfx.preload()
+	Remotes.get("ShotFx").OnClientEvent:Connect(function(shooter: Player, origin: Vector3, hits: { Vector3 }, weaponId: string)
 		for _, h in hits do
 			tracer(origin, h, shooter == player)
+		end
+		-- свой выстрел уже прозвучал сразу при нажатии (WeaponController), чужие — объёмно из точки выстрела
+		if shooter ~= player then
+			WeaponSfx.fire(weaponId, origin)
+		end
+	end)
+	Remotes.get("ReloadFx").OnClientEvent:Connect(function(who: Player, weaponId: string)
+		if who == player then
+			WeaponSfx.reload(weaponId, nil)
+		else
+			WeaponSfx.reload(weaponId, headPosition(who))
 		end
 	end)
 	Remotes.get("HitFeedback").OnClientEvent:Connect(function(pos: Vector3?, dmg: number, killed: boolean, headshot: boolean)
 		if pos then
 			hitFlash(pos)
 			damageNumber(pos, dmg, killed, headshot)
+			WeaponSfx.hit(headshot, killed)
 		end
 	end)
 end

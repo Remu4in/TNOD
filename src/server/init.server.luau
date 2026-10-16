@@ -1,9 +1,11 @@
 --!strict
--- Точка входа сервера: строим карту, поднимаем сервисы, запускаем цикл раундов.
+-- Точка входа сервера: строим первую локацию, поднимаем сервисы, запускаем цикл раундов.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local Services = script:WaitForChild("Services")
 
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 local MapBuilder = require(Services:WaitForChild("MapBuilder"))
 local BarricadeService = require(Services:WaitForChild("BarricadeService"))
 local PlayerService = require(Services:WaitForChild("PlayerService"))
@@ -20,7 +22,9 @@ if scs and not scs:FindFirstChild("Health") then
 	stub.Parent = scs
 end
 
-local map = MapBuilder.build()
+local first = Config.Locations[1]
+local map = MapBuilder.build(first.id)
+ReplicatedStorage:SetAttribute("Location", first.name)
 BarricadeService.init(map)
 PlayerService.init(map.playerSpawn, RoundService.onAllDown)
 ZombieService.init(map, RoundService.onZombieKilled)
@@ -28,4 +32,4 @@ WeaponService.init(map)
 DataService.init()
 RoundService.start()
 
-print("[NightOfTheDead] сервер запущен")
+print("[NightOfTheDead] сервер запущен, локация: " .. first.name)

@@ -148,6 +148,10 @@ function PlayerService.spawnAll()
 	end
 end
 
+function PlayerService.setSpawn(spawnAt: Vector3)
+	spawnPoint = spawnAt
+end
+
 function PlayerService.init(spawnAt: Vector3, allDownCallback: () -> ())
 	spawnPoint = spawnAt
 	onAllDown = allDownCallback

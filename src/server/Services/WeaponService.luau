@@ -2,6 +2,7 @@
 -- Оружие: выдача инструментов, покупка со стен, стрельба и перезарядка.
 -- Клиент присылает только «выстрелил отсюда туда»; сервер проверяет и сам делает рейкаст и урон.
 
+local AssetService = game:GetService("AssetService")
 local Players = game:GetService("Players")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
@@ -26,6 +27,32 @@ local function isFiniteVector(v: Vector3): boolean
 		and math.abs(v.X) < 1e6 and math.abs(v.Y) < 1e6 and math.abs(v.Z) < 1e6
 end
 
+-- Шаблоны мешей оружия (AssetService грузит меш по сети, поэтому один раз и с ожиданием)
+local meshTemplates: { [string]: MeshPart } = {}
+local meshState: { [string]: string } = {} -- "loading" | "ok" | "failed"
+
+local function loadMesh(meshId: string): MeshPart?
+	if not meshState[meshId] then
+		meshState[meshId] = "loading"
+		local ok, result = pcall(function()
+			return AssetService:CreateMeshPartAsync(Content.fromUri(meshId))
+		end)
+		if ok and result then
+			meshTemplates[meshId] = result
+			meshState[meshId] = "ok"
+		else
+			warn("[WeaponService] не удалось загрузить меш " .. meshId .. ": " .. tostring(result))
+			meshState[meshId] = "failed"
+		end
+	end
+	while meshState[meshId] == "loading" do
+		task.wait(0.1)
+	end
+	return meshTemplates[meshId]
+end
+
+-- Handle — невидимая рукоять 1×1×1; внешний вид — меши из Config.WeaponVisuals, привязанные Weld'ами.
+-- Если меш не загрузился, остаётся простой цветной блок.
 local function buildTool(def: Config.WeaponDef): Tool
 	local tool = Instance.new("Tool")
 	tool.Name = def.name
@@ -36,13 +63,39 @@ local function buildTool(def: Config.WeaponDef): Tool
 	tool:SetAttribute("FireRate", def.fireRate)
 	local handle = Instance.new("Part")
 	handle.Name = "Handle"
-	handle.Size = Vector3.new(0.4, 0.6, if def.id == "Pistol" then 1.2 else 2.6)
-	handle.Color = def.color
-	handle.Material = Enum.Material.Metal
+	handle.Size = Vector3.one
 	handle.CanCollide = false
 	handle.Massless = true
 	handle.Parent = tool
-	tool.Grip = CFrame.new(0, -0.1, 0.3)
+
+	local built = 0
+	for _, vp in Config.WeaponVisuals[def.id] or {} do
+		local template = loadMesh(vp.mesh)
+		if template then
+			local part = template:Clone()
+			part.Size = vp.size
+			part.TextureID = vp.texture or ""
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CanTouch = false
+			part.Massless = true
+			part.Anchored = false
+			local weld = Instance.new("Weld")
+			weld.Part0 = handle
+			weld.Part1 = part
+			weld.C0 = vp.offset
+			weld.Parent = part
+			part.Parent = tool
+			built += 1
+		end
+	end
+	if built == 0 then
+		handle.Size = Vector3.new(0.4, 0.6, if def.id == "Pistol" then 1.2 else 2.6)
+		handle.Color = def.color
+		handle.Material = Enum.Material.Metal
+	else
+		handle.Transparency = 1
+	end
 	return tool
 end
 
@@ -119,6 +172,7 @@ local function startReload(player: Player, weaponId: string)
 		return
 	end
 	st.reloadingUntil = os.clock() + def.reloadTime
+	Remotes.get("ReloadFx"):FireAllClients(player, weaponId)
 	task.delay(def.reloadTime, function()
 		local inv = owned[player]
 		if not inv or inv[weaponId] ~= st then
@@ -222,7 +276,7 @@ local function onFire(player: Player, origin: unknown, direction: unknown)
 		EconomyService.add(player, Config.Economy.CoinsPerHit)
 		Remotes.get("HitFeedback"):FireClient(player, lastHitPos, math.floor(totalDamage + 0.5), killedAny, headshotAny)
 	end
-	Remotes.get("ShotFx"):FireAllClients(player, head.Position, hits)
+	Remotes.get("ShotFx"):FireAllClients(player, head.Position, hits, weaponId)
 	syncAmmo(player, weaponId)
 	if st.mag <= 0 then
 		startReload(player, weaponId)
@@ -254,6 +308,13 @@ local function onWallBuy(player: Player, weaponId: string)
 	end
 end
 
+-- Выдать оружие (покупка, награда, отладка); только из серверного кода
+function WeaponService.give(player: Player, weaponId: string)
+	if Config.Weapons[weaponId] then
+		grant(player, weaponId)
+	end
+end
+
 -- Новый раунд: у всех только пистолет
 function WeaponService.resetRound(players: { Player })
 	for _, p in players do
@@ -261,7 +322,24 @@ function WeaponService.resetRound(players: { Player })
 	end
 end
 
+-- Привязать стены с оружием новой локации; вызывается и при смене локации.
+function WeaponService.setMap(map: Types.MapInfo)
+	for _, wb in map.wallBuys do
+		wb.prompt.Triggered:Connect(function(player: Player)
+			onWallBuy(player, wb.weaponId)
+		end)
+	end
+end
+
 function WeaponService.init(map: Types.MapInfo)
+	-- заранее подгружаем меши всех стволов, чтобы первая покупка не тормозила
+	task.spawn(function()
+		for _, parts in Config.WeaponVisuals do
+			for _, vp in parts do
+				loadMesh(vp.mesh)
+			end
+		end
+	end)
 	Remotes.get("Fire").OnServerEvent:Connect(onFire)
 	Remotes.get("Reload").OnServerEvent:Connect(function(player: Player)
 		if not RateLimit.allow(player, "Reload", 0.3) then
@@ -273,11 +351,7 @@ function WeaponService.init(map: Types.MapInfo)
 		end
 	end)
 
-	for _, wb in map.wallBuys do
-		wb.prompt.Triggered:Connect(function(player: Player)
-			onWallBuy(player, wb.weaponId)
-		end)
-	end
+	WeaponService.setMap(map)
 
 	-- после (воз)рождения — выдать пистолет и всё купленное в этом раунде
 	local function onCharacter(player: Player)
