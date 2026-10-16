@@ -110,8 +110,8 @@ Config.Player = {
 	-- Подкат (спринт + C): низкий скользящий рывок, проходит под баррикадой с выбитыми нижними досками.
 	-- Кувырок (C без спринта): рывок с неуязвимостью в первые секунды — уклонение от замаха зомби.
 	SlideEnergy = 15,
-	SlideSeconds = 0.9,
-	SlideSpeed = 30,
+	SlideSeconds = 1.0,
+	SlideSpeed = 34,
 	RollEnergy = 20,
 	RollSeconds = 0.5,
 	RollSpeed = 26,

@@ -14,7 +14,7 @@ local Remotes = require(Shared:WaitForChild("Remotes"))
 local MovementController = {}
 
 local player = Players.LocalPlayer
-local BASE_FOV, SPRINT_FOV = 70, 78
+local BASE_FOV, SPRINT_FOV, SLIDE_FOV = 70, 78, 90
 local wanted = false
 
 local function setWanted(on: boolean)
@@ -33,6 +33,8 @@ local dodging = false
 local lastDodge = 0
 local flipStart = 0
 local flipDuration = 0
+local flipBase: CFrame? = nil -- направление взгляда до кувырка: в конце камера возвращается ровно в него
+local sliding = false
 
 local function aliveHumanoid(): (Humanoid?, BasePart?)
 	local char = player.Character
@@ -89,7 +91,9 @@ local function doSlide()
 	local head = char:FindFirstChild("Head") :: BasePart?
 	local upper = char:FindFirstChild("UpperTorso") :: BasePart?
 	local hip, jumpHeight, jumpPower = hum.HipHeight, hum.JumpHeight, hum.JumpPower
+	sliding = true
 	hum.HipHeight = 0.2
+	hum.CameraOffset = Vector3.new(0, -1.2, 0)
 	hum.JumpHeight = 0
 	hum.JumpPower = 0
 	if head then
@@ -99,6 +103,8 @@ local function doSlide()
 		upper.CanCollide = false
 	end
 	burst(root, dodgeDirection(hum), P.SlideSpeed, P.SlideSeconds, hum)
+	sliding = false
+	hum.CameraOffset = Vector3.zero
 	hum.HipHeight = hip
 	hum.JumpHeight = jumpHeight
 	hum.JumpPower = jumpPower
@@ -119,20 +125,24 @@ local function doRoll()
 	end
 	flipStart = os.clock()
 	flipDuration = P.RollSeconds
+	local camera = workspace.CurrentCamera
+	flipBase = if camera then camera.CFrame.Rotation else nil
 	burst(root, dodgeDirection(hum), P.RollSpeed, P.RollSeconds, hum)
 	dodging = false
 end
 
 local function tryDodge()
-	local hum = aliveHumanoid()
-	if dodging or not hum or player:GetAttribute("Downed") == true then
+	local hum, root = aliveHumanoid()
+	if dodging or not hum or not root or player:GetAttribute("Downed") == true then
 		return
 	end
 	if os.clock() - lastDodge < P.DodgeCooldown then
 		return
 	end
 	local energy = (player:GetAttribute("Energy") :: number?) or 0
-	local slide = player:GetAttribute("Sprinting") == true
+	-- подкат — если бежим (атрибут Sprinting приходит с сервера с задержкой, поэтому смотрим и на скорость)
+	local flatSpeed = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude
+	local slide = player:GetAttribute("Sprinting") == true or flatSpeed > P.SprintSpeed - 3
 	if energy < (if slide then P.SlideEnergy else P.RollEnergy) then
 		return
 	end
@@ -155,14 +165,26 @@ function MovementController.start()
 		return Enum.ContextActionResult.Pass
 	end, true, Enum.KeyCode.C, Enum.KeyCode.ButtonB)
 	ContextActionService:SetTitle("NotdDodge", "Кувырок")
+	-- то же через атрибут игрока RequestDodge (кнопки интерфейса и автотесты: Studio не эмулирует клавиши в игре)
+	player:GetAttributeChangedSignal("RequestDodge"):Connect(tryDodge)
 
-	-- сальто камеры при кувырке (после обновления стандартной камеры)
+	-- сальто камеры при кувырке. Стандартная камера берёт за основу CFrame прошлого кадра, поэтому прибавлять
+	-- поворот к её кадру нельзя (наклон копился, камера уезжала вверх). На 0,5 с камеру целиком задаём сами:
+	-- направление взгляда до кувырка + сальто, а в последнем кадре возвращаем ровно исходное направление.
 	RunService:BindToRenderStep("NotdRollCam", Enum.RenderPriority.Camera.Value + 3, function()
 		local camera = workspace.CurrentCamera
+		local base = flipBase
+		if not camera or not base then
+			return
+		end
 		local t = if flipDuration > 0 then (os.clock() - flipStart) / flipDuration else 1
-		if camera and t >= 0 and t < 1 then
+		local position = camera.CFrame.Position
+		if t >= 0 and t < 1 then
 			local eased = t * t * (3 - 2 * t)
-			camera.CFrame = camera.CFrame * CFrame.Angles(-math.pi * 2 * eased, 0, 0)
+			camera.CFrame = CFrame.new(position) * base * CFrame.Angles(-math.pi * 2 * eased, 0, 0)
+		else
+			camera.CFrame = CFrame.new(position) * base
+			flipBase = nil
 		end
 	end)
 
@@ -195,7 +217,7 @@ function MovementController.start()
 		if not camera then
 			return
 		end
-		local target = if player:GetAttribute("Sprinting") == true then SPRINT_FOV else BASE_FOV
+		local target = if sliding then SLIDE_FOV elseif player:GetAttribute("Sprinting") == true then SPRINT_FOV else BASE_FOV
 		camera.FieldOfView += (target - camera.FieldOfView) * math.min(1, dt * 8)
 	end)
 end

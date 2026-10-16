@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
@@ -139,6 +140,20 @@ function HUDController.start()
 		Size = UDim2.fromScale(0.2, 0.06),
 		TextXAlignment = Enum.TextXAlignment.Right,
 	})
+
+	-- подсказка по движению (на телефоне есть кнопки, там не нужна)
+	if not (UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled) then
+		label(gui, {
+			Name = "MoveHint",
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.fromScale(0.5, 0.985),
+			Size = UDim2.fromScale(0.42, 0.028),
+			Text = "Shift — бег   ·   C на бегу — подкат   ·   C стоя или шагом — кувырок",
+			TextTransparency = 0.35,
+			TextStrokeTransparency = 0.7,
+			TextColor3 = Color3.fromRGB(230, 230, 230),
+		})
+	end
 
 	-- центр: уведомления и экран падения
 	local notice = label(gui, {

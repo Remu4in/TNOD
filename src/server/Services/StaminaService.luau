@@ -107,7 +107,8 @@ function StaminaService.init()
 		if now - (lastDodgeAt[player] or 0) < P.DodgeCooldown then
 			return
 		end
-		if kind == "slide" and not sprinting[player] then
+		-- подкат — из бега (допуск 0,5 с: сервер гасит спринт с задержкой, а игрок мог отпустить Shift в момент нажатия)
+		if kind == "slide" and not sprinting[player] and now - (lastSprintAt[player] or 0) > 0.5 then
 			return
 		end
 		local cost = if kind == "slide" then P.SlideEnergy else P.RollEnergy
