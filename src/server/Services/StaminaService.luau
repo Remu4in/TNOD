@@ -20,6 +20,7 @@ local energy: { [Player]: number } = {}
 local wanted: { [Player]: boolean } = {}
 local sprinting: { [Player]: boolean } = {}
 local lastSprintAt: { [Player]: number } = {}
+local lastDodgeAt: { [Player]: number } = {}
 
 local function publish(player: Player)
 	-- в атрибут пишем целое: меньше сетевого шума, для полоски HUD точности хватает
@@ -82,6 +83,7 @@ function StaminaService.init()
 		wanted[player] = nil
 		sprinting[player] = nil
 		lastSprintAt[player] = nil
+		lastDodgeAt[player] = nil
 	end)
 
 	Remotes.get("Sprint").OnServerEvent:Connect(function(player: Player, on: unknown)
@@ -90,6 +92,42 @@ function StaminaService.init()
 		end
 		-- начать можно только с достаточным запасом; остановить — всегда
 		wanted[player] = on and (energy[player] or 0) >= P.SprintMinEnergy and PlayerService.isUp(player)
+	end)
+
+	-- подкат (только в спринте) и кувырок: сервер проверяет энергию и паузу, у кувырка даёт короткую неуязвимость.
+	-- Само движение клиент делает у себя (как и обычную ходьбу).
+	Remotes.get("Dodge").OnServerEvent:Connect(function(player: Player, kind: unknown)
+		if (kind ~= "slide" and kind ~= "roll") or not RateLimit.allow(player, "Dodge", 0.1) then
+			return
+		end
+		if not PlayerService.isUp(player) or energy[player] == nil then
+			return
+		end
+		local now = os.clock()
+		if now - (lastDodgeAt[player] or 0) < P.DodgeCooldown then
+			return
+		end
+		if kind == "slide" and not sprinting[player] then
+			return
+		end
+		local cost = if kind == "slide" then P.SlideEnergy else P.RollEnergy
+		if (energy[player] or 0) < cost then
+			return
+		end
+		energy[player] = (energy[player] or 0) - cost
+		lastSprintAt[player] = now
+		lastDodgeAt[player] = now
+		publish(player)
+		if kind == "roll" then
+			PlayerService.setInvulnerable(player, P.RollInvulnSeconds)
+		end
+		local seconds = if kind == "slide" then P.SlideSeconds else P.RollSeconds
+		player:SetAttribute("Dodge", kind)
+		task.delay(seconds, function()
+			if player:GetAttribute("Dodge") == kind then
+				player:SetAttribute("Dodge", nil)
+			end
+		end)
 	end)
 
 	-- единый цикл на всех игроков

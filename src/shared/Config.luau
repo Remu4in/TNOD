@@ -62,7 +62,9 @@ export type ZombieDef = {
 	hp: number,
 	speed: number,
 	damage: number,
-	attackCooldown: number,
+	attackCooldown: number, -- пауза между ударами по игроку (после удара)
+	windup: number, -- замах: столько секунд зомби замирает с поднятыми руками, прежде чем ударить (можно уйти или перекатиться)
+	breakCooldown: number, -- пауза между ударами по баррикаде
 	reward: number, -- монеты убийце
 	points: number, -- очки убийце (и в общий командный счёт)
 	scale: number,
@@ -105,6 +107,16 @@ Config.Player = {
 	EnergyRegenSeconds = 30,
 	EnergyRegenDelay = 1, -- пауза после спринта перед восстановлением
 	SprintMinEnergy = 15, -- с меньшей энергией спринт не начать
+	-- Подкат (спринт + C): низкий скользящий рывок, проходит под баррикадой с выбитыми нижними досками.
+	-- Кувырок (C без спринта): рывок с неуязвимостью в первые секунды — уклонение от замаха зомби.
+	SlideEnergy = 15,
+	SlideSeconds = 0.9,
+	SlideSpeed = 30,
+	RollEnergy = 20,
+	RollSeconds = 0.5,
+	RollSpeed = 26,
+	RollInvulnSeconds = 0.4,
+	DodgeCooldown = 1.4, -- общая пауза между подкатом и кувырком
 	BleedOutTime = 30,
 	ReviveHoldTime = 3,
 	ReviveHealth = 50,
@@ -162,7 +174,7 @@ Config.Economy = {
 }
 
 Config.Barricade = {
-	Planks = 5,
+	Planks = 10, -- было 5: баррикада прочнее в 2 раза; ломается снизу вверх — когда выбиты ~3 нижние доски, под ней можно проскользнуть
 	RepairHoldTime = 0.6,
 	DismantleHoldTime = 1.0, -- сколько держать «Разобрать», чтобы снять все доски самому
 	AttackRange = 6,
@@ -304,7 +316,7 @@ local Visuals: { [string]: { VisualPart } } = {
 	},
 	Knife = {
 		{ mesh = "rbxassetid://83287424896071", texture = "rbxassetid://104557653597097", size = Vector3.new(1.4900, 0.5149, 0.2400),
-			offset = CFrame.Angles(math.rad(20), 0, 0) * CFrame.new(0, 0, -0.4800) * CFrame.Angles(0, math.rad(90), 0) }, -- клинок приподнят на 20°, чтобы был виден из-за кисти
+			offset = CFrame.Angles(math.rad(80), 0, 0) * CFrame.new(0, 0, -0.4800) * CFrame.Angles(0, math.rad(90), 0) }, -- хват «обратный»: клинок смотрит вверх, а не вперёд
 	},
 	Machete = {
 		{ mesh = "rbxassetid://73914981913805", texture = "rbxassetid://126655934720778", size = Vector3.new(1.3906, 1.7482, 0.1511),
@@ -396,15 +408,15 @@ Config.WallBuys = { "Bat", "Machete", "Revolver", "SMG", "Shotgun", "Rifle", "LM
 
 local Zombies: { [string]: ZombieDef } = {
 	Walker = {
-		id = "Walker", name = "Ходок", hp = 60, speed = 14, damage = 15, attackCooldown = 1,
+		id = "Walker", name = "Ходок", hp = 60, speed = 14, damage = 15, attackCooldown = 2.2, windup = 0.55, breakCooldown = 1,
 		reward = 50, points = 10, scale = 1, color = Color3.fromRGB(95, 140, 80), planksPerHit = 1,
 	},
 	Runner = {
-		id = "Runner", name = "Бегун", hp = 40, speed = 19, damage = 10, attackCooldown = 0.8,
+		id = "Runner", name = "Бегун", hp = 40, speed = 19, damage = 10, attackCooldown = 1.8, windup = 0.4, breakCooldown = 0.8,
 		reward = 60, points = 15, scale = 0.9, color = Color3.fromRGB(150, 160, 70), planksPerHit = 1,
 	},
 	Brute = {
-		id = "Brute", name = "Громила", hp = 600, speed = 12, damage = 35, attackCooldown = 1.5,
+		id = "Brute", name = "Громила", hp = 600, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 400, points = 100, scale = 1.8, color = Color3.fromRGB(110, 50, 50), planksPerHit = 5,
 	},
 }

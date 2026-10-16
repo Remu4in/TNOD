@@ -28,8 +28,10 @@ end
 local function refresh(w: Types.Window)
 	local count = intact[w.id]
 	local locked = isLocked(w)
+	-- доски нумеруются снизу вверх; зомби выбивают нижние первыми, остаются верхние — под ними можно проскользнуть
+	local total = #w.planks
 	for i, plank in w.planks do
-		setPlank(plank, not dayMode and not locked and i <= count)
+		setPlank(plank, not dayMode and not locked and i > total - count)
 	end
 	w.prompt.Enabled = not dayMode and not locked and count < #w.planks
 	w.dismantle.Enabled = not dayMode and not locked and count > 0

@@ -10,6 +10,7 @@ local PlayerService = {}
 
 local lastDamage: { [Player]: number } = {}
 local bleedToken: { [Player]: number } = {}
+local invulnUntil: { [Player]: number } = {}
 local onAllDown: (() -> ())? = nil
 local spawnPoint = Vector3.new(0, 3, 0)
 
@@ -101,8 +102,17 @@ local function down(player: Player, h: Humanoid)
 	checkAllDown()
 end
 
+-- Неуязвимость (кувырок): до этого момента по серверным часам урон по игроку не проходит
+function PlayerService.setInvulnerable(player: Player, seconds: number)
+	invulnUntil[player] = os.clock() + seconds
+end
+
+function PlayerService.isInvulnerable(player: Player): boolean
+	return os.clock() < (invulnUntil[player] or 0)
+end
+
 function PlayerService.damage(player: Player, amount: number)
-	if not PlayerService.isUp(player) then
+	if not PlayerService.isUp(player) or PlayerService.isInvulnerable(player) then
 		return
 	end
 	local h = humanoidOf(player)
@@ -206,6 +216,7 @@ function PlayerService.init(spawnAt: Vector3, allDownCallback: () -> ())
 	Players.PlayerRemoving:Connect(function(player)
 		lastDamage[player] = nil
 		bleedToken[player] = nil
+		invulnUntil[player] = nil
 		task.defer(checkAllDown)
 	end)
 

@@ -15,6 +15,7 @@ export type Style = {
 	wallColor: Color3?,
 	floorColor: Color3?,
 	floorMaterial: Enum.Material?,
+	wallMaterial: Enum.Material?, -- по умолчанию гладкий пластик (шатёр — ткань)
 	roof: boolean?,
 }
 
@@ -139,7 +140,7 @@ local function entrance(parent: Instance, id: number, point: string, weight: num
 end
 
 -- Одна стена здания; на месте проёмов — перемычка выше OPEN_H.
-local function wallSide(parent: Instance, center: Vector3, sx: number, sz: number, side: Side, openings: { Opening }, color: Color3)
+local function wallSide(parent: Instance, center: Vector3, sx: number, sz: number, side: Side, openings: { Opening }, color: Color3, material: Enum.Material?)
 	local n = NORMAL[side]
 	local alongX = n.Z ~= 0
 	local len = (if alongX then sx else sz) + WALL_T
@@ -163,7 +164,13 @@ local function wallSide(parent: Instance, center: Vector3, sx: number, sz: numbe
 		local tc = (t0 + t1) / 2
 		local size = if alongX then Vector3.new(l, y1 - y0, WALL_T) else Vector3.new(WALL_T, y1 - y0, l)
 		local along = if alongX then Vector3.new(tc, 0, 0) else Vector3.new(0, 0, tc)
-		BuildKit.part({ Name = "Wall", Size = size, Position = wallCenter + along + Vector3.new(0, (y0 + y1) / 2, 0), Color = color }, parent)
+		BuildKit.part({
+			Name = "Wall",
+			Size = size,
+			Position = wallCenter + along + Vector3.new(0, (y0 + y1) / 2, 0),
+			Color = color,
+			Material = material or Enum.Material.SmoothPlastic,
+		}, parent)
 	end
 
 	local cursor = -len / 2
@@ -191,7 +198,7 @@ function BuildKit.building(parent: Instance, name: string, center: Vector3, sx: 
 
 	local wallColor = style.wallColor or Color3.fromRGB(150, 140, 125)
 	for _, side in SIDES do
-		wallSide(model, center, sx, sz, side, openings, wallColor)
+		wallSide(model, center, sx, sz, side, openings, wallColor, style.wallMaterial)
 	end
 
 	local windows: { Types.Window } = {}
@@ -262,7 +269,41 @@ function BuildKit.shop(parent: Instance): ({ Types.Window }, { { weaponId: strin
 		{ side = "N", width = 6 },
 		{ side = "E", width = 6 },
 		{ side = "W", width = 6 },
-	}, { point = "shop", weight = 0.15, roof = false })
+	}, {
+		point = "shop",
+		weight = 0.15,
+		roof = false,
+		wallColor = Color3.fromRGB(176, 160, 112),
+		wallMaterial = Enum.Material.Fabric,
+		floorColor = Color3.fromRGB(88, 84, 76),
+		floorMaterial = Enum.Material.Concrete,
+	})
+
+	-- Шатёр, раскинутый на перекрёстке: двускатная брезентовая крыша, мачты по углам и коньковая балка
+	local ridgeY, eaveY = WALL_H + 6, WALL_H + 0.3
+	local slope = math.atan2(ridgeY - eaveY, hz)
+	local slopeLen = math.sqrt(hz * hz + (ridgeY - eaveY) ^ 2)
+	for _, s in { 1, -1 } do
+		local center = Vector3.new(0, (ridgeY + eaveY) / 2, s * hz / 2)
+		BuildKit.part({
+			Name = "TentRoof",
+			Size = Vector3.new(hx * 2 + 4, 0.4, slopeLen + 2),
+			CFrame = CFrame.new(center) * CFrame.Angles(s * slope, 0, 0),
+			Color = Color3.fromRGB(150, 138, 96),
+			Material = Enum.Material.Fabric,
+		}, model)
+	end
+	BuildKit.part({ Name = "Ridge", Size = Vector3.new(hx * 2 + 6, 0.8, 0.8), Position = Vector3.new(0, ridgeY + 0.2, 0), Color = Color3.fromRGB(70, 55, 40), Material = Enum.Material.Wood }, model)
+	for _, sx in { -1, 1 } do
+		for _, sz in { -1, 1 } do
+			BuildKit.part({ Name = "Pole", Size = Vector3.new(0.8, WALL_H + 1, 0.8), Position = Vector3.new(sx * (hx + 0.5), (WALL_H + 1) / 2, sz * (hz + 0.5)), Color = Color3.fromRGB(70, 55, 40), Material = Enum.Material.Wood }, model)
+		end
+		BuildKit.part({ Name = "MastPole", Size = Vector3.new(0.9, ridgeY + 1, 0.9), Position = Vector3.new(sx * hx, (ridgeY + 1) / 2, 0), Color = Color3.fromRGB(70, 55, 40), Material = Enum.Material.Wood }, model)
+	end
+	-- мешки с песком у входов
+	for _, p in { Vector3.new(-6, 0, hz + 2.5), Vector3.new(6, 0, hz + 2.5), Vector3.new(-6, 0, -hz - 2.5), Vector3.new(6, 0, -hz - 2.5), Vector3.new(hx + 2.5, 0, -6), Vector3.new(hx + 2.5, 0, 6), Vector3.new(-hx - 2.5, 0, -6), Vector3.new(-hx - 2.5, 0, 6) } do
+		BuildKit.box(model, "Sandbags", Vector3.new(3, 1.6, 2), p, Color3.fromRGB(150, 135, 100), Enum.Material.Fabric)
+	end
 
 	local wallBuys: { { weaponId: string, prompt: ProximityPrompt } } = {}
 	local spots = {
@@ -328,7 +369,7 @@ function BuildKit.dumpster(parent: Instance, x: number, z: number)
 	BuildKit.box(parent, "Dumpster", Vector3.new(6, 4, 3), Vector3.new(x, 0, z), Color3.fromRGB(50, 85, 60), Enum.Material.Metal)
 end
 
-function BuildKit.lamppost(parent: Instance, x: number, z: number)
+function BuildKit.lamppost(parent: Instance, x: number, z: number, withLight: boolean?)
 	BuildKit.box(parent, "Pole", Vector3.new(0.7, 14, 0.7), Vector3.new(x, 0, z), Color3.fromRGB(40, 40, 45), Enum.Material.Metal)
 	local head = BuildKit.part({
 		Name = "LampHead",
@@ -338,7 +379,46 @@ function BuildKit.lamppost(parent: Instance, x: number, z: number)
 		Color = Color3.fromRGB(255, 225, 170),
 		CanCollide = false,
 	}, parent)
-	pointLight(head, 30, 1, Color3.fromRGB(255, 215, 160))
+	if withLight ~= false then
+		pointLight(head, 30, 1, Color3.fromRGB(255, 215, 160))
+	end
+end
+
+-- Фасад небоскрёба: оконные ленты по этажам, колонны-рёбра и редкие светящиеся окна. Всё без коллизий —
+-- настоящий объём даёт сплошной «корпус» башни. faces — какие грани одевать (по умолчанию все четыре).
+local FLOOR_H = 4.2
+local FACES = { Vector3.new(0, 0, -1), Vector3.new(0, 0, 1), Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0) }
+function BuildKit.facade(parent: Instance, center: Vector3, sx: number, sz: number, y0: number, h: number, rng: Random, faces: { Vector3 }?)
+	local floors = math.max(1, math.floor(h / FLOOR_H))
+	local glass = Color3.fromRGB(28, 36, 48)
+	local rib = Color3.fromRGB(70, 70, 72)
+	for _, n in faces or FACES do
+		local alongX = n.Z ~= 0
+		local len = if alongX then sx else sz
+		local half = if alongX then sz / 2 else sx / 2
+		local origin = Vector3.new(center.X, 0, center.Z) + n * half
+		local along = if alongX then Vector3.new(1, 0, 0) else Vector3.new(0, 0, 1)
+		local function deco(name: string, size: Vector3, pos: Vector3, color: Color3, material: Enum.Material)
+			BuildKit.part({ Name = name, Size = size, Position = pos, Color = color, Material = material, CanCollide = false, CanQuery = false, CanTouch = false }, parent)
+		end
+		for f = 1, floors do
+			local y = y0 + (f - 0.5) * FLOOR_H
+			local size = if alongX then Vector3.new(len - 2, 2.2, 0.3) else Vector3.new(0.3, 2.2, len - 2)
+			deco("Windows", size, origin + n * 0.15 + Vector3.new(0, y, 0), glass, Enum.Material.Glass)
+		end
+		local ribs = math.max(1, math.floor(len / 8))
+		for i = 0, ribs do
+			local t = -len / 2 + 0.7 + (len - 1.4) * i / ribs
+			local size = if alongX then Vector3.new(1.4, floors * FLOOR_H, 0.9) else Vector3.new(0.9, floors * FLOOR_H, 1.4)
+			deco("Rib", size, origin + along * t + n * 0.3 + Vector3.new(0, y0 + floors * FLOOR_H / 2, 0), rib, Enum.Material.Concrete)
+		end
+		for _ = 1, math.max(2, math.floor(floors / 2)) do
+			local f = rng:NextInteger(1, floors)
+			local t = rng:NextNumber(-len / 2 + 4, len / 2 - 4)
+			local size = if alongX then Vector3.new(3.4, 1.8, 0.2) else Vector3.new(0.2, 1.8, 3.4)
+			deco("Lit", size, origin + along * t + n * 0.3 + Vector3.new(0, y0 + (f - 0.5) * FLOOR_H, 0), Color3.fromRGB(255, 214, 140), Enum.Material.Neon)
+		end
+	end
 end
 
 -- Вывеска здания на столбе: название и прогресс «скидывания» монет + подсказка «Вложить».

@@ -38,6 +38,12 @@ type Zombie = {
 	pathBusy: boolean,
 	pathFailed: boolean, -- последний расчёт пути не нашёл маршрут (цель за баррикадой)
 	staggerUntil: number, -- до этого момента зомби «вздрогнул» от попадания и стоит
+	windupUntil: number, -- 0 — не замахивается; иначе момент удара (замах: стоит, руки подняты, глаза светлеют)
+	windupTarget: Player?,
+	armL: Weld,
+	armR: Weld,
+	armRest: { CFrame }, -- положение рук в покое: левая, правая
+	eyes: { BasePart },
 }
 
 local map: Types.MapInfo
@@ -93,8 +99,18 @@ local function buildModel(def: Config.ZombieDef): Model
 	local armR = mk("RightArm", Vector3.new(0.8, 0.8, 2), Vector3.new(1.3, 0.6, -0.9), def.color)
 	local legL = mk("LeftLeg", Vector3.new(0.9, 2, 0.9), Vector3.new(-0.5, -2, 0), Color3.fromRGB(60, 55, 70))
 	local legR = mk("RightLeg", Vector3.new(0.9, 2, 0.9), Vector3.new(0.5, -2, 0), Color3.fromRGB(60, 55, 70))
-	for _, p in { torso, head, armL, armR, legL, legR } do
+	for _, p in { torso, head, legL, legR } do
 		weld(root, p)
+	end
+	-- руки на Weld (а не WeldConstraint): сервер двигает C0 при замахе и ударе, и это видно всем
+	for _, pair in { { armL, "ArmL" }, { armR, "ArmR" } } do
+		local arm = pair[1] :: Part
+		local w = Instance.new("Weld")
+		w.Name = pair[2] :: string
+		w.Part0 = root
+		w.Part1 = arm
+		w.C0 = root.CFrame:ToObjectSpace(arm.CFrame)
+		w.Parent = root
 	end
 	-- светящиеся глаза
 	for _, x in { -0.25, 0.25 } do
@@ -132,6 +148,15 @@ local function acquire(typeId: string): Zombie
 	end
 	local def = Config.Zombies[typeId]
 	local model = buildModel(def)
+	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
+	local armL = root:FindFirstChild("ArmL") :: Weld
+	local armR = root:FindFirstChild("ArmR") :: Weld
+	local eyes: { BasePart } = {}
+	for _, d in model:GetChildren() do
+		if d.Name == "Eye" and d:IsA("BasePart") then
+			table.insert(eyes, d)
+		end
+	end
 	return {
 		model = model,
 		humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid,
@@ -154,6 +179,12 @@ local function acquire(typeId: string): Zombie
 		pathBusy = false,
 		pathFailed = false,
 		staggerUntil = 0,
+		windupUntil = 0,
+		windupTarget = nil,
+		armL = armL,
+		armR = armR,
+		armRest = { armL.C0, armR.C0 },
+		eyes = eyes,
 	}
 end
 
@@ -220,6 +251,74 @@ local function goTo(z: Zombie, goal: Vector3, now: number)
 	z.humanoid:MoveTo(goal)
 end
 
+-- Атака: замах (стоит с поднятыми руками, глаза светлеют) → удар. За время замаха можно отойти за радиус удара
+-- или перекатиться (кувырок неуязвим): тогда удар «в пустоту». Между ударами — длинная пауза attackCooldown.
+local EYE_NORMAL = Color3.fromRGB(255, 60, 40)
+local EYE_ALERT = Color3.fromRGB(255, 240, 160)
+
+-- raise: 0 — руки в покое, 1 — подняты над головой, -0.4 — удар вниз-вперёд
+local function armPose(z: Zombie, raise: number, time: number)
+	local s = z.def.scale
+	for i, w in { z.armL, z.armR } do
+		local sx = if i == 1 then -1.3 else 1.3
+		local target = if raise == 0
+			then z.armRest[i]
+			else CFrame.new(sx * s, 0.6 * s, 0) * CFrame.Angles(math.rad(raise * 110), 0, 0) * CFrame.new(0, 0, -0.9 * s)
+		TweenService:Create(w, TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = target }):Play()
+	end
+end
+
+local function setEyes(z: Zombie, alert: boolean)
+	for _, eye in z.eyes do
+		eye.Color = if alert then EYE_ALERT else EYE_NORMAL
+	end
+end
+
+local function resetAttack(z: Zombie)
+	z.windupUntil = 0
+	z.windupTarget = nil
+	z.armL.C0 = z.armRest[1]
+	z.armR.C0 = z.armRest[2]
+	setEyes(z, false)
+end
+
+local function cancelWindup(z: Zombie)
+	z.windupUntil = 0
+	z.windupTarget = nil
+	armPose(z, 0, 0.2)
+	setEyes(z, false)
+end
+
+local function startWindup(z: Zombie, player: Player, now: number)
+	z.windupUntil = now + z.def.windup
+	z.windupTarget = player
+	armPose(z, 1, z.def.windup * 0.85)
+	setEyes(z, true)
+end
+
+local function finishStrike(z: Zombie, now: number)
+	local target = z.windupTarget
+	z.windupUntil = 0
+	z.windupTarget = nil
+	z.lastAttack = now + math.random() * 0.6 -- небольшой разброс, чтобы стая не била залпом в один такт
+	armPose(z, -0.4, 0.08)
+	task.delay(0.3, function()
+		if z.alive then
+			armPose(z, 0, 0.25)
+		end
+	end)
+	setEyes(z, false)
+	-- удар достаёт, только если игрок всё ещё рядом (отошёл — промах) и не в кувырке (PlayerService.damage)
+	if target and PlayerService.isUp(target) then
+		local char = target.Character
+		local r = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local reach = (3.5 * z.def.scale + 1.5) * 1.25
+		if r and (r.Position - z.root.Position).Magnitude <= reach then
+			PlayerService.damage(target, z.def.damage)
+		end
+	end
+end
+
 local function release(z: Zombie)
 	z.alive = false
 	active[z.model] = nil
@@ -247,6 +346,7 @@ local function spawnOne(typeId: string)
 	z.pathBusy = false
 	z.pathFailed = false
 	z.lastAttack = 0
+	resetAttack(z)
 	z.stuckTime = 0
 	z.lastPos = spawnPos
 	z.alive = true
@@ -280,9 +380,21 @@ local function think(z: Zombie, now: number, dt: number)
 	local pos = z.root.Position
 	local reach = 3.5 * z.def.scale + 1.5
 
-	-- после попадания зомби на миг замирает (чувствуется удар)
+	-- после попадания зомби на миг замирает (чувствуется удар); замах при этом срывается
 	if now < z.staggerUntil then
+		if z.windupUntil > 0 then
+			cancelWindup(z)
+		end
 		z.humanoid:MoveTo(pos)
+		return
+	end
+
+	-- замах: стоим на месте; в конце — удар
+	if z.windupUntil > 0 then
+		z.humanoid:MoveTo(pos)
+		if now >= z.windupUntil then
+			finishStrike(z, now)
+		end
 		return
 	end
 
@@ -316,7 +428,7 @@ local function think(z: Zombie, now: number, dt: number)
 			return
 		end
 		z.humanoid:MoveTo(w.outside)
-		if now - z.lastAttack >= z.def.attackCooldown then
+		if now - z.lastAttack >= z.def.breakCooldown then
 			z.lastAttack = now
 			BarricadeService.damage(w, z.def.planksPerHit)
 		end
@@ -356,8 +468,7 @@ local function think(z: Zombie, now: number, dt: number)
 		end
 		goTo(z, targetRoot.Position, now)
 		if dist <= reach and now - z.lastAttack >= z.def.attackCooldown then
-			z.lastAttack = now
-			PlayerService.damage(player, z.def.damage)
+			startWindup(z, player, now)
 		end
 	end
 end
