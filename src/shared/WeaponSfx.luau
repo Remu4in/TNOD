@@ -12,8 +12,32 @@ local WeaponSfx = {}
 
 local lastClick = 0
 
+-- Постоянные «образцы» звуков: пока объект с этим SoundId жив, клип остаётся загруженным в память. Раньше каждый звук
+-- создавался с нуля, а предзагрузка тут же удалялась, и первый выстрел после паузы терялся: клип успевал выгрузиться
+-- и догружался уже после нажатия. Теперь звук — клон загруженного образца и играет сразу.
+local templates: { [string]: Sound } = {}
+
+local function template(id: string): Sound
+	local t = templates[id]
+	if not t then
+		t = Instance.new("Sound")
+		t.SoundId = id
+		t.Volume = 0
+		t.Name = "SfxTemplate"
+		t.Parent = SoundService
+		templates[id] = t
+		task.spawn(function()
+			pcall(function()
+				ContentProvider:PreloadAsync({ t })
+			end)
+		end)
+	end
+	return t
+end
+
 local function emit(id: string, volume: number, pitch: number, position: Vector3?, trim: number?)
-	local sound = Instance.new("Sound")
+	local sound = template(id):Clone()
+	sound.Name = "Sfx"
 	sound.SoundId = id
 	sound.Volume = volume
 	sound.PlaybackSpeed = pitch
@@ -89,9 +113,7 @@ function WeaponSfx.preload()
 	-- временные объекты нужного типа: строки без типа ContentProvider считает картинками и ругается в консоль
 	local list: { Instance } = {}
 	for _, id in Config.Sounds do
-		local s = Instance.new("Sound")
-		s.SoundId = id
-		table.insert(list, s)
+		template(id) -- образцы звуков остаются жить (см. выше), их не удаляем
 	end
 	for _, parts in Config.WeaponVisuals do
 		for _, vp in parts do

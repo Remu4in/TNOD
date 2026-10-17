@@ -403,13 +403,13 @@ Config.WeaponFx = WeaponFx
 -- Прицеливание, отдача, разброс и реакция зомби на попадание (см. Shared/Ballistics). Значения — стартовые, под плейтест.
 -- Отдача: pitch — градусов вверх за выстрел, yaw — размах зигзага; к 12-му выстрелу очереди растёт на recoilGrow.
 local WeaponAim: { [string]: Ballistics.Aim } = {
-	Pistol = { adsFov = 60, adsSpreadMul = 0.3, recoilPitch = 1.0, recoilYaw = 0.15, recoilGrow = 0, resetTime = 0.45, bloom = 0.15, bloomMax = 0.9, push = 5, stagger = 0.14 },
-	SMG = { adsFov = 58, adsSpreadMul = 0.35, recoilPitch = 0.55, recoilYaw = 0.22, recoilGrow = 0.6, resetTime = 0.25, bloom = 0.12, bloomMax = 1.6, push = 3, stagger = 0.05 },
-	Shotgun = { adsFov = 62, adsSpreadMul = 0.55, recoilPitch = 4.5, recoilYaw = 0.3, recoilGrow = 0, resetTime = 0.6, bloom = 0, bloomMax = 0, push = 18, stagger = 0.35 },
-	Rifle = { adsFov = 52, adsSpreadMul = 0.25, recoilPitch = 0.8, recoilYaw = 0.25, recoilGrow = 0.5, resetTime = 0.3, bloom = 0.1, bloomMax = 1.2, push = 6, stagger = 0.15 },
-	Revolver = { adsFov = 58, adsSpreadMul = 0.25, recoilPitch = 3.2, recoilYaw = 0.2, recoilGrow = 0, resetTime = 0.6, bloom = 0, bloomMax = 0, push = 12, stagger = 0.25 },
-	LMG = { adsFov = 56, adsSpreadMul = 0.4, recoilPitch = 0.6, recoilYaw = 0.4, recoilGrow = 0.8, resetTime = 0.3, bloom = 0.15, bloomMax = 2.4, push = 4, stagger = 0.04 },
-	Sniper = { adsFov = 20, adsSpreadMul = 0.05, recoilPitch = 5, recoilYaw = 0.1, recoilGrow = 0, resetTime = 0.8, bloom = 0, bloomMax = 0, push = 22, stagger = 0.45 },
+	Pistol = { adsFov = 45, adsSpreadMul = 0.3, recoilPitch = 1.0, recoilYaw = 0.15, recoilGrow = 0, resetTime = 0.45, bloom = 0.15, bloomMax = 0.9, push = 5, stagger = 0.14 },
+	SMG = { adsFov = 42, adsSpreadMul = 0.35, recoilPitch = 0.55, recoilYaw = 0.22, recoilGrow = 0.6, resetTime = 0.25, bloom = 0.12, bloomMax = 1.6, push = 3, stagger = 0.05 },
+	Shotgun = { adsFov = 48, adsSpreadMul = 0.55, recoilPitch = 4.5, recoilYaw = 0.3, recoilGrow = 0, resetTime = 0.6, bloom = 0, bloomMax = 0, push = 18, stagger = 0.35 },
+	Rifle = { adsFov = 35, adsSpreadMul = 0.25, recoilPitch = 0.8, recoilYaw = 0.25, recoilGrow = 0.5, resetTime = 0.3, bloom = 0.1, bloomMax = 1.2, push = 6, stagger = 0.15 },
+	Revolver = { adsFov = 42, adsSpreadMul = 0.25, recoilPitch = 3.2, recoilYaw = 0.2, recoilGrow = 0, resetTime = 0.6, bloom = 0, bloomMax = 0, push = 12, stagger = 0.25 },
+	LMG = { adsFov = 40, adsSpreadMul = 0.4, recoilPitch = 0.6, recoilYaw = 0.4, recoilGrow = 0.8, resetTime = 0.3, bloom = 0.15, bloomMax = 2.4, push = 4, stagger = 0.04 },
+	Sniper = { adsFov = 12, adsSpreadMul = 0.05, recoilPitch = 5, recoilYaw = 0.1, recoilGrow = 0, resetTime = 0.8, bloom = 0, bloomMax = 0, push = 22, stagger = 0.45 },
 }
 Config.WeaponAim = WeaponAim
 

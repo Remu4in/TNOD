@@ -76,6 +76,7 @@ function HUDController.start()
 		local m = mark(Vector2.new(2, 9), if d.X * d.Y > 0 then -45 else 45)
 		m.Position = UDim2.new(0.5, d.X * 11, 0.5, d.Y * 11)
 		m.BackgroundTransparency = 1
+		m.Visible = false -- иначе обводка (UIStroke) остаётся видимой и выглядит как второй прицел
 		table.insert(hitMarks, m)
 	end
 	local hitToken = 0
@@ -85,6 +86,7 @@ function HUDController.start()
 		hitToken += 1
 		local token = hitToken
 		for _, m in hitMarks do
+			m.Visible = true
 			m.BackgroundColor3 = color
 			m.BackgroundTransparency = 0
 			m.Size = UDim2.fromOffset(if kind == "head" then 3 else 2, if kind == "head" then 12 else 9)
@@ -94,6 +96,7 @@ function HUDController.start()
 			if token == hitToken then
 				for _, m in hitMarks do
 					m.BackgroundTransparency = 1
+					m.Visible = false
 				end
 			end
 		end)
