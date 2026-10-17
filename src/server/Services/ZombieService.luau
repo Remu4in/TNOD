@@ -43,6 +43,8 @@ type Zombie = {
 	welds: { [string]: Weld }, -- детали тела на Weld: сервер двигает C0 при замахе, ударе и реакции на попадание
 	rest: { [string]: CFrame }, -- их положение в покое
 	slowUntil: number, -- до этого момента зомби хромает (попали в ногу)
+	vaultResetAt: number, -- не раньше этого момента зомби снова может перелезать забор
+	vaultLockUntil: number, -- до этого момента зомби в прыжке через забор и не думает
 	headKill: boolean, -- убит выстрелом в голову (бонус очков и монет в RoundService)
 	eyes: { BasePart },
 }
@@ -120,6 +122,7 @@ local function buildModel(def: Config.ZombieDef): Model
 	local humanoid = Instance.new("Humanoid")
 	humanoid.HipHeight = 3 * s - 1 * s
 	humanoid.WalkSpeed = def.speed
+	humanoid.JumpHeight = 3 -- перепрыгивают бордюры и ящики, но не заборы переулков (4,4)
 	humanoid.RigType = Enum.HumanoidRigType.R15 -- высота по HipHeight, без суставов ног
 	humanoid.MaxHealth = 1e6 -- HP зомби считаем сами
 	humanoid.Health = 1e6
@@ -187,6 +190,8 @@ local function acquire(typeId: string): Zombie
 		welds = welds,
 		rest = rest,
 		slowUntil = 0,
+		vaultResetAt = 0,
+		vaultLockUntil = 0,
 		headKill = false,
 		eyes = eyes,
 	}
@@ -204,7 +209,7 @@ local function requestPath(z: Zombie, goal: Vector3, now: number)
 		local path = PathfindingService:CreatePath({
 			AgentRadius = math.max(2, 1.5 * scale),
 			AgentHeight = 5,
-			AgentCanJump = true,
+			AgentCanJump = false, -- зомби не прыгают через заборы переулков (высота 4,4 > их прыжок 3)
 			WaypointSpacing = 8,
 		})
 		local ok = pcall(function()
@@ -285,6 +290,9 @@ local function resetAttack(z: Zombie)
 		w.C0 = z.rest[name]
 	end
 	z.slowUntil = 0
+	z.vaultResetAt = 0
+	z.vaultLockUntil = 0
+	z.root.Anchored = false
 	z.headKill = false
 	setEyes(z, false)
 end
@@ -475,6 +483,40 @@ local function think(z: Zombie, now: number, dt: number)
 		return
 	end
 
+	-- перелезание забора: заборы переулков (4,4) выше обычного прыжка зомби (3), поэтому упёршись в забор, зомби
+	-- через секунду делает усиленный прыжок. Игроку это даёт 1–2 с форы; стенки (5,6) и балки зомби не берут.
+	-- Зомби собраны из блоков, Humanoid.Jump у них не срабатывает, а скорость корня гасит сам Humanoid. Поэтому
+	-- перелезание — короткая дуга над забором: корень на 0,7 с закрепляется и летит по твину, потом отпускается.
+	if now < z.vaultLockUntil then
+		return
+	end
+	if z.stuckTime > 1 and now >= z.vaultResetAt then
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { container }
+		local look = z.root.CFrame.LookVector
+		local hit = workspace:Raycast(pos + Vector3.new(0, 1, 0), look * 4, params)
+		if hit and string.sub(hit.Instance.Name, 1, 5) == "Fence" then
+			local start = z.root.CFrame
+			local base = Vector3.new(hit.Position.X, pos.Y, hit.Position.Z)
+			local apex = CFrame.new(base + Vector3.new(0, 3.8, 0)) * start.Rotation
+			local landing = CFrame.new(base + look * 3.4) * start.Rotation
+			z.vaultLockUntil = now + 0.8
+			z.vaultResetAt = now + 2.2 -- пауза до следующего перелезания
+			z.stuckTime = 0
+			z.root.Anchored = true
+			local up = TweenService:Create(z.root, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = apex })
+			up.Completed:Once(function()
+				local down = TweenService:Create(z.root, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { CFrame = landing })
+				down.Completed:Once(function()
+					z.root.Anchored = false
+				end)
+				down:Play()
+			end)
+			up:Play()
+			return
+		end
+	end
 	-- застревание: долго почти не двигаемся — прыгаем
 	if (pos - z.lastPos).Magnitude < 0.3 and z.state ~= "Breaking" then
 		z.stuckTime += dt

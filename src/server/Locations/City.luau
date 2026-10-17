@@ -289,9 +289,231 @@ function City.build(): Types.MapInfo
 		return {}
 	end)
 
+	-- Переулки ---------------------------------------------------------------------------------------------------
+	-- Шесть кварталов разрезаны коридором шириной 8: прямой (СЮ и ЗВ), Г-образный, S-образный и Т-образный. Внутри —
+	-- препятствия: заборы и стенки для паркура (прыжок), балки, под которые можно только подкатиться, ящики-ступени.
+	-- Зомби не прыгают выше 3 студов и не пролезают под балкой (высота 5,4 > просвет 3), поэтому переулки — путь, на котором
+	-- игрок выигрывает движением: перепрыгнул забор или подкатился под балку — стая обходит улицами.
+	-- Координаты внутри квартала локальные: x — восток, z — юг, начало в центре, квартал ±30.
+	local ALLEY_W = 8
+	local V3 = Vector3.new
+	local ALLEYS = {
+		{ id = "P1", name = "Паркур-1", bx = -150, bz = -150, shape = "NS" },
+		{ id = "S1", name = "Подкат-1", bx = -50, bz = -150, shape = "EW" },
+		{ id = "S2", name = "Подкат-2", bx = 50, bz = -50, shape = "L" },
+		{ id = "P2", name = "Паркур-2", bx = 50, bz = 150, shape = "Z" },
+		{ id = "M1", name = "Смешанный-Т", bx = -150, bz = 150, shape = "T" },
+		{ id = "M2", name = "Смешанный-2", bx = 150, bz = 150, shape = "NS" },
+	}
+
+	-- прямоугольники коридора {x0, x1, z0, z1}
+	local function corridorRects(shape: string): { { number } }
+		if shape == "NS" then
+			return { { -4, 4, -30, 30 } }
+		elseif shape == "EW" then
+			return { { -30, 30, -4, 4 } }
+		elseif shape == "L" then
+			return { { -4, 4, -30, 4 }, { -4, 30, -4, 4 } }
+		elseif shape == "Z" then
+			return { { -14, -6, -30, -4 }, { -14, 14, -8, 0 }, { 6, 14, -4, 30 } }
+		end
+		return { { -4, 4, -30, 30 }, { 4, 30, 8, 16 } } -- T
+	end
+
+	local function inRects(rects: { { number } }, x: number, z: number): boolean
+		for _, r in rects do
+			if x > r[1] and x < r[2] and z > r[3] and z < r[4] then
+				return true
+			end
+		end
+		return false
+	end
+
+	-- Остаток квартала за вычетом коридора: сетка по границам коридора, склейка ячеек в ряд и по вертикали
+	local function solidRects(rects: { { number } }): { { number } }
+		local xs, zs = { -30, 30 }, { -30, 30 }
+		for _, r in rects do
+			table.insert(xs, r[1])
+			table.insert(xs, r[2])
+			table.insert(zs, r[3])
+			table.insert(zs, r[4])
+		end
+		local function uniq(list: { number }): { number }
+			table.sort(list)
+			local out: { number } = {}
+			for _, v in list do
+				if #out == 0 or v ~= out[#out] then
+					table.insert(out, v)
+				end
+			end
+			return out
+		end
+		xs, zs = uniq(xs), uniq(zs)
+		local rows: { { number } } = {}
+		for j = 1, #zs - 1 do
+			local runStart: number? = nil
+			for i = 1, #xs - 1 do
+				local solid = not inRects(rects, (xs[i] + xs[i + 1]) / 2, (zs[j] + zs[j + 1]) / 2)
+				if solid and not runStart then
+					runStart = i
+				end
+				if runStart and (not solid or i == #xs - 1) then
+					local last = if solid then i else i - 1
+					table.insert(rows, { xs[runStart], xs[last + 1], zs[j], zs[j + 1] })
+					runStart = nil
+				end
+			end
+		end
+		table.sort(rows, function(a, b)
+			if a[1] ~= b[1] then
+				return a[1] < b[1]
+			elseif a[2] ~= b[2] then
+				return a[2] < b[2]
+			end
+			return a[3] < b[3]
+		end)
+		local merged: { { number } } = {}
+		for _, r in rows do
+			local prev = merged[#merged]
+			if prev and prev[1] == r[1] and prev[2] == r[2] and prev[4] == r[3] then
+				prev[4] = r[4]
+			else
+				table.insert(merged, { r[1], r[2], r[3], r[4] })
+			end
+		end
+		return merged
+	end
+
+	-- препятствия -----------------------------------------------------------------------------------------------
+	-- alongX = true: препятствие тянется вдоль оси X (коридор идёт с севера на юг); false — вдоль оси Z
+	local function fence(c: Vector3, alongX: boolean)
+		local h, w = 4.4, ALLEY_W + 0.4
+		P({ Name = "Fence", Size = if alongX then V3(w, h, 0.3) else V3(0.3, h, w), Position = c + V3(0, h / 2, 0), Color = Color3.fromRGB(130, 135, 140), Material = Enum.Material.Metal, Transparency = 0.4 }, root)
+		P({ Name = "FenceRail", Size = if alongX then V3(w, 0.4, 0.7) else V3(0.7, 0.4, w), Position = c + V3(0, h, 0), Color = Color3.fromRGB(60, 62, 66), Material = Enum.Material.Metal }, root)
+		for _, s in { -1, 1 } do
+			local off = if alongX then V3(s * (w / 2 - 0.25), 0, 0) else V3(0, 0, s * (w / 2 - 0.25))
+			P({ Name = "FencePost", Size = V3(0.5, h + 0.4, 0.5), Position = c + off + V3(0, (h + 0.4) / 2, 0), Color = Color3.fromRGB(60, 62, 66), Material = Enum.Material.Metal }, root)
+		end
+	end
+
+	local function lowWall(c: Vector3, alongX: boolean)
+		local h, w = 5.6, ALLEY_W + 0.4
+		P({ Name = "LowWall", Size = if alongX then V3(w, h, 1) else V3(1, h, w), Position = c + V3(0, h / 2, 0), Color = Color3.fromRGB(105, 100, 95), Material = Enum.Material.Brick }, root)
+	end
+
+	local function crate(c: Vector3, size: Vector3?)
+		local s = size or V3(3, 3.2, 3)
+		P({ Name = "Crate", Size = s, Position = c + V3(0, s.Y / 2, 0), Color = Color3.fromRGB(150, 112, 62), Material = Enum.Material.Wood }, root)
+	end
+
+	-- Балка-перемычка между домами: просвет под ней 3 студа — стоя не пройти, подкатом можно
+	local function slideBeam(c: Vector3, alongX: boolean)
+		local gap, thick, w = 3, 2, ALLEY_W + 0.4
+		P({ Name = "SlideBeam", Size = if alongX then V3(w, 12, thick) else V3(thick, 12, w), Position = c + V3(0, gap + 6, 0), Color = Color3.fromRGB(72, 74, 80), Material = Enum.Material.Concrete }, root)
+		local axis = if alongX then V3(1, 0, 0) else V3(0, 0, 1)
+		for i = 0, 3 do
+			local seg = w / 4
+			local size = if alongX then V3(seg, 0.8, thick + 0.2) else V3(thick + 0.2, 0.8, seg)
+			P({ Name = "Hazard", Size = size, Position = c + axis * ((i - 1.5) * seg) + V3(0, gap + 0.4, 0), Color = if i % 2 == 0 then Color3.fromRGB(235, 190, 30) else Color3.fromRGB(30, 30, 30), CanCollide = false, CanQuery = false }, root)
+		end
+		-- подсказки на земле с обеих сторон
+		for _, s in { -1, 1 } do
+			local hint = P({ Name = "FloorHint", Size = V3(7, 0.1, 7), Position = c + (if alongX then V3(0, 0.4, s * 7) else V3(s * 7, 0.4, 0)), Transparency = 1, CanCollide = false, CanQuery = false }, root)
+			-- надпись должна читаться по ходу движения к балке (проверено: при повороте 0 верх текста смотрит на -X)
+			local yaw = if alongX then (if s < 0 then 90 else -90) else (if s < 0 then 180 else 0)
+			hint.CFrame = CFrame.new(hint.Position) * CFrame.Angles(0, math.rad(yaw), 0)
+			local gui = Instance.new("SurfaceGui")
+			gui.Face = Enum.NormalId.Top
+			gui.CanvasSize = Vector2.new(280, 280)
+			gui.Parent = hint
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.fromScale(1, 1)
+			label.BackgroundTransparency = 1
+			label.Font = Enum.Font.GothamBlack
+			label.TextScaled = true
+			label.TextColor3 = Color3.fromRGB(240, 200, 40)
+			label.TextTransparency = 0.15
+			label.Text = "ПОДКАТ\n▼▼"
+			label.Parent = gui
+		end
+	end
+
+	-- Содержимое переулков (локальные координаты → мир через at)
+	local function furnishAlley(id: string, at: (number, number) -> Vector3)
+		if id == "P1" then
+			fence(at(0, -18), true)
+			crate(at(-1.5, -4))
+			lowWall(at(0, -0.5), true)
+			crate(at(2.5, 6), V3(3, 3, 3))
+			fence(at(0, 20), true)
+			BuildKit.lamppost(root, at(3.2, -26).X, at(3.2, -26).Z)
+		elseif id == "S1" then
+			slideBeam(at(0, 0), false)
+			BuildKit.dumpster(root, at(14, -2.6).X, at(14, -2.6).Z)
+			BuildKit.lamppost(root, at(-22, 3.2).X, at(-22, 3.2).Z)
+		elseif id == "S2" then
+			slideBeam(at(0, -16), true)
+			fence(at(18, 0), false)
+			crate(at(2.2, 1.6))
+			BuildKit.lamppost(root, at(24, 3.2).X, at(24, 3.2).Z)
+		elseif id == "P2" then
+			fence(at(-10, -20), true)
+			crate(at(-3.6, -2.6))
+			lowWall(at(0, -4), false)
+			fence(at(10, 18), true)
+			BuildKit.lamppost(root, at(13, 26).X, at(13, 26).Z)
+		elseif id == "M1" then
+			slideBeam(at(0, -14), true)
+			fence(at(16, 12), false)
+			crate(at(21.5, 10.5))
+			crate(at(25, 12), V3(3, 5.2, 3))
+			BuildKit.lamppost(root, at(3.2, 20).X, at(3.2, 20).Z)
+		elseif id == "M2" then
+			slideBeam(at(0, -8), true)
+			fence(at(0, 14), true)
+			crate(at(-2.4, 24))
+			crate(at(2.4, -22))
+			BuildKit.lamppost(root, at(3.2, 4).X, at(3.2, 4).Z)
+		end
+	end
+
+	local function alleyBlock(def: { id: string, name: string, bx: number, bz: number, shape: string })
+		local bx, bz = def.bx, def.bz
+		local rects = corridorRects(def.shape)
+		for _, r in rects do
+			P({ Name = "AlleyFloor", Size = V3(r[2] - r[1], 0.06, r[4] - r[3]), Position = V3(bx + (r[1] + r[2]) / 2, 0.33, bz + (r[3] + r[4]) / 2), Color = Color3.fromRGB(58, 60, 62), Material = Enum.Material.Asphalt, CanCollide = false, CanQuery = false }, root)
+		end
+		for _, s in solidRects(rects) do
+			local sx, sz = s[2] - s[1], s[4] - s[3]
+			if sx >= 2 and sz >= 2 then
+				local mx, mz = (s[1] + s[2]) / 2, (s[3] + s[4]) / 2
+				-- фасад только там, где грань видна: на улицу или в коридор
+				local faces: { Vector3 } = {}
+				for _, n in { V3(0, 0, -1), V3(0, 0, 1), V3(1, 0, 0), V3(-1, 0, 0) } do
+					local px, pz = mx + n.X * (sx / 2 + 1), mz + n.Z * (sz / 2 + 1)
+					if math.abs(px) > 30 or math.abs(pz) > 30 or inRects(rects, px, pz) then
+						table.insert(faces, n)
+					end
+				end
+				local floors = if rng:NextNumber() < 0.2 then rng:NextInteger(8, 12) else rng:NextInteger(14, 20)
+				mass(V3(bx + mx, 0, bz + mz), sx, sz, 0, floors * FLOOR_H, pick(), faces)
+			end
+		end
+		furnishAlley(def.id, function(x: number, z: number): Vector3
+			return V3(bx + x, 0, bz + z)
+		end)
+	end
+
+	for _, def in ALLEYS do
+		alleyBlock(def)
+	end
+
 	-- остальные кварталы — обычные башни
 	local taken: { [string]: boolean } = {}
 	for _, def in ROOMS do
+		taken[def.bx .. "," .. def.bz] = true
+	end
+	for _, def in ALLEYS do
 		taken[def.bx .. "," .. def.bz] = true
 	end
 	for _, bx in centers do
