@@ -441,7 +441,110 @@ local Zombies: { [string]: ZombieDef } = {
 
 Config.Zombies = Zombies
 
-Config.Waves = {
+-- Внешний вид зомби (2026-10-17, v2): готовые модели R15 из Creator Store, собранные из мешей тела (см. assets_ledger).
+-- Позиции — в системе корня (начало — таз, лицо смотрит в -Z). height — рост, pelvis — высота таза над стопами.
+-- Каждая «часть» (Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg) — основной меш на сварке W_<Часть> (поворачивается
+-- при замахе и реакции на попадание) + extra — остальные меши R15 (предплечье, кисть, голень, стопа, таз), приваренные к основному.
+-- pivot — точка вращения (шея, плечо, бедро); hitSize/hitPos — невидимый хитбокс части (в системе корня).
+-- id мешей и текстур записаны без префикса rbxassetid:// (его добавляет нормализация ниже); color/material — если отличаются от стандартных.
+export type ZombieVisualExtra = { mesh: string, texture: string, size: Vector3, pos: Vector3, color: Color3?, material: string? }
+export type ZombieVisualPart = {
+	part: string, mesh: string, texture: string, size: Vector3, pos: Vector3, pivot: Vector3,
+	hitSize: Vector3, hitPos: Vector3, color: Color3?, material: string?, extra: { ZombieVisualExtra }?,
+}
+export type ZombieVisual = { height: number, pelvis: number, parts: { ZombieVisualPart } }
+local V = Vector3.new
+local ZombieVisuals: { [string]: ZombieVisual } = {
+	Walker = { height = 5.80, pelvis = 3.41, parts = {
+		{ part = "Head", mesh = "3182202971", texture = "3182205395", size = V(0.61, 1.03, 0.79), pos = V(0.00, 1.87, -0.02), pivot = V(0.00, 1.35, -0.02), hitSize = V(0.58, 0.98, 0.75), hitPos = V(0.00, 1.87, -0.02) },
+		{ part = "Torso", mesh = "3182202967", texture = "3182206678", size = V(1.22, 1.95, 1.26), pos = V(0.01, 0.67, -0.02), pivot = V(0.00, 0.00, 0.00), hitSize = V(1.04, 2.27, 1.01), hitPos = V(0.01, 0.42, -0.02), extra = { { mesh = "3182202986", texture = "3182206678", size = V(1.14, 0.70, 1.05), pos = V(0.00, -0.36, 0.08) } } },
+		{ part = "LeftArm", mesh = "3182202958", texture = "3182205732", size = V(0.56, 1.17, 0.47), pos = V(-0.66, 0.85, 0.20), pivot = V(-0.66, 1.43, 0.20), hitSize = V(0.65, 2.17, 0.61), hitPos = V(-0.77, 0.15, 0.08), extra = { { mesh = "3182202957", texture = "3182205732", size = V(0.41, 0.89, 0.45), pos = V(-0.92, -0.05, 0.14) }, { mesh = "3182202965", texture = "3182205732", size = V(0.33, 0.74, 0.46), pos = V(-0.98, -0.75, -0.05) } } },
+		{ part = "RightArm", mesh = "3182202959", texture = "3182206211", size = V(0.52, 1.21, 0.46), pos = V(0.71, 0.61, 0.20), pivot = V(0.71, 1.21, 0.20), hitSize = V(0.64, 2.20, 0.61), hitPos = V(0.82, -0.08, 0.08), extra = { { mesh = "3182202960", texture = "3182206211", size = V(0.46, 0.98, 0.49), pos = V(0.95, -0.28, 0.14) }, { mesh = "3182202962", texture = "3182206211", size = V(0.35, 0.80, 0.48), pos = V(1.02, -0.98, -0.04) } } },
+		{ part = "LeftLeg", mesh = "3182202972", texture = "3182205952", size = V(0.73, 1.41, 0.73), pos = V(-0.42, -1.07, 0.04), pivot = V(-0.42, -0.36, 0.04), hitSize = V(0.62, 2.59, 0.87), hitPos = V(-0.42, -1.89, -0.11), extra = { { mesh = "3182202970", texture = "3182205952", size = V(0.47, 1.66, 0.53), pos = V(-0.51, -2.27, 0.08) }, { mesh = "3182202969", texture = "3182205952", size = V(0.54, 0.49, 0.84), pos = V(-0.49, -3.17, -0.20) } } },
+		{ part = "RightLeg", mesh = "3182202980", texture = "3182206464", size = V(0.73, 1.42, 0.73), pos = V(0.42, -1.07, 0.04), pivot = V(0.42, -0.36, 0.04), hitSize = V(0.62, 2.58, 0.85), hitPos = V(0.42, -1.88, -0.10), extra = { { mesh = "3182202979", texture = "3182206464", size = V(0.48, 1.65, 0.39), pos = V(0.46, -2.36, -0.01) }, { mesh = "3182202982", texture = "3182206464", size = V(0.49, 0.35, 0.83), pos = V(0.45, -3.22, -0.18) } } },
+	} },
+	Runner = { height = 5.20, pelvis = 3.06, parts = {
+		{ part = "Head", mesh = "3182202971", texture = "2830889216", size = V(0.55, 0.93, 0.71), pos = V(0.00, 1.68, -0.02), pivot = V(0.00, 1.21, -0.02), hitSize = V(0.52, 0.88, 0.67), hitPos = V(0.00, 1.68, -0.02) },
+		{ part = "Torso", mesh = "3182202967", texture = "2830889216", size = V(1.10, 1.75, 1.13), pos = V(0.01, 0.60, -0.02), pivot = V(0.00, 0.00, 0.00), hitSize = V(0.93, 2.06, 0.90), hitPos = V(0.01, 0.39, -0.02), extra = { { mesh = "3182202986", texture = "3182206678", size = V(1.03, 0.63, 0.94), pos = V(0.00, -0.33, 0.08) } } },
+		{ part = "LeftArm", mesh = "3182202958", texture = "2830889216", size = V(0.50, 1.05, 0.43), pos = V(-0.59, 0.76, 0.18), pivot = V(-0.59, 1.29, 0.18), hitSize = V(0.59, 1.95, 0.54), hitPos = V(-0.69, 0.14, 0.07), extra = { { mesh = "3182202957", texture = "3182205732", size = V(0.37, 0.79, 0.40), pos = V(-0.82, -0.05, 0.13) }, { mesh = "3182202965", texture = "3182205732", size = V(0.30, 0.67, 0.42), pos = V(-0.88, -0.68, -0.04) } } },
+		{ part = "RightArm", mesh = "3182202959", texture = "2830889216", size = V(0.47, 1.09, 0.42), pos = V(0.64, 0.54, 0.18), pivot = V(0.64, 1.09, 0.18), hitSize = V(0.57, 1.98, 0.54), hitPos = V(0.74, -0.08, 0.07), extra = { { mesh = "3182202960", texture = "3182206211", size = V(0.41, 0.88, 0.44), pos = V(0.85, -0.25, 0.13) }, { mesh = "3182202962", texture = "3182206211", size = V(0.31, 0.71, 0.43), pos = V(0.92, -0.88, -0.04) } } },
+		{ part = "LeftLeg", mesh = "3182202972", texture = "2830889216", size = V(0.65, 1.26, 0.66), pos = V(-0.38, -0.95, 0.03), pivot = V(-0.38, -0.32, 0.03), hitSize = V(0.56, 2.33, 0.78), hitPos = V(-0.38, -1.69, -0.10), extra = { { mesh = "3182202970", texture = "3182205952", size = V(0.42, 1.49, 0.48), pos = V(-0.46, -2.03, 0.07) }, { mesh = "3182202969", texture = "3182205952", size = V(0.49, 0.44, 0.75), pos = V(-0.44, -2.84, -0.18) } } },
+		{ part = "RightLeg", mesh = "3182202980", texture = "2830889216", size = V(0.65, 1.27, 0.66), pos = V(0.38, -0.95, 0.03), pivot = V(0.38, -0.32, 0.03), hitSize = V(0.56, 2.32, 0.77), hitPos = V(0.38, -1.68, -0.09), extra = { { mesh = "3182202979", texture = "3182206464", size = V(0.43, 1.48, 0.35), pos = V(0.41, -2.12, -0.01) }, { mesh = "3182202982", texture = "3182206464", size = V(0.44, 0.31, 0.75), pos = V(0.41, -2.89, -0.17) } } },
+	} },
+}
+-- Громила — тот же Ходок, но крупнее и с красноватым оттенком (id ассетов ещё без префикса, как у остальных)
+local function scaledZombie(src: ZombieVisual, k: number, tint: Color3): ZombieVisual
+	local function part(p: ZombieVisualPart): ZombieVisualPart
+		local out = table.clone(p)
+		out.size, out.pos, out.pivot, out.hitSize, out.hitPos = p.size * k, p.pos * k, p.pivot * k, p.hitSize * k, p.hitPos * k
+		out.color = tint
+		if p.extra then
+			local extras = {}
+			for _, e in p.extra do
+				local ex = table.clone(e)
+				ex.size, ex.pos, ex.color = e.size * k, e.pos * k, tint
+				table.insert(extras, ex)
+			end
+			out.extra = extras
+		end
+		return out
+	end
+	local parts = {}
+	for _, p in src.parts do
+		table.insert(parts, part(p))
+	end
+	return { height = src.height * k, pelvis = src.pelvis * k, parts = parts }
+end
+ZombieVisuals.Brute = scaledZombie(ZombieVisuals.Walker, 8.6 / 5.8, Color3.fromRGB(215, 160, 150))
+
+-- id → полный адрес ассета
+
+local function assetUri(id: string): string
+	return if id == "" then "" else "rbxassetid://" .. id
+end
+for _, vis in ZombieVisuals do
+	for _, vp in vis.parts do
+		vp.mesh, vp.texture = assetUri(vp.mesh), assetUri(vp.texture)
+		for _, ex in vp.extra or {} do
+			ex.mesh, ex.texture = assetUri(ex.mesh), assetUri(ex.texture)
+		end
+	end
+end
+Config.ZombieVisuals = ZombieVisuals
+
+-- Машины: сгенерированные меши (Studio generate_mesh, 2026-10-17), модель стоит основанием на земле, перёд — в -Z.
+export type MeshProp = { id: string, mesh: string, texture: string, size: Vector3 }
+Config.CarVisuals = {
+	{ id = "sedan", mesh = "rbxassetid://129272857890305", texture = "rbxassetid://84409657774031", size = Vector3.new(5.950, 5.200, 11.020) },
+	{ id = "taxi", mesh = "rbxassetid://92599135640985", texture = "rbxassetid://85508270173744", size = Vector3.new(5.420, 5.200, 10.730) },
+	{ id = "pickup", mesh = "rbxassetid://98886210970866", texture = "rbxassetid://138402185501088", size = Vector3.new(10.560, 10.400, 19.700) }, -- ×2 по просьбе Руслана
+} :: { MeshProp }
+
+-- Целые легковые машины из Creator Store (модели без скриптов лежат в ServerStorage.CarModels, а не в src).
+-- Шаблон: корень Root (невидимая коробка-коллизия) + визуальные части без коллизии; перёд — в -Z, основание на земле.
+-- length — итоговая длина в студах (модель масштабируется целиком).
+Config.CarModels = {
+	{ id = "Prius", length = 13 },
+	{ id = "Sedan", length = 13.5 },
+	{ id = "Coupe", length = 13 },
+} :: { { id: string, length: number } }
+
+-- Реквизит помещений и улиц: сгенерированные меши (Studio generate_mesh, 2026-10-17). Основание на земле, перёд — в -Z.
+-- Размер подогнан по высоте (в студах), пропорции — как у меша.
+Config.Props = {
+	barrel = { id = "barrel", mesh = "rbxassetid://140582108961361", texture = "rbxassetid://77852703394003", size = Vector3.new(2.398, 3.600, 2.395) },
+	bunk = { id = "bunk", mesh = "rbxassetid://70482340500678", texture = "rbxassetid://78936043302699", size = Vector3.new(7.272, 6.300, 3.646) },
+	cafe_counter = { id = "cafe_counter", mesh = "rbxassetid://85528278208501", texture = "rbxassetid://97455988190072", size = Vector3.new(5.171, 4.600, 3.475) },
+	cafe_table = { id = "cafe_table", mesh = "rbxassetid://124712917529755", texture = "rbxassetid://112352464903247", size = Vector3.new(6.162, 4.400, 3.434) },
+	crates = { id = "crates", mesh = "rbxassetid://132407778378387", texture = "rbxassetid://111787660296897", size = Vector3.new(4.079, 5.000, 2.946) },
+	dumpster = { id = "dumpster", mesh = "rbxassetid://91666621374441", texture = "rbxassetid://103951974913486", size = Vector3.new(3.029, 5.000, 3.457) },
+	lamp = { id = "lamp", mesh = "rbxassetid://70651189363768", texture = "rbxassetid://126128509168015", size = Vector3.new(7.630, 17.000, 2.267) },
+	medcabinet = { id = "medcabinet", mesh = "rbxassetid://71492390288705", texture = "rbxassetid://137435795271440", size = Vector3.new(3.646, 7.000, 2.244) },
+	pharm_counter = { id = "pharm_counter", mesh = "rbxassetid://77059312536642", texture = "rbxassetid://112153749413645", size = Vector3.new(7.830, 3.600, 4.892) },
+	shelf = { id = "shelf", mesh = "rbxassetid://82671446985249", texture = "rbxassetid://92562520345154", size = Vector3.new(4.377, 7.000, 2.694) },
+	weapon_rack = { id = "weapon_rack", mesh = "rbxassetid://74726149311071", texture = "rbxassetid://89623108733746", size = Vector3.new(5.728, 5.500, 3.274) },
+	workbench = { id = "workbench", mesh = "rbxassetid://88300467054470", texture = "rbxassetid://70826351294526", size = Vector3.new(7.453, 3.400, 4.289) },
+} :: { [string]: MeshProp }Config.Waves = {
 	BaseCount = 6,
 	CountPerWave = 3,
 	PlayerCountFactor = 0.5,

@@ -229,11 +229,22 @@ function City.build(): Types.MapInfo
 
 	local V = Vector3.new
 
+	-- Реквизит из мешей (Config.Props): основание на земле, комната смотрит на улицу в сторону fx по X, перёд меша — в -Z.
+	-- Если меш не загрузился — серый блок того же размера.
+	local function prop(m: Instance, key: string, pos: Vector3, fx: number, extraYaw: number?)
+		local def = Config.Props[key]
+		local yaw = -90 * fx + (extraYaw or 0)
+		if not BuildKit.meshProp(m, key, def, CFrame.new(pos) * CFrame.Angles(0, math.rad(yaw), 0)) then
+			BuildKit.box(m, key, def.size, pos, Color3.fromRGB(110, 110, 110), Enum.Material.Metal)
+		end
+	end
+
 	roomTower("Cafe", "Кафе", ROOMS.Cafe, { point = "Cafe", wallColor = Color3.fromRGB(190, 160, 110), floorColor = Color3.fromRGB(95, 70, 50), roof = true }, function(m, at, fx)
-		BuildKit.box(m, "Counter", V(2, 3.5, 14), at(-6, -11), Color3.fromRGB(110, 70, 40), Enum.Material.Wood)
-		BuildKit.box(m, "BackShelf", V(1, 7, 14), at(-11.5, -11), Color3.fromRGB(80, 55, 35), Enum.Material.Wood)
-		for _, t in { at(3, -13), at(3, 13), at(-3, 8) } do
-			BuildKit.box(m, "Table", V(4, 2.6, 4), t, Color3.fromRGB(150, 120, 80), Enum.Material.Wood)
+		for _, z in { -17, -11.8, -6.6 } do -- стойка вдоль задней стены
+			prop(m, "cafe_counter", at(-10.5, z), fx)
+		end
+		for i, t in { at(3, -13), at(3, 13), at(-3, 8) } do
+			prop(m, "cafe_table", t, fx, if i == 2 then 90 else 0)
 		end
 		BuildKit.slot(m, at(9, -17), "Turret")
 		BuildKit.slot(m, at(-9, 17), "Trap")
@@ -241,31 +252,35 @@ function City.build(): Types.MapInfo
 	end)
 
 	roomTower("Pharmacy", "Медпункт", ROOMS.Pharmacy, { point = "Pharmacy", wallColor = Color3.fromRGB(205, 215, 205), floorColor = Color3.fromRGB(190, 195, 190), floorMaterial = Enum.Material.Marble, roof = true }, function(m, at, fx)
-		for _, z in { -10, 10 } do
-			BuildKit.box(m, "Shelf", V(2, 7, 14), at(-10, z), Color3.fromRGB(235, 235, 235), Enum.Material.Metal)
+		for _, z in { -8, 0, 8, 16 } do -- стеллажи с товаром вдоль задней стены
+			prop(m, "shelf", at(-11, z), fx)
 		end
-		BuildKit.box(m, "Counter", V(2, 3.5, 8), at(0, -12), Color3.fromRGB(70, 140, 90), Enum.Material.SmoothPlastic)
-		local medkit = BuildKit.interact(m, "MedkitBox", at(0, -14) + V(0, 3.5, 0), V(1.4, 1, 1.8), Color3.fromRGB(240, 240, 240), "Взять аптечку", "Аптечки")
-		local energy = BuildKit.interact(m, "EnergyBox", at(0, -10) + V(0, 3.5, 0), V(1.4, 1, 1.8), Color3.fromRGB(60, 190, 255), "Взять энергетик", "Энергетики")
+		prop(m, "medcabinet", at(-11, -17.5), fx)
+		prop(m, "pharm_counter", at(0, -12), fx)
+		local medkit = BuildKit.interact(m, "MedkitBox", at(0, -14) + V(0, 3.6, 0), V(1.4, 1, 1.8), Color3.fromRGB(240, 240, 240), "Взять аптечку", "Аптечки")
+		local energy = BuildKit.interact(m, "EnergyBox", at(0, -10) + V(0, 3.6, 0), V(1.4, 1, 1.8), Color3.fromRGB(60, 190, 255), "Взять энергетик", "Энергетики")
 		BuildKit.slot(m, at(8, 17), "Turret")
 		BuildKit.slot(m, at(-4, 17), "Trap")
 		return { { kind = "medkit", prompt = medkit }, { kind = "energy", prompt = energy } }
 	end)
 
 	roomTower("ColdStore", "Склад холодного оружия", ROOMS.ColdStore, { point = "ColdStore", wallColor = Color3.fromRGB(125, 105, 85), floorColor = Color3.fromRGB(70, 60, 50), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
-		BuildKit.box(m, "Bench", V(2, 3, 14), at(-10, 0), Color3.fromRGB(100, 80, 55), Enum.Material.Wood)
-		local bat = BuildKit.interact(m, "BatRack", at(-10, -4) + V(0, 3, 0), V(1.2, 0.8, 2.4), Color3.fromRGB(150, 110, 60), "Взять биту", "Холодное оружие")
-		local machete = BuildKit.interact(m, "MacheteRack", at(-10, 4) + V(0, 3, 0), V(1.2, 0.8, 2.4), Color3.fromRGB(130, 135, 140), "Взять мачете", "Холодное оружие")
+		prop(m, "workbench", at(-10, 0), fx)
+		local bat = BuildKit.interact(m, "BatRack", at(-10, -3) + V(0, 3.4, 0), V(1.2, 0.8, 2.4), Color3.fromRGB(150, 110, 60), "Взять биту", "Холодное оружие")
+		local machete = BuildKit.interact(m, "MacheteRack", at(-10, 3) + V(0, 3.4, 0), V(1.2, 0.8, 2.4), Color3.fromRGB(130, 135, 140), "Взять мачете", "Холодное оружие")
+		prop(m, "crates", at(-10, 14), fx)
+		prop(m, "barrel", at(9, -16), fx)
 		return { { kind = "melee:Bat", prompt = bat }, { kind = "melee:Machete", prompt = machete } }
 	end)
 
 	roomTower("Garage", "Склад проволоки", ROOMS.Garage, { point = "Garage", wallColor = Color3.fromRGB(120, 125, 130), floorColor = Color3.fromRGB(70, 70, 72), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
 		local p = at(-2, 0)
 		BuildKit.car(m, p.X, p.Z, 0, Color3.fromRGB(150, 60, 50))
-		BuildKit.box(m, "Workbench", V(2, 3.2, 10), at(-11.5, 0), Color3.fromRGB(180, 110, 40), Enum.Material.Metal)
+		prop(m, "workbench", at(-11.5, 0), fx)
 		for _, z in { -12, 12 } do
-			BuildKit.box(m, "Crate", V(3, 3, 3), at(-10, z), Color3.fromRGB(140, 105, 60), Enum.Material.Wood)
+			prop(m, "crates", at(-10, z), fx)
 		end
+		prop(m, "barrel", at(10, -19), fx)
 		BuildKit.slot(m, at(8, -16), "Turret")
 		BuildKit.slot(m, at(8, 16), "Turret")
 		BuildKit.slot(m, at(-6, 16), "Trap")
@@ -274,17 +289,19 @@ function City.build(): Types.MapInfo
 
 	roomTower("Armory", "Оружейная", ROOMS.Armory, { point = "Armory", wallColor = Color3.fromRGB(120, 70, 60), floorColor = Color3.fromRGB(80, 70, 70), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
 		for _, z in { -10, 0, 10 } do
-			BuildKit.box(m, "WeaponRack", V(1.5, 4, 5), at(-11, z), Color3.fromRGB(55, 55, 60), Enum.Material.Metal)
+			prop(m, "weapon_rack", at(-11, z), fx)
 		end
-		BuildKit.box(m, "Crate", V(4, 4, 4), at(8, 14), Color3.fromRGB(90, 100, 70), Enum.Material.Wood)
+		prop(m, "crates", at(8, 14), fx)
+		prop(m, "barrel", at(11, -19), fx)
 		BuildKit.slot(m, at(8, -14), "Turret")
 		return {}
 	end)
 
 	roomTower("Shelter", "Убежище", ROOMS.Shelter, { point = "Shelter", wallColor = Color3.fromRGB(95, 100, 115), floorColor = Color3.fromRGB(60, 62, 70), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
 		for _, z in { -12, 0, 12 } do
-			BuildKit.box(m, "Bunk", V(3, 2.5, 8), at(-10, z), Color3.fromRGB(70, 80, 70), Enum.Material.Metal)
+			prop(m, "bunk", at(-10, z), fx)
 		end
+		prop(m, "barrel", at(10, 17), fx)
 		BuildKit.slot(m, at(8, -16), "Turret")
 		return {}
 	end)

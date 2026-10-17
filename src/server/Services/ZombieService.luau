@@ -6,6 +6,7 @@ local PhysicsService = game:GetService("PhysicsService")
 local PathfindingService = game:GetService("PathfindingService")
 local Debris = game:GetService("Debris")
 local TweenService = game:GetService("TweenService")
+local AssetService = game:GetService("AssetService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
@@ -46,6 +47,10 @@ type Zombie = {
 	vaultResetAt: number, -- не раньше этого момента зомби снова может перелезать забор
 	vaultLockUntil: number, -- до этого момента зомби в прыжке через забор и не думает
 	headKill: boolean, -- убит выстрелом в голову (бонус очков и монет в RoundService)
+	pivots: { [string]: Vector3 }, -- точки вращения частей тела (шея, плечи, бёдра) в системе корня
+	hipPivot: Vector3, -- ось, вокруг которой корпус откидывается от попадания
+	armRaise: number, -- угол поднятых рук при замахе, градусов
+	armStrike: number, -- угол руки в ударе
 	eyes: { BasePart },
 }
 
@@ -73,8 +78,131 @@ local function weld(a: BasePart, b: BasePart)
 	w.Parent = a
 end
 
--- Простая модель зомби из блоков (заменим на нормальные модели после выбора стиля)
-local function buildModel(def: Config.ZombieDef): Model
+-- Шаблоны мешей частей тела (AssetService грузит меш по сети: один раз, с ожиданием, как у оружия)
+local meshTemplates: { [string]: MeshPart } = {}
+local meshState: { [string]: string } = {} -- "loading" | "ok" | "failed"
+
+local function loadMesh(meshId: string): MeshPart?
+	if not meshState[meshId] then
+		meshState[meshId] = "loading"
+		local ok, result = pcall(function()
+			-- коллизия «коробкой»: попадания по частям тела дёшевы и предсказуемы (CollisionFidelity у готовой части менять нельзя)
+			return AssetService:CreateMeshPartAsync(Content.fromUri(meshId), { CollisionFidelity = Enum.CollisionFidelity.Box })
+		end)
+		if ok then
+			meshTemplates[meshId] = result
+			meshState[meshId] = "ok"
+		else
+			warn("[ZombieService] не удалось загрузить меш " .. meshId .. ": " .. tostring(result))
+			meshState[meshId] = "failed"
+		end
+	end
+	while meshState[meshId] == "loading" do
+		task.wait(0.05)
+	end
+	return meshTemplates[meshId]
+end
+
+-- Humanoid, коллизии и группа столкновений: общая часть для модели из мешей и запасной модели из блоков
+local function finishModel(model: Model, def: Config.ZombieDef, root: BasePart, hipHeight: number): Model
+	local humanoid = Instance.new("Humanoid")
+	humanoid.HipHeight = hipHeight
+	humanoid.WalkSpeed = def.speed
+	humanoid.JumpHeight = 3 -- (прыжок у блочных зомби не срабатывает, перелезание заборов — в think)
+	humanoid.RigType = Enum.HumanoidRigType.R15 -- высота по HipHeight, без суставов ног
+	humanoid.MaxHealth = 1e6 -- HP зомби считаем сами
+	humanoid.Health = 1e6
+	humanoid.BreakJointsOnDeath = false
+	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+	humanoid.Parent = model
+
+	model.PrimaryPart = root
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.CollisionGroup = COLLISION_GROUP
+		end
+	end
+	return model
+end
+
+-- Все части тела на Weld (а не WeldConstraint): сервер двигает C0 при замахе, ударе и реакции на попадание, и это
+-- видно всем. Имя сварки — "W_" .. имя части (Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg)
+local function weldBody(root: BasePart, p: BasePart)
+	local w = Instance.new("Weld")
+	w.Name = "W_" .. p.Name
+	w.Part0 = root
+	w.Part1 = p
+	w.C0 = root.CFrame:ToObjectSpace(p.CFrame)
+	w.Parent = root
+end
+
+-- Модель из сгенерированных мешей (Config.ZombieVisuals): корень-невидимка (хитбокс и физика) + части тела
+-- Меш из шаблона: размер, текстура и (если заданы) цвет с материалом. BaseColor — цвет «в покое» для подсветки замаха.
+local function makePiece(template: MeshPart, name: string, vp: { mesh: string, texture: string, size: Vector3, pos: Vector3, color: Color3?, material: string? }): MeshPart
+	local p = template:Clone()
+	p.Name = name
+	p.Size = vp.size
+	p.TextureID = vp.texture
+	p.Color = vp.color or Color3.new(1, 1, 1)
+	p:SetAttribute("BaseColor", p.Color)
+	if vp.material then
+		p.Material = (Enum.Material :: any)[vp.material]
+	end
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Massless = true
+	p.Anchored = false
+	p.CFrame = CFrame.new(vp.pos)
+	return p
+end
+
+local function buildMeshModel(def: Config.ZombieDef, vis: Config.ZombieVisual, templates: { [string]: MeshPart }): Model
+	local s = def.scale
+	local model = Instance.new("Model")
+	model.Name = "Zombie_" .. def.id
+	local root = Instance.new("Part")
+	root.Name = "HumanoidRootPart"
+	root.Size = Vector3.new(2, 2, 1) * s
+	root.Transparency = 1
+	root.CanCollide = true
+	root.CFrame = CFrame.new()
+	root.Parent = model
+	-- Видимые меши в рейкастах не участвуют: их коробки перекрывают друг друга (у громилы голова внутри коробки торса,
+	-- и выстрелы в голову засчитывались в корпус). Попадания принимают отдельные невидимые хитбоксы "Hit<Часть>"
+	-- по каждой части тела; они сварены с мешем и двигаются вместе с ним при замахе и реакции на попадание.
+	for _, vp in vis.parts do
+		local p = makePiece(templates[vp.mesh], vp.part, vp)
+		p.Parent = model
+		weldBody(root, p)
+		-- остальные меши части (предплечье, кисть, голень, стопа, таз) держатся за основной
+		for _, ex in vp.extra or {} do
+			local e = makePiece(templates[ex.mesh], vp.part .. "Extra", ex)
+			e.Parent = model
+			weld(p, e)
+		end
+
+		local hit = Instance.new("Part")
+		hit.Name = "Hit" .. vp.part
+		hit.Size = vp.hitSize
+		hit.Transparency = 1
+		hit.CanCollide = false
+		hit.CanTouch = false
+		hit.Massless = true
+		hit.CFrame = CFrame.new(vp.hitPos)
+		hit.Parent = model
+		weld(p, hit)
+	end
+	root.CanQuery = false -- попадания принимают хитбоксы частей, а не корень
+	-- таз на высоте vis.pelvis над стопами; центр корня = низ корня + половина высоты
+	return finishModel(model, def, root, vis.pelvis - 1 * s)
+end
+
+-- Запасная модель из блоков (если меши не загрузились)
+local function buildBlockModel(def: Config.ZombieDef): Model
 	local s = def.scale
 	local model = Instance.new("Model")
 	model.Name = "Zombie_" .. def.id
@@ -102,15 +230,8 @@ local function buildModel(def: Config.ZombieDef): Model
 	local armR = mk("RightArm", Vector3.new(0.8, 0.8, 2), Vector3.new(1.3, 0.6, -0.9), def.color)
 	local legL = mk("LeftLeg", Vector3.new(0.9, 2, 0.9), Vector3.new(-0.5, -2, 0), Color3.fromRGB(60, 55, 70))
 	local legR = mk("RightLeg", Vector3.new(0.9, 2, 0.9), Vector3.new(0.5, -2, 0), Color3.fromRGB(60, 55, 70))
-	-- все части тела на Weld (а не WeldConstraint): сервер двигает C0 при замахе, ударе и реакции на попадание,
-	-- и это видно всем. Имя сварки — "W_" .. имя части (Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg)
 	for _, p in { torso, head, armL, armR, legL, legR } do
-		local w = Instance.new("Weld")
-		w.Name = "W_" .. p.Name
-		w.Part0 = root
-		w.Part1 = p
-		w.C0 = root.CFrame:ToObjectSpace(p.CFrame)
-		w.Parent = root
+		weldBody(root, p)
 	end
 	-- светящиеся глаза
 	for _, x in { -0.25, 0.25 } do
@@ -118,28 +239,33 @@ local function buildModel(def: Config.ZombieDef): Model
 		eye.Material = Enum.Material.Neon
 		weld(root, eye)
 	end
+	return finishModel(model, def, root, 3 * s - 1 * s)
+end
 
-	local humanoid = Instance.new("Humanoid")
-	humanoid.HipHeight = 3 * s - 1 * s
-	humanoid.WalkSpeed = def.speed
-	humanoid.JumpHeight = 3 -- перепрыгивают бордюры и ящики, но не заборы переулков (4,4)
-	humanoid.RigType = Enum.HumanoidRigType.R15 -- высота по HipHeight, без суставов ног
-	humanoid.MaxHealth = 1e6 -- HP зомби считаем сами
-	humanoid.Health = 1e6
-	humanoid.BreakJointsOnDeath = false
-	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-	humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-	humanoid.Parent = model
-
-	model.PrimaryPart = root
-	for _, d in model:GetDescendants() do
-		if d:IsA("BasePart") then
-			d.CollisionGroup = COLLISION_GROUP
+local function buildModel(def: Config.ZombieDef): Model
+	local vis = Config.ZombieVisuals[def.id]
+	if vis then
+		local templates: { [string]: MeshPart } = {}
+		local complete = true
+		local function need(meshId: string)
+			local t = loadMesh(meshId)
+			if t then
+				templates[meshId] = t
+			else
+				complete = false
+			end
+		end
+		for _, vp in vis.parts do
+			need(vp.mesh)
+			for _, ex in vp.extra or {} do
+				need(ex.mesh)
+			end
+		end
+		if complete then
+			return buildMeshModel(def, vis, templates)
 		end
 	end
-	return model
+	return buildBlockModel(def)
 end
 
 local function acquire(typeId: string): Zombie
@@ -162,6 +288,26 @@ local function acquire(typeId: string): Zombie
 		if d.Name == "Eye" and d:IsA("BasePart") then
 			table.insert(eyes, d)
 		end
+	end
+	-- точки вращения и углы замаха зависят от вида модели: у мешей руки висят вниз, у блоков — вытянуты вперёд
+	local isMesh = (model:FindFirstChild("Torso") :: Instance):IsA("MeshPart")
+	local s = def.scale
+	local pivots: { [string]: Vector3 } = {}
+	local hipPivot = Vector3.new(0, -0.9 * s, 0)
+	if isMesh then
+		for _, vp in (Config.ZombieVisuals[typeId] :: Config.ZombieVisual).parts do
+			pivots[vp.part] = vp.pivot
+		end
+		hipPivot = Vector3.new(0, -0.3, 0)
+	else
+		pivots = {
+			Head = Vector3.new(0, 1.0 * s, 0),
+			LeftArm = Vector3.new(-1.3 * s, 0.6 * s, 0),
+			RightArm = Vector3.new(1.3 * s, 0.6 * s, 0),
+			LeftLeg = Vector3.new(-0.5 * s, -1 * s, 0),
+			RightLeg = Vector3.new(0.5 * s, -1 * s, 0),
+			Torso = Vector3.zero,
+		}
 	end
 	return {
 		model = model,
@@ -189,6 +335,10 @@ local function acquire(typeId: string): Zombie
 		windupTarget = nil,
 		welds = welds,
 		rest = rest,
+		pivots = pivots,
+		hipPivot = hipPivot,
+		armRaise = if isMesh then 140 else 75,
+		armStrike = if isMesh then 50 else -25,
 		slowUntil = 0,
 		vaultResetAt = 0,
 		vaultLockUntil = 0,
@@ -265,21 +415,28 @@ end
 local EYE_NORMAL = Color3.fromRGB(255, 60, 40)
 local EYE_ALERT = Color3.fromRGB(255, 240, 160)
 
--- raise: 0 — руки в покое, 1 — подняты над головой, -0.4 — удар вниз-вперёд
-local function armPose(z: Zombie, raise: number, time: number)
-	local s = z.def.scale
-	for i, name in { "LeftArm", "RightArm" } do
-		local sx = if i == 1 then -1.3 else 1.3
-		local target = if raise == 0
-			then z.rest[name]
-			else CFrame.new(sx * s, 0.6 * s, 0) * CFrame.Angles(math.rad(raise * 110), 0, 0) * CFrame.new(0, 0, -0.9 * s)
+-- deg: 0 — руки в покое; иначе поворот рук вокруг плеч на столько градусов (положительный — вперёд и вверх)
+local function armPose(z: Zombie, deg: number, time: number)
+	for _, name in { "LeftArm", "RightArm" } do
+		local pivot = CFrame.new(z.pivots[name])
+		local target = if deg == 0 then z.rest[name] else pivot * CFrame.Angles(math.rad(deg), 0, 0) * pivot:Inverse() * z.rest[name]
 		TweenService:Create(z.welds[name], TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = target }):Play()
 	end
 end
 
+-- Знак замаха: у блочных зомби светлеют глаза, у модельных зомби — тело слегка краснеет (подсветка попавшего в замах)
+local TINT_ALERT = Color3.fromRGB(255, 150, 130)
 local function setEyes(z: Zombie, alert: boolean)
-	for _, eye in z.eyes do
-		eye.Color = if alert then EYE_ALERT else EYE_NORMAL
+	if #z.eyes > 0 then
+		for _, eye in z.eyes do
+			eye.Color = if alert then EYE_ALERT else EYE_NORMAL
+		end
+	else
+		for _, d in z.model:GetChildren() do
+			if d:IsA("MeshPart") then
+				d.Color = if alert then TINT_ALERT else (d:GetAttribute("BaseColor") or Color3.new(1, 1, 1))
+			end
+		end
 	end
 end
 
@@ -307,7 +464,7 @@ end
 local function startWindup(z: Zombie, player: Player, now: number)
 	z.windupUntil = now + z.def.windup
 	z.windupTarget = player
-	armPose(z, 1, z.def.windup * 0.85)
+	armPose(z, z.armRaise, z.def.windup * 0.85)
 	setEyes(z, true)
 end
 
@@ -316,7 +473,7 @@ local function finishStrike(z: Zombie, now: number)
 	z.windupUntil = 0
 	z.windupTarget = nil
 	z.lastAttack = now + math.random() * 0.6 -- небольшой разброс, чтобы стая не била залпом в один такт
-	armPose(z, -0.4, 0.08)
+	armPose(z, z.armStrike, 0.08)
 	task.delay(0.3, function()
 		if z.alive then
 			armPose(z, 0, 0.25)
@@ -337,7 +494,7 @@ end
 -- Реакция на попадание: часть тела, в которую попали, дёргается (корпус откидывается от выстрела, голова запрокидывается,
 -- рука отлетает, нога подгибается). kind: "Head" | "Torso" | "Arm" | "Leg"; power — сила удара (0,5..2).
 local function partKind(part: BasePart): string
-	local name = part.Name
+	local name = string.gsub(part.Name, "^Hit", "") -- хитбоксы называются Hit<Часть>
 	if name == "Head" then
 		return "Head"
 	elseif name == "LeftArm" or name == "RightArm" then
@@ -364,7 +521,7 @@ local function leanBody(z: Zombie, localDir: Vector3, angleDeg: number, names: {
 	if axis.Magnitude < 0.01 then
 		return
 	end
-	local pivot = CFrame.new(0, -0.9 * z.def.scale, 0)
+	local pivot = CFrame.new(z.hipPivot)
 	local lean = pivot * CFrame.fromAxisAngle(axis.Unit, math.rad(angleDeg)) * pivot:Inverse()
 	for _, name in names do
 		jerk(z, name, lean, 0.05, 0.3)
@@ -372,24 +529,22 @@ local function leanBody(z: Zombie, localDir: Vector3, angleDeg: number, names: {
 end
 
 local function flinch(z: Zombie, kind: string, partName: string, flat: Vector3, power: number, now: number)
-	local s = z.def.scale
 	local localDir = if flat == Vector3.zero then Vector3.new(0, 0, 1) else z.root.CFrame:VectorToObjectSpace(flat)
 	if kind == "Head" then
-		local neck = CFrame.new(0, -0.6 * s, 0)
+		local neck = CFrame.new(z.pivots.Head)
 		jerk(z, "Head", neck * CFrame.Angles(math.rad(38) * power, math.rad((math.random() - 0.5) * 40), 0) * neck:Inverse(), 0.05, 0.28)
 		leanBody(z, localDir, 10 * power, { "Torso", "LeftArm", "RightArm" })
 	elseif kind == "Arm" then
-		local sx = if partName == "LeftArm" then -1.3 else 1.3
-		local shoulder = CFrame.new(sx * s, 0.6 * s, 0)
+		local sx = if partName == "LeftArm" then -1 else 1
+		local shoulder = CFrame.new(z.pivots[partName])
 		jerk(z, partName, shoulder * CFrame.Angles(math.rad(-55) * power, 0, math.rad(sx * 18)) * shoulder:Inverse(), 0.05, 0.3)
 		leanBody(z, localDir, 6 * power, { "Torso" })
 	elseif kind == "Leg" then
-		local sx = if partName == "LeftLeg" then -0.5 else 0.5
-		local hip = CFrame.new(sx * s, -1 * s, 0)
+		local hip = CFrame.new(z.pivots[partName])
 		jerk(z, partName, hip * CFrame.Angles(math.rad(50) * power, 0, 0) * hip:Inverse(), 0.06, 0.4)
 		z.slowUntil = now + 1.6 -- подстреленная нога: хромает
 		z.humanoid.WalkSpeed = z.def.speed * 0.5
-		local pivot = CFrame.new(0, -0.9 * s, 0)
+		local pivot = CFrame.new(z.hipPivot)
 		for _, name in { "Torso", "Head", "LeftArm", "RightArm" } do
 			jerk(z, name, pivot * CFrame.Angles(math.rad(-9), 0, 0) * pivot:Inverse(), 0.07, 0.35)
 		end
@@ -696,7 +851,7 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 			z.root:ApplyImpulse(flat * impact.push * z.root.AssemblyMass)
 		end
 		if impact.part then
-			flinch(z, kind, impact.part.Name, flat, impact.power or 1, now)
+			flinch(z, kind, (string.gsub(impact.part.Name, "^Hit", "")), flat, impact.power or 1, now)
 		end
 	end
 	if z.hp <= 0 then
@@ -725,7 +880,7 @@ end
 function ZombieService.isZombiePart(part: BasePart): (Model?, boolean)
 	local model = part:FindFirstAncestorOfClass("Model")
 	if model and active[model] then
-		return model, part.Name == "Head"
+		return model, part.Name == "Head" or part.Name == "HitHead"
 	end
 	return nil, false
 end
@@ -779,6 +934,18 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 	PhysicsService:RegisterCollisionGroup(COLLISION_GROUP)
 	-- зомби не толкаются друг с другом (толпа не застревает в окнах)
 	PhysicsService:CollisionGroupSetCollidable(COLLISION_GROUP, COLLISION_GROUP, false)
+
+	-- меши частей тела грузим заранее, чтобы первый зомби не появлялся с задержкой
+	task.spawn(function()
+		for _, vis in Config.ZombieVisuals do
+			for _, vp in vis.parts do
+				loadMesh(vp.mesh)
+				for _, ex in vp.extra or {} do
+					loadMesh(ex.mesh)
+				end
+			end
+		end
+	end)
 
 	-- спавн очередью: не больше N за тик и не больше лимита на карте
 	task.spawn(function()

@@ -4,6 +4,7 @@
 
 local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Config"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
+local AssetService = game:GetService("AssetService")
 
 local BuildKit = {}
 
@@ -305,6 +306,12 @@ function BuildKit.shop(parent: Instance): ({ Types.Window }, { { weaponId: strin
 		BuildKit.box(model, "Sandbags", Vector3.new(3, 1.6, 2), p, Color3.fromRGB(150, 135, 100), Enum.Material.Fabric)
 	end
 
+	-- ящики и бочки у углов шатра
+	for i, corner in { Vector3.new(hx + 3, 0, hz + 3), Vector3.new(-hx - 3, 0, hz + 3), Vector3.new(hx + 3, 0, -hz - 3), Vector3.new(-hx - 3, 0, -hz - 3) } do
+		local def = Config.Props[if i % 2 == 0 then "barrel" else "crates"]
+		BuildKit.meshProp(model, def.id, def, CFrame.new(corner) * CFrame.Angles(0, math.rad(i * 70), 0))
+	end
+
 	local wallBuys: { { weaponId: string, prompt: ProximityPrompt } } = {}
 	local spots = {
 		{ Vector3.new(-hx + 6, 5, hz - 0.8), Vector3.new(0, 0, -1) },
@@ -348,7 +355,74 @@ function BuildKit.block(parent: Instance, center: Vector3, sx: number, sz: numbe
 	return m
 end
 
+-- Сгенерированные меши (Studio generate_mesh): шаблоны грузятся один раз, дальше — клоны с нужным размером.
+-- Если меш не загрузился, вызывающий код рисует запасной вариант из блоков.
+local meshTemplates: { [string]: MeshPart } = {}
+local meshState: { [string]: string } = {} -- "loading" | "ok" | "failed"
+
+local function loadMesh(meshId: string): MeshPart?
+	if not meshState[meshId] then
+		meshState[meshId] = "loading"
+		local ok, result = pcall(function()
+			-- коллизия «коробкой»: дёшево для навигации и укрытий
+			return AssetService:CreateMeshPartAsync(Content.fromUri(meshId), { CollisionFidelity = Enum.CollisionFidelity.Box })
+		end)
+		if ok then
+			meshTemplates[meshId] = result
+			meshState[meshId] = "ok"
+		else
+			warn("[BuildKit] не удалось загрузить меш " .. meshId .. ": " .. tostring(result))
+			meshState[meshId] = "failed"
+		end
+	end
+	while meshState[meshId] == "loading" do
+		task.wait(0.05)
+	end
+	return meshTemplates[meshId]
+end
+
+-- Предмет из меша: base — CFrame основания (стоит на земле); size — итоговый размер в студах.
+function BuildKit.meshProp(parent: Instance, name: string, def: { mesh: string, texture: string, size: Vector3 }, base: CFrame, collide: boolean?): Part?
+	local template = loadMesh(def.mesh)
+	if not template then
+		return nil
+	end
+	local p = template:Clone()
+	p.Name = name
+	p.Size = def.size
+	p.TextureID = def.texture
+	p.Anchored = true
+	p.CanCollide = collide ~= false
+	p.CanQuery = collide ~= false -- без коллизии предмет — чистая декорация: и рейкасты его не видят
+	p.CFrame = base * CFrame.new(0, def.size.Y / 2, 0)
+	p.Parent = parent
+	return p
+end
+
 function BuildKit.car(parent: Instance, x: number, z: number, yawDeg: number, color: Color3)
+	-- вариант модели по координате, чтобы на улице чередовались седан, такси и пикап
+	local variants = Config.CarVisuals
+	local models = Config.CarModels
+	local pick = math.floor(math.abs(x * 7 + z * 13)) % (#variants + #models) + 1
+	local base0 = CFrame.new(x, 0, z) * CFrame.Angles(0, math.rad(yawDeg), 0)
+	local modelDef = models[pick - #variants]
+	if modelDef then
+		local carModels = game:GetService("ServerStorage"):FindFirstChild("CarModels")
+		local template = carModels and carModels:FindFirstChild(modelDef.id)
+		if template and template:IsA("Model") and template.PrimaryPart then
+			local car = template:Clone()
+			car.Name = "Car"
+			car:ScaleTo(modelDef.length / template.PrimaryPart.Size.Z)
+			car:PivotTo(base0 * CFrame.new(0, car.PrimaryPart.Size.Y / 2, 0))
+			car.Parent = parent
+			return
+		end
+		warn("[BuildKit] нет шаблона машины " .. modelDef.id .. " в ServerStorage.CarModels")
+	end
+	local v = variants[(pick - 1) % #variants + 1]
+	if BuildKit.meshProp(parent, "Car", v, CFrame.new(x, 0, z) * CFrame.Angles(0, math.rad(yawDeg), 0)) then
+		return
+	end
 	local m = Instance.new("Model")
 	m.Name = "Car"
 	m.Parent = parent
@@ -366,10 +440,27 @@ function BuildKit.car(parent: Instance, x: number, z: number, yawDeg: number, co
 end
 
 function BuildKit.dumpster(parent: Instance, x: number, z: number)
-	BuildKit.box(parent, "Dumpster", Vector3.new(6, 4, 3), Vector3.new(x, 0, z), Color3.fromRGB(50, 85, 60), Enum.Material.Metal)
+	local def = Config.Props.dumpster
+	-- поворот по координатам, чтобы контейнеры не стояли одинаково
+	local yaw = ((math.floor(math.abs(x * 3 + z * 5)) % 4) * 90)
+	if not BuildKit.meshProp(parent, "Dumpster", def, CFrame.new(x, 0, z) * CFrame.Angles(0, math.rad(yaw), 0)) then
+		BuildKit.box(parent, "Dumpster", Vector3.new(6, 4, 3), Vector3.new(x, 0, z), Color3.fromRGB(50, 85, 60), Enum.Material.Metal)
+	end
 end
 
 function BuildKit.lamppost(parent: Instance, x: number, z: number, withLight: boolean?)
+	-- Фонарь из меша: сам меш без коллизии и рейкастов (у его «коробки» были бы широкие плечи), вместо этого —
+	-- невидимый тонкий ствол для столкновений и невидимая точка света у фонаря.
+	local def = Config.Props.lamp
+	local yaw = (math.floor(math.abs(x * 5 + z * 3)) % 2) * 90
+	if BuildKit.meshProp(parent, "Lamp", def, CFrame.new(x, 0, z) * CFrame.Angles(0, math.rad(yaw), 0), false) then
+		BuildKit.part({ Name = "LampPole", Size = Vector3.new(0.9, def.size.Y, 0.9), Position = Vector3.new(x, def.size.Y / 2, z), Transparency = 1, CanQuery = false }, parent)
+		if withLight ~= false then
+			local light = BuildKit.part({ Name = "LampLight", Size = Vector3.one * 0.2, Position = Vector3.new(x, def.size.Y - 1.5, z), Transparency = 1, CanCollide = false, CanQuery = false }, parent)
+			pointLight(light, 30, 1, Color3.fromRGB(255, 215, 160))
+		end
+		return
+	end
 	BuildKit.box(parent, "Pole", Vector3.new(0.7, 14, 0.7), Vector3.new(x, 0, z), Color3.fromRGB(40, 40, 45), Enum.Material.Metal)
 	local head = BuildKit.part({
 		Name = "LampHead",
