@@ -43,24 +43,61 @@ function HUDController.start()
 	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
 	gui.Parent = player:WaitForChild("PlayerGui")
 
-	-- прицел по центру экрана
-	local crosshair = Instance.new("Frame")
-	crosshair.Name = "Crosshair"
-	crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
-	crosshair.Position = UDim2.fromScale(0.5, 0.5)
-	crosshair.Size = UDim2.fromOffset(6, 6)
-	crosshair.BackgroundColor3 = Color3.new(1, 1, 1)
-	crosshair.BackgroundTransparency = 0.2
-	crosshair.BorderSizePixel = 0
-	crosshair.Parent = gui
-	local crossCorner = Instance.new("UICorner")
-	crossCorner.CornerRadius = UDim.new(1, 0)
-	crossCorner.Parent = crosshair
-	local crossStroke = Instance.new("UIStroke")
-	crossStroke.Color = Color3.new(0, 0, 0)
-	crossStroke.Transparency = 0.4
-	crossStroke.Parent = crosshair
+	-- Прицел: отдельный ScreenGui без отступа под верхнюю панель. В обычном GUI центр на ~18 px ниже настоящего центра
+	-- экрана, куда летят пули, — из-за этого прицел «врал». Четыре чёрточки расходятся по текущему разбросу
+	-- (атрибут AimSpread ставит WeaponController), точка в центре, поверх — маркер попадания.
+	local aimGui = Instance.new("ScreenGui")
+	aimGui.Name = "AimHUD"
+	aimGui.ResetOnSpawn = false
+	aimGui.IgnoreGuiInset = true
+	aimGui.DisplayOrder = 5
+	aimGui.Parent = player:WaitForChild("PlayerGui")
 
+	local function mark(size: Vector2, rotation: number?): Frame
+		local f = Instance.new("Frame")
+		f.AnchorPoint = Vector2.new(0.5, 0.5)
+		f.Size = UDim2.fromOffset(size.X, size.Y)
+		f.Position = UDim2.fromScale(0.5, 0.5)
+		f.Rotation = rotation or 0
+		f.BackgroundColor3 = Color3.new(1, 1, 1)
+		f.BorderSizePixel = 0
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.new(0, 0, 0)
+		stroke.Transparency = 0.45
+		stroke.Parent = f
+		f.Parent = aimGui
+		return f
+	end
+	local dot = mark(Vector2.new(4, 4))
+	dot.BackgroundTransparency = 0.1
+	local bars = { mark(Vector2.new(3, 10)), mark(Vector2.new(3, 10)), mark(Vector2.new(10, 3)), mark(Vector2.new(10, 3)) } -- верх, низ, лево, право
+	local hitMarks: { Frame } = {}
+	for _, d in { Vector2.new(-1, -1), Vector2.new(1, -1), Vector2.new(-1, 1), Vector2.new(1, 1) } do
+		local m = mark(Vector2.new(2, 9), if d.X * d.Y > 0 then -45 else 45)
+		m.Position = UDim2.new(0.5, d.X * 11, 0.5, d.Y * 11)
+		m.BackgroundTransparency = 1
+		table.insert(hitMarks, m)
+	end
+	local hitToken = 0
+	player:GetAttributeChangedSignal("HitMark"):Connect(function()
+		local kind = tostring(player:GetAttribute("HitMark")):match("^(.-)|") or "hit"
+		local color = if kind == "kill" then Color3.fromRGB(255, 70, 50) elseif kind == "head" then Color3.fromRGB(255, 215, 60) else Color3.new(1, 1, 1)
+		hitToken += 1
+		local token = hitToken
+		for _, m in hitMarks do
+			m.BackgroundColor3 = color
+			m.BackgroundTransparency = 0
+			m.Size = UDim2.fromOffset(if kind == "head" then 3 else 2, if kind == "head" then 12 else 9)
+			TweenService:Create(m, TweenInfo.new(0.28), { BackgroundTransparency = 1 }):Play()
+		end
+		task.delay(0.3, function()
+			if token == hitToken then
+				for _, m in hitMarks do
+					m.BackgroundTransparency = 1
+				end
+			end
+		end)
+	end)
 	-- верх: фаза, таймер, волна, зомби
 	local top = label(gui, {
 		Name = "Top",
@@ -212,6 +249,20 @@ function HUDController.start()
 	end
 
 	RunService.RenderStepped:Connect(function()
+		-- перекрестие: зазор растёт с разбросом (в пикселях по текущему полю зрения), у ближнего боя чёрточек нет
+		local camera = workspace.CurrentCamera
+		local spread = (player:GetAttribute("AimSpread") :: number?) or 0
+		local show = spread > 0
+		local px = if camera then math.tan(math.rad(spread)) / math.tan(math.rad(camera.FieldOfView / 2)) * (camera.ViewportSize.Y / 2) else 0
+		local gap = math.clamp(4 + px, 4, 160)
+		bars[1].Position = UDim2.new(0.5, 0, 0.5, -(gap + 5))
+		bars[2].Position = UDim2.new(0.5, 0, 0.5, gap + 5)
+		bars[3].Position = UDim2.new(0.5, -(gap + 5), 0.5, 0)
+		bars[4].Position = UDim2.new(0.5, gap + 5, 0.5, 0)
+		for _, b in bars do
+			b.Visible = show
+		end
+
 		local phase = ReplicatedStorage:GetAttribute("Phase") :: string?
 		local wave = (ReplicatedStorage:GetAttribute("Wave") :: number?) or 0
 		local endsAt = (ReplicatedStorage:GetAttribute("PhaseEndsAt") :: number?) or 0

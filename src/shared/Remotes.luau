@@ -6,7 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local NAMES = {
-	"Fire", -- клиент → сервер: (origin: Vector3, direction: Vector3)
+	"Fire", -- клиент → сервер: (origin: Vector3, direction: Vector3, ads: boolean) — ads: целится ли игрок (влияет на разброс)
 	"Reload", -- клиент → сервер: ()
 	"Melee", -- клиент → сервер: (direction: Vector3) — взмах оружием ближнего боя
 	"Sprint", -- клиент → сервер: (on: boolean) — хочу спринтовать (энергию считает сервер)

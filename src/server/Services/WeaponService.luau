@@ -8,6 +8,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
+local Ballistics = require(Shared:WaitForChild("Ballistics"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local EconomyService = require(script.Parent:WaitForChild("EconomyService"))
@@ -15,7 +16,7 @@ local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
 
 local WeaponService = {}
 
-type WeaponState = { mag: number, reserve: number, lastShot: number, reloadingUntil: number }
+type WeaponState = { mag: number, reserve: number, lastShot: number, reloadingUntil: number, burst: number }
 
 local owned: { [Player]: { [string]: WeaponState } } = {}
 local rng = Random.new()
@@ -151,7 +152,7 @@ local function grant(player: Player, weaponId: string)
 		inv = {}
 		owned[player] = inv
 	end
-	inv[weaponId] = { mag = def.magSize, reserve = def.reserve, lastShot = 0, reloadingUntil = 0 }
+	inv[weaponId] = { mag = def.magSize, reserve = def.reserve, lastShot = 0, reloadingUntil = 0, burst = 0 }
 	giveTool(player, weaponId)
 end
 
@@ -193,7 +194,7 @@ local function startReload(player: Player, weaponId: string)
 	end)
 end
 
-local function onFire(player: Player, origin: unknown, direction: unknown)
+local function onFire(player: Player, origin: unknown, direction: unknown, adsFlag: unknown)
 	-- 1. типы и конечность
 	if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" then
 		return
@@ -235,8 +236,25 @@ local function onFire(player: Player, origin: unknown, direction: unknown)
 		startReload(player, weaponId)
 		return
 	end
+	-- номер выстрела в очереди: после паузы очередь начинается заново (отдача и разброс предсказуемы)
+	local aim = Config.WeaponAim[weaponId]
+	local resetTime = (if aim then aim.resetTime else 0.3) + 1 / def.fireRate
+	st.burst = if now - st.lastShot > resetTime then 0 else st.burst + 1
 	st.lastShot = now
 	st.mag -= 1
+
+	-- разброс зависит от состояния игрока: движение, прыжок, прицеливание (флаг прицела присылает клиент)
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local vel = if root then root.AssemblyLinearVelocity else Vector3.zero
+	local state: Ballistics.State = {
+		ads = adsFlag == true,
+		speed = Vector3.new(vel.X, 0, vel.Z).Magnitude,
+		airborne = hum ~= nil and (hum.FloorMaterial == Enum.Material.Air),
+		burst = st.burst,
+	}
+	local spreadDeg = if aim then Ballistics.spreadDeg(def.spreadDeg, aim, state, Config.Player.WalkSpeed) else def.spreadDeg
 
 	-- 5. рейкаст на сервере, без попаданий по игрокам
 	local params = RaycastParams.new()
@@ -254,19 +272,26 @@ local function onFire(player: Player, origin: unknown, direction: unknown)
 	local killedAny = false
 	local headshotAny = false
 	local lastHitPos: Vector3? = nil
-	for _ = 1, def.pellets do
-		local spread = math.rad(def.spreadDeg)
-		local dir = (CFrame.lookAt(Vector3.zero, d) * CFrame.Angles(rng:NextNumber(-spread, spread), rng:NextNumber(-spread, spread), 0)).LookVector
+	for pellet = 1, def.pellets do
+		-- фиксированное смещение пули в круге разброса (первая одиночная — точно в прицел, дробь — одна розетка)
+		local ox, oy = Ballistics.pelletOffset(pellet, st.burst, def.pellets)
+		local spread = math.rad(spreadDeg)
+		local dir = (CFrame.lookAt(Vector3.zero, d) * CFrame.Angles(oy * spread, ox * spread, 0)).LookVector
 		local result = workspace:Raycast(head.Position, dir * def.range, params)
 		if result then
 			table.insert(hits, result.Position)
-			local model, isHead = ZombieService.isZombiePart(result.Instance :: BasePart)
+			local hitPart = result.Instance :: BasePart
+			local model, isHead = ZombieService.isZombiePart(hitPart)
 			if model then
-				local dmg = def.damage * (if isHead then Config.Economy.HeadshotMultiplier else 1)
+				local kind = ZombieService.partKind(hitPart)
+				local mult = if isHead then Config.Economy.HeadshotMultiplier elseif kind == "Arm" or kind == "Leg" then Config.Economy.LimbMultiplier else 1
+				local dmg = def.damage * mult
 				local applied, killed = ZombieService.damage(model, dmg, player, {
 					dir = dir,
-					push = math.min(14, def.damage * 0.25), -- попадание чуть отбрасывает и на миг останавливает зомби
-					stagger = 0.1,
+					push = if aim then aim.push * 1.2 / def.pellets else 5, -- дробь: суммарный толчок по всем дробинкам ≈ aim.push
+					stagger = if aim then aim.stagger else 0.1,
+					part = hitPart,
+					power = if def.pellets > 1 then 0.6 else 1,
 				})
 				if applied then
 					totalDamage += dmg

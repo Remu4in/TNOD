@@ -226,7 +226,8 @@ function MovementController.start()
 		if not camera then
 			return
 		end
-		local target = if sliding then SLIDE_FOV elseif player:GetAttribute("Sprinting") == true then SPRINT_FOV else BASE_FOV
+		local adsFov = (player:GetAttribute("AdsFov") :: number?) or 0
+		local target = if adsFov > 0 then adsFov elseif sliding then SLIDE_FOV elseif player:GetAttribute("Sprinting") == true then SPRINT_FOV else BASE_FOV
 		camera.FieldOfView += (target - camera.FieldOfView) * math.min(1, dt * 8)
 	end)
 end

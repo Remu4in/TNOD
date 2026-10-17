@@ -2,6 +2,8 @@
 -- Все числа баланса и настройки игры в одном месте.
 -- Меняем здесь, а не в коде систем. Правки баланса — через агента balance-analyst.
 
+local Ballistics = require(script.Parent:WaitForChild("Ballistics"))
+
 export type WeaponDef = {
 	id: string,
 	name: string,
@@ -169,7 +171,10 @@ Config.Economy = {
 	CoinsPerHit = 10,
 	CoinsPerPlankRepair = 10,
 	MaxRepairCoinsPerDay = 200,
-	HeadshotMultiplier = 1.5,
+	HeadshotMultiplier = 2, -- урон по голове (было 1,5)
+	LimbMultiplier = 0.75, -- урон по рукам и ногам: целиться в корпус и голову выгоднее
+	HeadshotKillPointsBonus = 0.5, -- добавка к очкам за убийство выстрелом в голову (доля от очков типа)
+	HeadshotKillCoinsBonus = 0.25, -- и к монетам
 	RefillPriceFactor = 0.5,
 }
 
@@ -189,7 +194,7 @@ local Weapons: { [string]: WeaponDef } = {
 	},
 	SMG = {
 		id = "SMG", name = "Пистолет-пулемёт", price = 500,
-		damage = 14, pellets = 1, spreadDeg = 3, fireRate = 10, automatic = true,
+		damage = 14, pellets = 1, spreadDeg = 2.2, fireRate = 10, automatic = true,
 		magSize = 30, reserve = 180, reloadTime = 1.6, range = 200,
 		color = Color3.fromRGB(40, 60, 90),
 	},
@@ -213,7 +218,7 @@ local Weapons: { [string]: WeaponDef } = {
 	},
 	LMG = {
 		id = "LMG", name = "Пулемёт", price = 1800,
-		damage = 22, pellets = 1, spreadDeg = 4, fireRate = 11, automatic = true,
+		damage = 22, pellets = 1, spreadDeg = 2.8, fireRate = 11, automatic = true,
 		magSize = 75, reserve = 300, reloadTime = 4.2, range = 250,
 		color = Color3.fromRGB(50, 55, 60),
 	},
@@ -394,6 +399,19 @@ local WeaponFx: { [string]: WeaponFxDef } = {
 	Sniper = { kickBack = 0.55, kickRot = 14, camPitch = 4.0, camYaw = 0.3, flash = 1.0, shell = true },
 }
 Config.WeaponFx = WeaponFx
+
+-- Прицеливание, отдача, разброс и реакция зомби на попадание (см. Shared/Ballistics). Значения — стартовые, под плейтест.
+-- Отдача: pitch — градусов вверх за выстрел, yaw — размах зигзага; к 12-му выстрелу очереди растёт на recoilGrow.
+local WeaponAim: { [string]: Ballistics.Aim } = {
+	Pistol = { adsFov = 60, adsSpreadMul = 0.3, recoilPitch = 1.0, recoilYaw = 0.15, recoilGrow = 0, resetTime = 0.45, bloom = 0.15, bloomMax = 0.9, push = 5, stagger = 0.14 },
+	SMG = { adsFov = 58, adsSpreadMul = 0.35, recoilPitch = 0.55, recoilYaw = 0.22, recoilGrow = 0.6, resetTime = 0.25, bloom = 0.12, bloomMax = 1.6, push = 3, stagger = 0.05 },
+	Shotgun = { adsFov = 62, adsSpreadMul = 0.55, recoilPitch = 4.5, recoilYaw = 0.3, recoilGrow = 0, resetTime = 0.6, bloom = 0, bloomMax = 0, push = 18, stagger = 0.35 },
+	Rifle = { adsFov = 52, adsSpreadMul = 0.25, recoilPitch = 0.8, recoilYaw = 0.25, recoilGrow = 0.5, resetTime = 0.3, bloom = 0.1, bloomMax = 1.2, push = 6, stagger = 0.15 },
+	Revolver = { adsFov = 58, adsSpreadMul = 0.25, recoilPitch = 3.2, recoilYaw = 0.2, recoilGrow = 0, resetTime = 0.6, bloom = 0, bloomMax = 0, push = 12, stagger = 0.25 },
+	LMG = { adsFov = 56, adsSpreadMul = 0.4, recoilPitch = 0.6, recoilYaw = 0.4, recoilGrow = 0.8, resetTime = 0.3, bloom = 0.15, bloomMax = 2.4, push = 4, stagger = 0.04 },
+	Sniper = { adsFov = 20, adsSpreadMul = 0.05, recoilPitch = 5, recoilYaw = 0.1, recoilGrow = 0, resetTime = 0.8, bloom = 0, bloomMax = 0, push = 22, stagger = 0.45 },
+}
+Config.WeaponAim = WeaponAim
 
 -- Взмах ближнего боя: стиль анимации, длительность (сек.) и сила тряски камеры при попадании
 local MeleeFx: { [string]: MeleeFxDef } = {

@@ -40,9 +40,10 @@ type Zombie = {
 	staggerUntil: number, -- до этого момента зомби «вздрогнул» от попадания и стоит
 	windupUntil: number, -- 0 — не замахивается; иначе момент удара (замах: стоит, руки подняты, глаза светлеют)
 	windupTarget: Player?,
-	armL: Weld,
-	armR: Weld,
-	armRest: { CFrame }, -- положение рук в покое: левая, правая
+	welds: { [string]: Weld }, -- детали тела на Weld: сервер двигает C0 при замахе, ударе и реакции на попадание
+	rest: { [string]: CFrame }, -- их положение в покое
+	slowUntil: number, -- до этого момента зомби хромает (попали в ногу)
+	headKill: boolean, -- убит выстрелом в голову (бонус очков и монет в RoundService)
 	eyes: { BasePart },
 }
 
@@ -99,17 +100,14 @@ local function buildModel(def: Config.ZombieDef): Model
 	local armR = mk("RightArm", Vector3.new(0.8, 0.8, 2), Vector3.new(1.3, 0.6, -0.9), def.color)
 	local legL = mk("LeftLeg", Vector3.new(0.9, 2, 0.9), Vector3.new(-0.5, -2, 0), Color3.fromRGB(60, 55, 70))
 	local legR = mk("RightLeg", Vector3.new(0.9, 2, 0.9), Vector3.new(0.5, -2, 0), Color3.fromRGB(60, 55, 70))
-	for _, p in { torso, head, legL, legR } do
-		weld(root, p)
-	end
-	-- руки на Weld (а не WeldConstraint): сервер двигает C0 при замахе и ударе, и это видно всем
-	for _, pair in { { armL, "ArmL" }, { armR, "ArmR" } } do
-		local arm = pair[1] :: Part
+	-- все части тела на Weld (а не WeldConstraint): сервер двигает C0 при замахе, ударе и реакции на попадание,
+	-- и это видно всем. Имя сварки — "W_" .. имя части (Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg)
+	for _, p in { torso, head, armL, armR, legL, legR } do
 		local w = Instance.new("Weld")
-		w.Name = pair[2] :: string
+		w.Name = "W_" .. p.Name
 		w.Part0 = root
-		w.Part1 = arm
-		w.C0 = root.CFrame:ToObjectSpace(arm.CFrame)
+		w.Part1 = p
+		w.C0 = root.CFrame:ToObjectSpace(p.CFrame)
 		w.Parent = root
 	end
 	-- светящиеся глаза
@@ -149,8 +147,13 @@ local function acquire(typeId: string): Zombie
 	local def = Config.Zombies[typeId]
 	local model = buildModel(def)
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
-	local armL = root:FindFirstChild("ArmL") :: Weld
-	local armR = root:FindFirstChild("ArmR") :: Weld
+	local welds: { [string]: Weld } = {}
+	local rest: { [string]: CFrame } = {}
+	for _, name in { "Torso", "Head", "LeftArm", "RightArm", "LeftLeg", "RightLeg" } do
+		local w = root:FindFirstChild("W_" .. name) :: Weld
+		welds[name] = w
+		rest[name] = w.C0
+	end
 	local eyes: { BasePart } = {}
 	for _, d in model:GetChildren() do
 		if d.Name == "Eye" and d:IsA("BasePart") then
@@ -181,9 +184,10 @@ local function acquire(typeId: string): Zombie
 		staggerUntil = 0,
 		windupUntil = 0,
 		windupTarget = nil,
-		armL = armL,
-		armR = armR,
-		armRest = { armL.C0, armR.C0 },
+		welds = welds,
+		rest = rest,
+		slowUntil = 0,
+		headKill = false,
 		eyes = eyes,
 	}
 end
@@ -259,12 +263,12 @@ local EYE_ALERT = Color3.fromRGB(255, 240, 160)
 -- raise: 0 — руки в покое, 1 — подняты над головой, -0.4 — удар вниз-вперёд
 local function armPose(z: Zombie, raise: number, time: number)
 	local s = z.def.scale
-	for i, w in { z.armL, z.armR } do
+	for i, name in { "LeftArm", "RightArm" } do
 		local sx = if i == 1 then -1.3 else 1.3
 		local target = if raise == 0
-			then z.armRest[i]
+			then z.rest[name]
 			else CFrame.new(sx * s, 0.6 * s, 0) * CFrame.Angles(math.rad(raise * 110), 0, 0) * CFrame.new(0, 0, -0.9 * s)
-		TweenService:Create(w, TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = target }):Play()
+		TweenService:Create(z.welds[name], TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = target }):Play()
 	end
 end
 
@@ -277,8 +281,11 @@ end
 local function resetAttack(z: Zombie)
 	z.windupUntil = 0
 	z.windupTarget = nil
-	z.armL.C0 = z.armRest[1]
-	z.armR.C0 = z.armRest[2]
+	for name, w in z.welds do
+		w.C0 = z.rest[name]
+	end
+	z.slowUntil = 0
+	z.headKill = false
 	setEyes(z, false)
 end
 
@@ -316,6 +323,70 @@ local function finishStrike(z: Zombie, now: number)
 		if r and (r.Position - z.root.Position).Magnitude <= reach then
 			PlayerService.damage(target, z.def.damage)
 		end
+	end
+end
+
+-- Реакция на попадание: часть тела, в которую попали, дёргается (корпус откидывается от выстрела, голова запрокидывается,
+-- рука отлетает, нога подгибается). kind: "Head" | "Torso" | "Arm" | "Leg"; power — сила удара (0,5..2).
+local function partKind(part: BasePart): string
+	local name = part.Name
+	if name == "Head" then
+		return "Head"
+	elseif name == "LeftArm" or name == "RightArm" then
+		return "Arm"
+	elseif name == "LeftLeg" or name == "RightLeg" then
+		return "Leg"
+	end
+	return "Torso"
+end
+
+local function jerk(z: Zombie, name: string, offset: CFrame, tIn: number, tOut: number)
+	local w = z.welds[name]
+	TweenService:Create(w, TweenInfo.new(tIn, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = offset * z.rest[name] }):Play()
+	task.delay(tIn, function()
+		if z.alive then
+			TweenService:Create(w, TweenInfo.new(tOut, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), { C0 = z.rest[name] }):Play()
+		end
+	end)
+end
+
+-- Откинуть верхнюю часть тела от выстрела вокруг бёдер (angleDeg), остальные части — по списку names
+local function leanBody(z: Zombie, localDir: Vector3, angleDeg: number, names: { string })
+	local axis = Vector3.yAxis:Cross(localDir)
+	if axis.Magnitude < 0.01 then
+		return
+	end
+	local pivot = CFrame.new(0, -0.9 * z.def.scale, 0)
+	local lean = pivot * CFrame.fromAxisAngle(axis.Unit, math.rad(angleDeg)) * pivot:Inverse()
+	for _, name in names do
+		jerk(z, name, lean, 0.05, 0.3)
+	end
+end
+
+local function flinch(z: Zombie, kind: string, partName: string, flat: Vector3, power: number, now: number)
+	local s = z.def.scale
+	local localDir = if flat == Vector3.zero then Vector3.new(0, 0, 1) else z.root.CFrame:VectorToObjectSpace(flat)
+	if kind == "Head" then
+		local neck = CFrame.new(0, -0.6 * s, 0)
+		jerk(z, "Head", neck * CFrame.Angles(math.rad(38) * power, math.rad((math.random() - 0.5) * 40), 0) * neck:Inverse(), 0.05, 0.28)
+		leanBody(z, localDir, 10 * power, { "Torso", "LeftArm", "RightArm" })
+	elseif kind == "Arm" then
+		local sx = if partName == "LeftArm" then -1.3 else 1.3
+		local shoulder = CFrame.new(sx * s, 0.6 * s, 0)
+		jerk(z, partName, shoulder * CFrame.Angles(math.rad(-55) * power, 0, math.rad(sx * 18)) * shoulder:Inverse(), 0.05, 0.3)
+		leanBody(z, localDir, 6 * power, { "Torso" })
+	elseif kind == "Leg" then
+		local sx = if partName == "LeftLeg" then -0.5 else 0.5
+		local hip = CFrame.new(sx * s, -1 * s, 0)
+		jerk(z, partName, hip * CFrame.Angles(math.rad(50) * power, 0, 0) * hip:Inverse(), 0.06, 0.4)
+		z.slowUntil = now + 1.6 -- подстреленная нога: хромает
+		z.humanoid.WalkSpeed = z.def.speed * 0.5
+		local pivot = CFrame.new(0, -0.9 * s, 0)
+		for _, name in { "Torso", "Head", "LeftArm", "RightArm" } do
+			jerk(z, name, pivot * CFrame.Angles(math.rad(-9), 0, 0) * pivot:Inverse(), 0.07, 0.35)
+		end
+	else -- корпус: откидывается от выстрела
+		leanBody(z, localDir, 16 * power, { "Torso", "Head", "LeftArm", "RightArm" })
 	end
 end
 
@@ -379,6 +450,12 @@ end
 local function think(z: Zombie, now: number, dt: number)
 	local pos = z.root.Position
 	local reach = 3.5 * z.def.scale + 1.5
+
+	-- хромота после попадания в ногу проходит
+	if z.slowUntil > 0 and now >= z.slowUntil then
+		z.slowUntil = 0
+		z.humanoid.WalkSpeed = z.def.speed
+	end
 
 	-- после попадания зомби на миг замирает (чувствуется удар); замах при этом срывается
 	if now < z.staggerUntil then
@@ -542,6 +619,8 @@ export type Impact = {
 	dir: Vector3?, -- направление удара/выстрела (от стрелка к зомби)
 	push: number?, -- отбрасывание, студов/с
 	stagger: number?, -- на сколько секунд зомби замирает
+	part: BasePart?, -- часть тела, в которую попали (для реакции: голова, корпус, рука, нога)
+	power: number?, -- сила удара для анимации реакции (1 — обычная)
 }
 
 -- Урон по зомби (только сервер). Возвращает: нанесён ли урон, убит ли.
@@ -563,15 +642,23 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 		end
 	end
 	flat = if flat.Magnitude > 0.01 then flat.Unit else Vector3.zero
+	local kind = if impact and impact.part then partKind(impact.part) else "Torso"
 	if z.hp > 0 and impact then
+		local now = os.clock()
+		-- выстрел в голову останавливает дольше, в ногу — почти нет (зато хромает)
+		local staggerScale = if kind == "Head" then 1.4 elseif kind == "Leg" then 0.5 else 1
 		if impact.stagger then
-			z.staggerUntil = math.max(z.staggerUntil, os.clock() + impact.stagger)
+			z.staggerUntil = math.max(z.staggerUntil, now + impact.stagger * staggerScale)
 		end
 		if impact.push and flat ~= Vector3.zero then
 			z.root:ApplyImpulse(flat * impact.push * z.root.AssemblyMass)
 		end
+		if impact.part then
+			flinch(z, kind, impact.part.Name, flat, impact.power or 1, now)
+		end
 	end
 	if z.hp <= 0 then
+		z.headKill = kind == "Head"
 		spawnCorpse(z, flat)
 		release(z)
 		if onKilled then
@@ -599,6 +686,11 @@ function ZombieService.isZombiePart(part: BasePart): (Model?, boolean)
 		return model, part.Name == "Head"
 	end
 	return nil, false
+end
+
+-- Вид части тела для множителей урона: "Head" | "Torso" | "Arm" | "Leg"
+function ZombieService.partKind(part: BasePart): string
+	return partKind(part)
 end
 
 function ZombieService.enqueue(types: { string }, hpMult: number)

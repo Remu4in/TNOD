@@ -34,7 +34,7 @@ local function damageNumber(pos: Vector3, amount: number, killed: boolean, heads
 	anchor.Position = pos
 	anchor.Parent = fxFolder
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(80, 40)
+	bb.Size = if headshot then UDim2.fromOffset(140, 56) else UDim2.fromOffset(80, 40)
 	bb.AlwaysOnTop = true
 	bb.Parent = anchor
 	local t = Instance.new("TextLabel")
@@ -43,7 +43,7 @@ local function damageNumber(pos: Vector3, amount: number, killed: boolean, heads
 	t.Font = Enum.Font.GothamBlack
 	t.TextScaled = true
 	t.TextStrokeTransparency = 0.3
-	t.Text = tostring(amount)
+	t.Text = if headshot then "ГОЛОВА " .. tostring(amount) else tostring(amount)
 	t.TextColor3 = if killed then Color3.fromRGB(255, 80, 60) elseif headshot then Color3.fromRGB(255, 220, 60) else Color3.new(1, 1, 1)
 	t.Parent = bb
 	TweenService:Create(anchor, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = pos + Vector3.new(0, 3, 0) }):Play()
@@ -101,6 +101,9 @@ function EffectsController.start()
 		end
 	end)
 	Remotes.get("HitFeedback").OnClientEvent:Connect(function(pos: Vector3?, dmg: number, killed: boolean, headshot: boolean)
+		-- маркер попадания у прицела (рисует HUDController): белый — обычное, жёлтый — голова, красный — убийство
+		local kind = if killed then "kill" elseif headshot then "head" else "hit"
+		player:SetAttribute("HitMark", kind .. "|" .. tostring(os.clock()))
 		if pos then
 			damageNumber(pos, dmg, killed, headshot)
 			WeaponSfx.hit(headshot, killed)

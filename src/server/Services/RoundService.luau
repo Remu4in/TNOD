@@ -121,6 +121,7 @@ local function startRound()
 	WeaponService.resetRound(players)
 	for _, p in players do
 		p:SetAttribute("Revives", 0)
+		p:SetAttribute("Headshots", 0)
 	end
 	if currentMap then
 		PlayerService.setSpawn(currentMap.playerSpawn)
@@ -231,8 +232,15 @@ end
 
 function RoundService.onZombieKilled(player: Player?, zombie: any)
 	if player then
-		EconomyService.add(player, zombie.def.reward)
-		ScoreService.recordKill(player, zombie.def.points)
+		-- убийство выстрелом в голову: больше монет и очков
+		local head = zombie.headKill == true
+		local bonusCoins = if head then math.floor(zombie.def.reward * Config.Economy.HeadshotKillCoinsBonus + 0.5) else 0
+		local bonusPoints = if head then math.floor(zombie.def.points * Config.Economy.HeadshotKillPointsBonus + 0.5) else 0
+		if head then
+			player:SetAttribute("Headshots", ((player:GetAttribute("Headshots") :: number?) or 0) + 1)
+		end
+		EconomyService.add(player, zombie.def.reward + bonusCoins)
+		ScoreService.recordKill(player, zombie.def.points + bonusPoints)
 	end
 end
 

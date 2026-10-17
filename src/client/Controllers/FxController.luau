@@ -257,7 +257,9 @@ function FxController.onLocalShot(tool: Tool, weaponId: string)
 	end
 	kick.back = math.min(kick.back + fx.kickBack, 0.8)
 	kick.rot = math.min(kick.rot + math.rad(fx.kickRot), math.rad(22))
-	kickCamera(fx.camPitch, fx.camYaw, 0.25)
+	-- подъём и увод прицела делает WeaponController по предсказуемой закономерности (Ballistics.recoilStep),
+	-- здесь — только лёгкая «дрожь» кадра, не влияющая на прицел
+	kickCamera(0, 0, 0.3)
 	muzzleFlash(tool, fx.flash)
 	if fx.shell then
 		ejectShell(tool)
@@ -277,15 +279,18 @@ end
 
 -- Попадание, о котором сообщил сервер (только стрелку): кровь, вспышка, для ближнего боя — тряска
 function FxController.onHit(pos: Vector3, damage: number, killed: boolean, headshot: boolean)
-	burst(pos, Color3.fromRGB(165, 12, 12), if killed then 26 else 12, 8, if killed then 34 else 22, 0.34, 0.55, false)
+	-- выстрел в голову — заметно больше крови и жёлтая вспышка
+	local count = if headshot then (if killed then 34 else 20) elseif killed then 26 else 12
+	burst(pos, Color3.fromRGB(165, 12, 12), count, 8, if killed or headshot then 34 else 22, 0.34, 0.55, false)
+	if headshot then
+		burst(pos, Color3.fromRGB(255, 220, 90), 8, 10, 26, 0.18, 0.3, false)
+	end
 	flashZombie(pos)
 	local tool = toolOf(player.Character)
 	if tool and tool:GetAttribute("Melee") == true then
 		local fx = Config.MeleeFx[tostring(tool:GetAttribute("WeaponId"))]
 		local shake = if fx then fx.shake else 2
 		kickCamera(shake, shake * 0.6, shake * 0.8)
-	elseif headshot then
-		kickCamera(0.4, 0.2, 0)
 	end
 end
 
