@@ -7,6 +7,7 @@ local PathfindingService = game:GetService("PathfindingService")
 local Debris = game:GetService("Debris")
 local TweenService = game:GetService("TweenService")
 local AssetService = game:GetService("AssetService")
+local ServerStorage = game:GetService("ServerStorage")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
@@ -41,7 +42,7 @@ type Zombie = {
 	staggerUntil: number, -- до этого момента зомби «вздрогнул» от попадания и стоит
 	windupUntil: number, -- 0 — не замахивается; иначе момент удара (замах: стоит, руки подняты, глаза светлеют)
 	windupTarget: Player?,
-	welds: { [string]: Weld }, -- детали тела на Weld: сервер двигает C0 при замахе, ударе и реакции на попадание
+	welds: { [string]: JointInstance }, -- детали тела на Weld (меши) или Motor6D (риг): сервер двигает C0 при замахе, ударе и реакции на попадание
 	rest: { [string]: CFrame }, -- их положение в покое
 	slowUntil: number, -- до этого момента зомби хромает (попали в ногу)
 	vaultResetAt: number, -- не раньше этого момента зомби снова может перелезать забор
@@ -52,6 +53,13 @@ type Zombie = {
 	armRaise: number, -- угол поднятых рук при замахе, градусов
 	armStrike: number, -- угол руки в ударе
 	eyes: { BasePart },
+	rig: boolean, -- настоящий риг R15 (Humanoid + Animator), а не меши на сварке
+	tracks: { [string]: AnimationTrack },
+	animIds: { [string]: string },
+	nextSpecial: number, -- когда снова можно бросить колбу / телепортироваться
+	throwing: boolean, -- замах — бросок колбы, а не удар -- анимации рига: idle, walk
+	animName: string, -- какая анимация сейчас играет
+	animSpeed: number, -- скорость шага, при которой анимация ходьбы идёт 1:1
 }
 
 local map: Types.MapInfo
@@ -242,7 +250,84 @@ local function buildBlockModel(def: Config.ZombieDef): Model
 	return finishModel(model, def, root, 3 * s - 1 * s)
 end
 
+-- Риг R6 из библиотеки ServerStorage.Assets.Zombies (Config.ZombieRigs): случайная модель из пула типа, живой Humanoid, суставы Motor6D.
+-- Попадания принимают сами части тела (Head, Torso, руки, ноги); корень-невидимка попаданий не принимает.
+local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): Model?
+	local lib = ServerStorage:FindFirstChild("Assets")
+	local folder = lib and lib:FindFirstChild("Zombies")
+	if not folder then
+		return nil
+	end
+	local candidates = {}
+	for _, name in rigDef.pool do
+		local m = folder:FindFirstChild(name)
+		if m and m:IsA("Model") then
+			table.insert(candidates, m)
+		end
+	end
+	if #candidates == 0 then
+		return nil
+	end
+	local src = candidates[math.random(1, #candidates)]
+	local model = src:Clone()
+	model.Name = "Zombie_" .. def.id
+	model:ScaleTo(if rigDef.absolute then rigDef.scale else rigDef.scale * def.scale)
+	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
+	humanoid.WalkSpeed = def.speed
+	humanoid.JumpHeight = 3
+	humanoid.MaxHealth = 1e6 -- HP зомби считаем сами
+	humanoid.Health = 1e6
+	humanoid.BreakJointsOnDeath = false
+	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+	if not humanoid:FindFirstChildOfClass("Animator") then
+		Instance.new("Animator").Parent = humanoid
+	end
+	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
+	root.Transparency = 1
+	root.CanQuery = false -- иначе корень перехватывает пули, летящие в корпус
+	model.PrimaryPart = root
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.CollisionGroup = COLLISION_GROUP
+			d.Anchored = false
+			d.CanTouch = false
+			if d.Name == "Handle" then
+				d.CanCollide = false -- аксессуары не мешают
+			end
+			d:SetAttribute("BaseColor", d.Color) -- цвет «в покое» для подсветки замаха
+			if rigDef.tint and d.Name ~= "HumanoidRootPart" and d.Name ~= "Handle" then
+				d.Color = rigDef.tint
+				d:SetAttribute("BaseColor", rigDef.tint)
+			end
+		end
+	end
+	if rigDef.crawl then
+		-- ползун: корпус наклонён вперёд почти до горизонтали и опущен к земле (поворот в системе корня, до чтения суставов)
+		for _, d in model:GetDescendants() do
+			if d:IsA("Motor6D") and d.Part0 == root and d.Part1 and d.Part1.Name == "Torso" then
+				d.C0 = CFrame.new(0, -1.5 * model:GetScale(), 0) * CFrame.Angles(math.rad(-80), 0, 0) * d.C0
+			end
+		end
+	end
+	model:SetAttribute("Rig", true)
+	model:SetAttribute("RigAsset", src.Name)
+	return model
+end
+
 local function buildModel(def: Config.ZombieDef): Model
+	if Config.UseRigZombies then
+		local rigDef = Config.ZombieRigs[def.id]
+		if rigDef then
+			local rigModel = buildRigModel(def, rigDef)
+			if rigModel then
+				return rigModel
+			end
+			warn("[ZombieService] нет моделей из пула в ServerStorage.Assets.Zombies — зомби " .. def.id .. " собран из мешей")
+		end
+	end
 	local vis = Config.ZombieVisuals[def.id]
 	if vis then
 		local templates: { [string]: MeshPart } = {}
@@ -268,6 +353,64 @@ local function buildModel(def: Config.ZombieDef): Model
 	return buildBlockModel(def)
 end
 
+-- id анимаций модели: атрибуты Anim_<роль> (из ассета), иначе стандартные R6 (Config.ZombieAnimDefaults)
+local function resolveAnimIds(model: Model, rigDef: Config.ZombieRig): { [string]: string }
+	local function pick(role: string): string
+		local own = model:GetAttribute("Anim_" .. role)
+		return if type(own) == "string" and own ~= "" then own else Config.ZombieAnimDefaults[role]
+	end
+	return {
+		idle = pick("idle"),
+		walk = pick(if rigDef.useRun then "run" else "walk"),
+	}
+end
+
+-- Анимации рига: проигрываются на сервере через Animator (видны всем). Анимация, к которой у плейса нет доступа
+-- (длина так и остаётся 0), заменяется стандартной R6.
+local function loadTracks(model: Model, ids: { [string]: string }): { [string]: AnimationTrack }
+	local tracks: { [string]: AnimationTrack } = {}
+	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
+	local animator = humanoid:FindFirstChildOfClass("Animator") :: Animator
+	local function make(name: string, id: string): AnimationTrack?
+		local anim = Instance.new("Animation")
+		anim.AnimationId = "rbxassetid://" .. id
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
+		if not ok then
+			warn("[ZombieService] не загрузилась анимация " .. name .. " " .. id .. ": " .. tostring(track))
+			return nil
+		end
+		track.Looped = true
+		track.Priority = if name == "idle" then Enum.AnimationPriority.Idle else Enum.AnimationPriority.Movement
+		return track
+	end
+	for name, id in ids do
+		local track = make(name, id)
+		if track then
+			tracks[name] = track
+			local default = Config.ZombieAnimDefaults[if name == "idle" then "idle" else "walk"]
+			if id ~= default then
+				task.delay(4, function()
+					if track.Length == 0 and tracks[name] == track then
+						warn("[ZombieService] анимация " .. id .. " недоступна, заменена стандартной")
+						local wasPlaying = track.IsPlaying
+						track:Stop(0)
+						local fallback = make(name, default)
+						if fallback then
+							tracks[name] = fallback
+							if wasPlaying then
+								fallback:Play(0.2)
+							end
+						end
+					end
+				end)
+			end
+		end
+	end
+	return tracks
+end
+
 local function acquire(typeId: string): Zombie
 	local list = pool[typeId]
 	if list and #list > 0 then
@@ -275,13 +418,31 @@ local function acquire(typeId: string): Zombie
 	end
 	local def = Config.Zombies[typeId]
 	local model = buildModel(def)
+	local isRig = model:GetAttribute("Rig") == true
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
-	local welds: { [string]: Weld } = {}
+	local welds: { [string]: JointInstance } = {}
 	local rest: { [string]: CFrame } = {}
-	for _, name in { "Torso", "Head", "LeftArm", "RightArm", "LeftLeg", "RightLeg" } do
-		local w = root:FindFirstChild("W_" .. name) :: Weld
-		welds[name] = w
-		rest[name] = w.C0
+	if isRig then
+		-- сустав каждой части находим по тому, какую деталь он держит (имена у ассетов разные: RootJoint / Root Hip)
+		local limbs = { Torso = "Torso", Head = "Head", LeftArm = "Left Arm", RightArm = "Right Arm", LeftLeg = "Left Leg", RightLeg = "Right Leg" }
+		for name, partName in limbs do
+			local found: Motor6D? = nil
+			for _, d in model:GetDescendants() do
+				if d:IsA("Motor6D") and d.Part1 and d.Part1.Name == partName and d.Part0 and (partName ~= "Torso" or d.Part0 == root) then
+					found = d
+					break
+				end
+			end
+			local j = found :: Motor6D
+			welds[name] = j
+			rest[name] = j.C0
+		end
+	else
+		for _, name in { "Torso", "Head", "LeftArm", "RightArm", "LeftLeg", "RightLeg" } do
+			local w = root:FindFirstChild("W_" .. name) :: Weld
+			welds[name] = w
+			rest[name] = w.C0
+		end
 	end
 	local eyes: { BasePart } = {}
 	for _, d in model:GetChildren() do
@@ -290,11 +451,17 @@ local function acquire(typeId: string): Zombie
 		end
 	end
 	-- точки вращения и углы замаха зависят от вида модели: у мешей руки висят вниз, у блоков — вытянуты вперёд
-	local isMesh = (model:FindFirstChild("Torso") :: Instance):IsA("MeshPart")
+	local isMesh = not isRig and (model:FindFirstChild("Torso") :: Instance):IsA("MeshPart")
 	local s = def.scale
 	local pivots: { [string]: Vector3 } = {}
 	local hipPivot = Vector3.new(0, -0.9 * s, 0)
-	if isMesh then
+	if isRig then
+		for name, w in welds do
+			pivots[name] = rest[name].Position
+		end
+		pivots.Torso += Vector3.new(0, -1, 0) -- корпус наклоняется от пояса (RootJoint стоит в центре торса)
+		hipPivot = pivots.Torso
+	elseif isMesh then
 		for _, vp in (Config.ZombieVisuals[typeId] :: Config.ZombieVisual).parts do
 			pivots[vp.part] = vp.pivot
 		end
@@ -337,8 +504,15 @@ local function acquire(typeId: string): Zombie
 		rest = rest,
 		pivots = pivots,
 		hipPivot = hipPivot,
-		armRaise = if isMesh then 140 else 75,
-		armStrike = if isMesh then 50 else -25,
+		armRaise = if isRig then 100 elseif isMesh then 140 else 75,
+		armStrike = if isRig then 35 elseif isMesh then 50 else -25,
+		rig = isRig,
+		tracks = {}, -- анимации грузим при первом выходе в мир (Animator должен быть в Workspace)
+		animName = "",
+		animSpeed = if isRig then Config.ZombieRigs[def.id].animSpeed else 1,
+		nextSpecial = 0,
+		throwing = false,
+		animIds = if isRig then resolveAnimIds(model, Config.ZombieRigs[def.id]) else {},
 		slowUntil = 0,
 		vaultResetAt = 0,
 		vaultLockUntil = 0,
@@ -440,7 +614,78 @@ local function setEyes(z: Zombie, alert: boolean)
 	end
 end
 
+-- Колба химика: летит по дуге к месту, где стоял игрок; в точке падения — взрыв яда и лужа
+local function flaskBurst(def: Config.ZombieDef, landing: Vector3)
+	local fl = def.flask :: { range: number, minRange: number, cooldown: number, damage: number, tick: number, radius: number }
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { container }
+	local hit = workspace:Raycast(landing + Vector3.new(0, 4, 0), Vector3.new(0, -12, 0), params)
+	local ground = if hit then hit.Position else landing
+	local puddle = Instance.new("Part")
+	puddle.Name = "PoisonPuddle"
+	puddle.Shape = Enum.PartType.Cylinder
+	puddle.Size = Vector3.new(0.25, fl.radius * 2, fl.radius * 2)
+	puddle.CFrame = CFrame.new(ground + Vector3.new(0, 0.15, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	puddle.Anchored = true
+	puddle.CanCollide = false
+	puddle.CanQuery = false
+	puddle.CanTouch = false
+	puddle.Material = Enum.Material.Neon
+	puddle.Color = Color3.fromRGB(110, 220, 70)
+	puddle.Transparency = 0.45
+	puddle.Parent = workspace
+	local function strike(amount: number)
+		for _, p in PlayerService.upPlayers() do
+			local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if r and (r.Position - ground).Magnitude <= fl.radius then
+				PlayerService.damage(p, amount)
+			end
+		end
+	end
+	strike(fl.damage)
+	task.spawn(function()
+		for _ = 1, 6 do
+			task.wait(0.5)
+			strike(fl.tick)
+		end
+		puddle:Destroy()
+	end)
+end
+
+local function launchFlask(z: Zombie, target: Player)
+	local char = target.Character
+	local r = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not r then
+		return
+	end
+	local origin = z.head.Position + Vector3.new(0, 0.5, 0)
+	local landing = r.Position
+	local dist = (landing - origin).Magnitude
+	local t = math.clamp(dist / 45, 0.5, 1.3)
+	local gravity = Vector3.new(0, -workspace.Gravity, 0)
+	local flask = Instance.new("Part")
+	flask.Name = "Flask"
+	flask.Shape = Enum.PartType.Ball
+	flask.Size = Vector3.new(1.2, 1.2, 1.2)
+	flask.Material = Enum.Material.Neon
+	flask.Color = Color3.fromRGB(110, 220, 70)
+	flask.CanCollide = false
+	flask.CanQuery = false
+	flask.CanTouch = false
+	flask.Position = origin
+	flask.Parent = workspace
+	flask.AssemblyLinearVelocity = (landing - origin) / t - 0.5 * gravity * t
+	local def = z.def
+	task.delay(t, function()
+		flask:Destroy()
+		flaskBurst(def, landing)
+	end)
+end
+
 local function resetAttack(z: Zombie)
+	z.throwing = false
+	z.nextSpecial = 0
 	z.windupUntil = 0
 	z.windupTarget = nil
 	for name, w in z.welds do
@@ -455,6 +700,7 @@ local function resetAttack(z: Zombie)
 end
 
 local function cancelWindup(z: Zombie)
+	z.throwing = false
 	z.windupUntil = 0
 	z.windupTarget = nil
 	armPose(z, 0, 0.2)
@@ -470,6 +716,8 @@ end
 
 local function finishStrike(z: Zombie, now: number)
 	local target = z.windupTarget
+	local throwing = z.throwing
+	z.throwing = false
 	z.windupUntil = 0
 	z.windupTarget = nil
 	z.lastAttack = now + math.random() * 0.6 -- небольшой разброс, чтобы стая не била залпом в один такт
@@ -480,6 +728,12 @@ local function finishStrike(z: Zombie, now: number)
 		end
 	end)
 	setEyes(z, false)
+	if throwing then
+		if target and PlayerService.isUp(target) then
+			launchFlask(z, target)
+		end
+		return
+	end
 	-- удар достаёт, только если игрок всё ещё рядом (отошёл — промах) и не в кувырке (PlayerService.damage)
 	if target and PlayerService.isUp(target) then
 		local char = target.Character
@@ -494,12 +748,18 @@ end
 -- Реакция на попадание: часть тела, в которую попали, дёргается (корпус откидывается от выстрела, голова запрокидывается,
 -- рука отлетает, нога подгибается). kind: "Head" | "Torso" | "Arm" | "Leg"; power — сила удара (0,5..2).
 local function partKind(part: BasePart): string
-	local name = string.gsub(part.Name, "^Hit", "") -- хитбоксы называются Hit<Часть>
+	local name = string.gsub(part.Name, "^Hit", "") -- хитбоксы мешей называются Hit<Часть>; у рига R6 — Head/Torso/Left Arm…
+	if name == "Handle" then -- аксессуар: считаем попаданием в ту часть, к которой он приварен
+		local weld = part:FindFirstChildWhichIsA("JointInstance")
+		if weld and weld.Part0 then
+			name = weld.Part0.Name
+		end
+	end
 	if name == "Head" then
 		return "Head"
-	elseif name == "LeftArm" or name == "RightArm" then
+	elseif string.find(name, "Arm") or string.find(name, "Hand") then
 		return "Arm"
-	elseif name == "LeftLeg" or name == "RightLeg" then
+	elseif string.find(name, "Leg") or string.find(name, "Foot") then
 		return "Leg"
 	end
 	return "Torso"
@@ -521,6 +781,12 @@ local function leanBody(z: Zombie, localDir: Vector3, angleDeg: number, names: {
 	if axis.Magnitude < 0.01 then
 		return
 	end
+	if z.rig then
+		-- у рига голова и руки — дети верхней части корпуса: достаточно наклонить пояс, остальное следует за ним
+		local waist = CFrame.new(z.pivots.Torso)
+		jerk(z, "Torso", waist * CFrame.fromAxisAngle(axis.Unit, math.rad(angleDeg)) * waist:Inverse(), 0.05, 0.3)
+		return
+	end
 	local pivot = CFrame.new(z.hipPivot)
 	local lean = pivot * CFrame.fromAxisAngle(axis.Unit, math.rad(angleDeg)) * pivot:Inverse()
 	for _, name in names do
@@ -528,7 +794,12 @@ local function leanBody(z: Zombie, localDir: Vector3, angleDeg: number, names: {
 	end
 end
 
-local function flinch(z: Zombie, kind: string, partName: string, flat: Vector3, power: number, now: number)
+local function flinch(z: Zombie, kind: string, hitName: string, flat: Vector3, power: number, now: number)
+	-- у рига части называются LeftUpperArm, RightLowerLeg…: приводим к логическим именам LeftArm/RightLeg
+	local partName = hitName
+	if z.rig and (kind == "Arm" or kind == "Leg") then
+		partName = (if string.find(hitName, "Left") then "Left" else "Right") .. kind
+	end
 	local localDir = if flat == Vector3.zero then Vector3.new(0, 0, 1) else z.root.CFrame:VectorToObjectSpace(flat)
 	if kind == "Head" then
 		local neck = CFrame.new(z.pivots.Head)
@@ -545,7 +816,8 @@ local function flinch(z: Zombie, kind: string, partName: string, flat: Vector3, 
 		z.slowUntil = now + 1.6 -- подстреленная нога: хромает
 		z.humanoid.WalkSpeed = z.def.speed * 0.5
 		local pivot = CFrame.new(z.hipPivot)
-		for _, name in { "Torso", "Head", "LeftArm", "RightArm" } do
+		local names = if z.rig then { "Torso" } else { "Torso", "Head", "LeftArm", "RightArm" }
+		for _, name in names do
 			jerk(z, name, pivot * CFrame.Angles(math.rad(-9), 0, 0) * pivot:Inverse(), 0.07, 0.35)
 		end
 	else -- корпус: откидывается от выстрела
@@ -556,6 +828,10 @@ end
 local function release(z: Zombie)
 	z.alive = false
 	active[z.model] = nil
+	for _, track in z.tracks do
+		track:Stop(0)
+	end
+	z.animName = ""
 	z.model.Parent = storage
 	local list = pool[z.def.id]
 	if not list then
@@ -590,6 +866,9 @@ local function spawnOne(typeId: string)
 	z.model:PivotTo(CFrame.new(spawnPos))
 	z.model.Parent = container
 	z.root:SetNetworkOwner(nil) -- двигает только сервер
+	if z.rig and next(z.tracks) == nil then
+		z.tracks = loadTracks(z.model, z.animIds)
+	end
 	active[z.model] = z
 end
 
@@ -608,6 +887,55 @@ local function nearestUpCharacter(pos: Vector3): (Player?, BasePart?, number)
 		end
 	end
 	return best, bestRoot, bestDist
+end
+
+-- Анимация рига: по скорости корпуса — стоит (idle) или идёт (walk, темп по скорости). На замахе и в оцепенении — idle.
+local function animate(z: Zombie)
+	if not z.rig then
+		return
+	end
+	local v = z.root.AssemblyLinearVelocity
+	local speed = Vector3.new(v.X, 0, v.Z).Magnitude
+	local want = if speed > 1.5 and z.windupUntil == 0 then "walk" else "idle"
+	if want ~= z.animName then
+		for name, track in z.tracks do
+			if name == want then
+				track:Play(0.2)
+			else
+				track:Stop(0.2)
+			end
+		end
+		z.animName = want
+	end
+	local walk = z.tracks.walk
+	if walk and want == "walk" then
+		walk:AdjustSpeed(math.clamp(speed / z.animSpeed, 0.4, 2.4))
+	end
+end
+
+-- Тёмный: перепрыгивает к игроку, но не ближе tp.distance
+local function teleportNear(z: Zombie, targetRoot: BasePart, now: number)
+	local tp = z.def.teleport :: { cooldown: number, distance: number }
+	z.nextSpecial = now + tp.cooldown
+	local angle = math.random() * math.pi * 2
+	local spot = targetRoot.Position + Vector3.new(math.cos(angle), 0, math.sin(angle)) * (tp.distance + math.random() * 4)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { container, targetRoot.Parent :: Instance }
+	local hit = workspace:Raycast(spot + Vector3.new(0, 30, 0), Vector3.new(0, -60, 0), params)
+	if hit then
+		z.model:PivotTo(CFrame.new(hit.Position + Vector3.new(0, 4, 0)))
+		z.waypoints = nil
+		z.pathFailed = false
+	end
+end
+
+local function hasLineOfSight(z: Zombie, targetRoot: BasePart): boolean
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { container, targetRoot.Parent :: Instance }
+	local from = z.head.Position
+	return workspace:Raycast(from, targetRoot.Position - from, params) == nil
 end
 
 local function think(z: Zombie, now: number, dt: number)
@@ -740,8 +1068,18 @@ local function think(z: Zombie, now: number, dt: number)
 				return
 			end
 		end
+		local tp = z.def.teleport
+		if tp and now >= z.nextSpecial and dist > tp.distance + 10 then
+			teleportNear(z, targetRoot, now)
+			return
+		end
 		goTo(z, targetRoot.Position, now)
-		if dist <= reach and now - z.lastAttack >= z.def.attackCooldown then
+		local fl = z.def.flask
+		if fl and now >= z.nextSpecial and dist <= fl.range and dist >= fl.minRange and hasLineOfSight(z, targetRoot) then
+			z.nextSpecial = now + fl.cooldown
+			z.throwing = true
+			startWindup(z, player, now)
+		elseif dist <= reach and now - z.lastAttack >= z.def.attackCooldown then
 			startWindup(z, player, now)
 		end
 	end
@@ -770,12 +1108,35 @@ local function spawnCorpse(z: Zombie, dir: Vector3)
 	if hum then
 		hum:Destroy()
 	end
+	if z.rig then
+		-- риг: суставы Motor6D заменяем шаровыми — тело разваливается как тряпичная кукла
+		for _, m in c:GetDescendants() do
+			if m:IsA("Motor6D") and m.Part0 and m.Part1 then
+				local a0 = Instance.new("Attachment")
+				a0.CFrame = m.C0
+				a0.Parent = m.Part0
+				local a1 = Instance.new("Attachment")
+				a1.CFrame = m.C1
+				a1.Parent = m.Part1
+				local ball = Instance.new("BallSocketConstraint")
+				ball.Attachment0 = a0
+				ball.Attachment1 = a1
+				ball.LimitsEnabled = true
+				ball.UpperAngle = 55
+				ball.TwistLimitsEnabled = true
+				ball.TwistLowerAngle = -35
+				ball.TwistUpperAngle = 35
+				ball.Parent = m.Part0
+				m:Destroy()
+			end
+		end
+	end
 	local root = c:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local parts: { BasePart } = {}
 	for _, d in c:GetDescendants() do
 		if d:IsA("BasePart") then
 			d.Anchored = true
-			d.CanCollide = false
+			d.CanCollide = z.rig and d.Name ~= "HumanoidRootPart" and d.Name ~= "Handle" -- у рига ударяются о землю все части (рэгдолл), у мешей — только корень
 			d.CanQuery = false
 			d.CanTouch = false
 			d.CollisionGroup = "Default"
@@ -973,6 +1334,7 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 			for _, z in active do
 				if z.alive then
 					think(z, now, dt)
+					animate(z)
 				end
 			end
 		end

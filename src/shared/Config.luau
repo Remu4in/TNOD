@@ -72,6 +72,8 @@ export type ZombieDef = {
 	scale: number,
 	color: Color3,
 	planksPerHit: number,
+	flask: { range: number, minRange: number, cooldown: number, damage: number, tick: number, radius: number }?, -- химик: бросает колбу с ядом
+	teleport: { cooldown: number, distance: number }?, -- тёмный: появляется рядом с игроком (не ближе distance)
 }
 
 local Config = {}
@@ -95,6 +97,23 @@ Config.Locations = {
 }
 Config.LocationNights = 10
 
+-- Режим осмотра (2026-10-18): вместо раундов строится «Большой мир» (Locations/World), зомби нет, всё открыто,
+-- на базе стоят телепорт-площадки к каждой локации. Выключить (false) — обычная игра на карте City.
+Config.Explore = true
+Config.ExploreZombies = true -- в режиме осмотра ставить проверочных зомби (Зомби 3.0)
+Config.ExploreZombieTypes = { "Walker", "Runner", "Brute", "Military", "Chemist", "Dark", "BucketHead", "Crawler" } -- что показывать (боссов добавьте сами: BossBuff, BossGarg, BossStrong)
+
+-- Машины (VehicleService / VehicleController): аркадная езда
+Config.Vehicle = {
+	maxSpeed = 105, -- студов/с вперёд (~75 км/ч в масштабе игры)
+	reverseSpeed = 30,
+	accel = 55,
+	brake = 110,
+	drag = 22, -- замедление без газа
+	turn = 2.4, -- рад/с на малой скорости (на большой делится)
+	length = 13, -- итоговая длина кузова в студах
+}
+
 Config.Player = {
 	MaxHealth = 100,
 	RegenDelay = 5,
@@ -103,14 +122,14 @@ Config.Player = {
 	WalkSpeed = 13,
 	SprintSpeed = 21,
 	DownedWalkSpeed = 4,
-	-- Энергия: 5 с непрерывного спринта тратят всю, полностью восстанавливается за 30 с
+	-- Энергия: 5 с непрерывного спринта тратят всю, полностью восстанавливается за 15 с
 	EnergyMax = 100,
 	SprintSeconds = 5, -- было 10: спринт в 2 раза короче (запрос Руслана 2026-10-16)
-	EnergyRegenSeconds = 30,
+	EnergyRegenSeconds = 15, -- было 30: восстановление в 2 раза быстрее (запрос Руслана 2026-10-18)
 	EnergyRegenDelay = 1, -- пауза после спринта перед восстановлением
 	SprintMinEnergy = 15, -- с меньшей энергией спринт не начать
-	-- Подкат (спринт + C): низкий скользящий рывок, проходит под баррикадой с выбитыми нижними досками.
-	-- Кувырок (C без спринта): рывок с неуязвимостью в первые секунды — уклонение от замаха зомби.
+	-- Подкат (спринт + Q): низкий скользящий рывок, проходит под баррикадой с выбитыми нижними досками.
+	-- Кувырок (C): рывок с неуязвимостью в первые секунды — уклонение от замаха зомби.
 	SlideEnergy = 10,
 	SlideSeconds = 1.0,
 	SlideSpeed = 34,
@@ -437,6 +456,41 @@ local Zombies: { [string]: ZombieDef } = {
 		id = "Brute", name = "Громила", hp = 600, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 400, points = 100, scale = 1.8, color = Color3.fromRGB(110, 50, 50), planksPerHit = 5,
 	},
+	-- Особые зомби (2026-10-19). Числа черновые: расписание по волнам и баланс — следующий шаг.
+	Military = {
+		id = "Military", name = "Заражённый военный", hp = 180, speed = 13, damage = 22, attackCooldown = 2.2, windup = 0.5, breakCooldown = 1,
+		reward = 150, points = 40, scale = 1.05, color = Color3.fromRGB(80, 100, 70), planksPerHit = 2,
+	},
+	Chemist = {
+		id = "Chemist", name = "Химик", hp = 90, speed = 12, damage = 10, attackCooldown = 2.4, windup = 0.5, breakCooldown = 1,
+		reward = 120, points = 35, scale = 1, color = Color3.fromRGB(120, 200, 90), planksPerHit = 1,
+		flask = { range = 40, minRange = 10, cooldown = 5, damage = 20, tick = 4, radius = 7 },
+	},
+	Dark = {
+		id = "Dark", name = "Тёмный", hp = 150, speed = 17, damage = 20, attackCooldown = 2, windup = 0.4, breakCooldown = 0.8,
+		reward = 140, points = 40, scale = 1, color = Color3.fromRGB(25, 25, 30), planksPerHit = 1,
+		teleport = { cooldown = 7, distance = 18 },
+	},
+	BucketHead = {
+		id = "BucketHead", name = "Бронированный", hp = 300, speed = 12, damage = 18, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
+		reward = 130, points = 40, scale = 1.15, color = Color3.fromRGB(120, 120, 120), planksPerHit = 2,
+	},
+	Crawler = {
+		id = "Crawler", name = "Ползун", hp = 50, speed = 11, damage = 8, attackCooldown = 1.6, windup = 0.35, breakCooldown = 0.8,
+		reward = 40, points = 12, scale = 0.6, color = Color3.fromRGB(110, 120, 90), planksPerHit = 1,
+	},
+	BossBuff = {
+		id = "BossBuff", name = "Качок", hp = 4000, speed = 11, damage = 50, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
+		reward = 2000, points = 500, scale = 2.0, color = Color3.fromRGB(110, 60, 60), planksPerHit = 6,
+	},
+	BossGarg = {
+		id = "BossGarg", name = "Гаргантюа", hp = 8000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
+		reward = 4000, points = 800, scale = 2.5, color = Color3.fromRGB(70, 100, 60), planksPerHit = 8,
+	},
+	BossStrong = {
+		id = "BossStrong", name = "Повелитель тёмных", hp = 6000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
+		reward = 3000, points = 650, scale = 1.7, color = Color3.fromRGB(40, 30, 50), planksPerHit = 6,
+	},
 }
 
 Config.Zombies = Zombies
@@ -511,6 +565,39 @@ for _, vis in ZombieVisuals do
 	end
 end
 Config.ZombieVisuals = ZombieVisuals
+
+-- «Зомби 3.0» (2026-10-19): готовые R6-модели Руслана из ServerStorage.Assets.Zombies (Humanoid, Motor6D, Animator).
+-- Тип зомби → пул моделей; при создании берётся случайная из пула. Нет пула/моделей — старая сборка из мешей (ZombieVisuals).
+-- pool — имена моделей библиотеки; scale — множитель роста (R6 ≈ 5 студов); animSpeed — скорость шага, при которой анимация идёт 1:1;
+-- useRun — вместо ходьбы играть анимацию бега модели; tint — перекраска (необязательно).
+-- Анимации читаются из атрибутов модели Anim_idle / Anim_walk / Anim_run / Anim_attack (записал Baker из Animation-объектов ассета),
+-- чего нет — берётся ZombieAnimDefaults (стандартные R6 Roblox).
+-- absolute — scale задаёт итоговый размер модели (без множителя def.scale); crawl — корпус прижат к земле (ползун)
+export type ZombieRig = { pool: { string }, scale: number, animSpeed: number, useRun: boolean?, tint: Color3?, absolute: boolean?, crawl: boolean? }
+Config.UseRigZombies = true
+Config.ZombieAnimDefaults = { idle = "180435571", walk = "180426354", run = "180426354" }
+Config.ZombieRigs = {
+	Walker = {
+		pool = { "Z_Walker1", "Z_Pack1", "Z_Pack2", "Z_Pack3", "Z_Pack4", "Z_Pack5", "Z_Pack6", "Z_Pack7", "Z_Pack8", "Z_P4_1", "Z_P4_2", "Z_P4_3", "Z_P4_4" },
+		scale = 1.1, animSpeed = 13,
+	},
+	Runner = {
+		pool = { "Z_Drooling", "Z_Runner1", "Z_Zombie1" },
+		scale = 1.05, animSpeed = 15, useRun = true,
+	},
+	Brute = { -- большой «обычный»
+		pool = { "Z_Pack2", "Z_Pack1" },
+		scale = 0.8, animSpeed = 10,
+	},
+	Military = { pool = { "Z_Mil1", "Z_Mil2", "Z_Mil3", "Z_Mil4", "Z_Mil5" }, scale = 1.0, absolute = true, animSpeed = 13 },
+	Chemist = { pool = { "Z_Chem1", "Z_Chem2", "Z_Chem3" }, scale = 1.0, absolute = true, animSpeed = 12 },
+	Dark = { pool = { "Z_Pack1", "Z_Pack3", "Z_Pack4", "Z_Pack5", "Z_Pack6", "Z_Pack7" }, scale = 1.05, absolute = true, animSpeed = 15, useRun = true, tint = Color3.fromRGB(22, 22, 28) },
+	BucketHead = { pool = { "Z_Bucket", "Z_Cone" }, scale = 1.1, absolute = true, animSpeed = 12 },
+	Crawler = { pool = { "Z_Pack1", "Z_Pack3", "Z_Pack4", "Z_Pack5", "Z_Pack6", "Z_Pack7", "Z_Pack8" }, scale = 0.85, absolute = true, animSpeed = 9, crawl = true },
+	BossBuff = { pool = { "B_Buff" }, scale = 0.6, absolute = true, animSpeed = 8 },
+	BossGarg = { pool = { "B_Garg" }, scale = 1.8, absolute = true, animSpeed = 6 },
+	BossStrong = { pool = { "B_Strong" }, scale = 0.95, absolute = true, animSpeed = 10 },
+} :: { [string]: ZombieRig }
 
 -- Машины: сгенерированные меши (Studio generate_mesh, 2026-10-17), модель стоит основанием на земле, перёд — в -Z.
 export type MeshProp = { id: string, mesh: string, texture: string, size: Vector3 }

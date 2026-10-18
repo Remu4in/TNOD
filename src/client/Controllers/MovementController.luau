@@ -136,7 +136,7 @@ local function deny(reason: string)
 	player:SetAttribute("DodgeDenied", reason .. "|" .. tostring(os.clock()))
 end
 
-local function tryDodge()
+local function tryDodge(want: string?)
 	local hum, root = aliveHumanoid()
 	if dodging or not hum or not root or player:GetAttribute("Downed") == true then
 		return
@@ -146,9 +146,15 @@ local function tryDodge()
 		return
 	end
 	local energy = (player:GetAttribute("Energy") :: number?) or 0
-	-- подкат — если бежим (атрибут Sprinting приходит с сервера с задержкой, поэтому смотрим и на скорость)
+	-- подкат — только на бегу (атрибут Sprinting приходит с сервера с задержкой, поэтому смотрим и на скорость)
 	local flatSpeed = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude
-	local slide = player:GetAttribute("Sprinting") == true or flatSpeed > P.SprintSpeed - 3
+	local running = player:GetAttribute("Sprinting") == true or flatSpeed > P.SprintSpeed - 3
+	-- want: "slide" (Q) | "roll" (C) | nil (кнопка телефона и автотесты: на бегу подкат, иначе кувырок)
+	local slide = if want == "slide" then true elseif want == "roll" then false else running
+	if slide and not running then
+		deny("Подкат — только на бегу")
+		return
+	end
 	local need = if slide then P.SlideEnergy else P.RollEnergy
 	if energy < need then
 		deny(string.format("Не хватает энергии (нужно %d)", need))
@@ -161,21 +167,38 @@ local function tryDodge()
 end
 
 -- Публичный вызов (кнопка на телефоне, тесты): подкат в спринте, иначе кувырок
-MovementController.dodge = tryDodge
+MovementController.dodge = function()
+	tryDodge(nil)
+end
 
 function MovementController.start()
 	local touchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
+	-- Q — подкат (только на бегу), C — кувырок
 	ContextActionService:BindAction("NotdDodge", function(_, state)
 		if state == Enum.UserInputState.Begin then
 			player:SetAttribute("DodgeKeyPresses", ((player:GetAttribute("DodgeKeyPresses") :: number?) or 0) + 1) -- диагностика: дошла ли клавиша
-			tryDodge()
+			tryDodge(nil)
 		end
 		return Enum.ContextActionResult.Pass
-	end, true, Enum.KeyCode.C, Enum.KeyCode.LeftControl, Enum.KeyCode.ButtonB)
+	end, true, Enum.KeyCode.ButtonB)
 	ContextActionService:SetTitle("NotdDodge", "Кувырок")
+	ContextActionService:BindAction("NotdSlide", function(_, state)
+		if state == Enum.UserInputState.Begin then
+			tryDodge("slide")
+		end
+		return Enum.ContextActionResult.Pass
+	end, false, Enum.KeyCode.Q)
+	ContextActionService:BindAction("NotdRoll", function(_, state)
+		if state == Enum.UserInputState.Begin then
+			tryDodge("roll")
+		end
+		return Enum.ContextActionResult.Pass
+	end, false, Enum.KeyCode.C)
 	-- то же через атрибут игрока RequestDodge (кнопки интерфейса и автотесты: Studio не эмулирует клавиши в игре)
-	player:GetAttributeChangedSignal("RequestDodge"):Connect(tryDodge)
+	player:GetAttributeChangedSignal("RequestDodge"):Connect(function()
+		tryDodge(nil)
+	end)
 
 	-- сальто камеры при кувырке. Стандартная камера берёт за основу CFrame прошлого кадра, поэтому прибавлять
 	-- поворот к её кадру нельзя (наклон копился, камера уезжала вверх). На 0,5 с камеру целиком задаём сами:

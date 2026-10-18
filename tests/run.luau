@@ -91,28 +91,87 @@ test("боссы только на каждой 5-й волне", function()
 end)
 
 test("состав в сумме равен числу зомби", function()
-	for w = 1, 25 do
+	for w = 1, 40 do
 		for p = 1, 6 do
 			local c = WaveMath.composition(Tuning, w, p)
-			eq(c.Walker + c.Runner + c.Brute, WaveMath.zombieCount(Tuning, w, p), string.format("волна %d, игроков %d", w, p))
-			check(c.Walker >= 0 and c.Runner >= 0, "неотрицательные")
+			eq(WaveMath.total(c), WaveMath.zombieCount(Tuning, w, p), string.format("волна %d, игроков %d", w, p))
+			for id, n in c do
+				check(n > 0, "неположительное число " .. id)
+			end
 		end
 	end
 end)
 
-test("очередь спавна: те же типы, боссы в конце", function()
+test("10-я волна: все обычные — бронированные, боссы Гаргантюа и Повелитель тёмных", function()
 	local c = WaveMath.composition(Tuning, 10, 3)
-	local q = WaveMath.spawnQueue(c, FakeRng.new(42) :: any)
-	eq(#q, c.Walker + c.Runner + c.Brute, "длина очереди")
-	local counts = { Walker = 0, Runner = 0, Brute = 0 }
-	for _, t in q do
-		counts[t] += 1
+	eq(c.Walker, nil, "нет ходоков")
+	eq(c.Runner, nil, "нет бегунов")
+	eq(c.Military, nil, "нет военных")
+	check((c.BucketHead or 0) > 0, "есть бронированные")
+	eq(c.BossGarg, 1, "Гаргантюа")
+	eq(c.BossStrong, 1, "Повелитель тёмных")
+end)
+
+test("военные с 11-й: 2–4 штуки, до 11-й нет", function()
+	for w = 1, 10 do
+		eq(WaveMath.composition(Tuning, w, 2).Military, nil, "волна " .. w)
 	end
-	eq(counts.Walker, c.Walker, "ходоки")
-	eq(counts.Runner, c.Runner, "бегуны")
-	eq(counts.Brute, c.Brute, "громилы")
-	for i = #q - c.Brute + 1, #q do
-		eq(q[i], "Brute", "босс в конце, позиция " .. i)
+	for w = 11, 19 do
+		local n = WaveMath.composition(Tuning, w, 2).Military or 0
+		check(n >= 2 and n <= 4, "волна " .. w .. ": " .. n)
+	end
+end)
+
+test("20-я волна: военные — основная группа", function()
+	local c = WaveMath.composition(Tuning, 20, 2)
+	check((c.Military or 0) >= WaveMath.total(c) * 0.4, "военных мало")
+end)
+
+test("тёмные вместо бегунов на 11–15", function()
+	for w = 11, 15 do
+		local c = WaveMath.composition(Tuning, w, 2)
+		eq(c.Runner, nil, "бегунов нет на волне " .. w)
+		check((c.Dark or 0) > 0, "тёмные на волне " .. w)
+	end
+	check(WaveMath.composition(Tuning, 16, 2).Dark == nil, "после 15-й тёмных нет")
+	check(WaveMath.composition(Tuning, 10, 2).Dark == nil, "до 11-й тёмных нет")
+end)
+
+test("боссы по кругу: 5 — Качок, 10 — Гаргантюа, 15 — Повелитель тёмных", function()
+	eq(WaveMath.bossTypes(Tuning, 5)[1], "BossBuff", "5")
+	eq(WaveMath.bossTypes(Tuning, 10)[1], "BossGarg", "10")
+	eq(WaveMath.bossTypes(Tuning, 15)[1], "BossStrong", "15")
+	eq(#WaveMath.bossTypes(Tuning, 7), 0, "7 — без босса")
+end)
+
+test("особые зомби появляются по расписанию", function()
+	eq(WaveMath.composition(Tuning, 5, 1).Chemist, nil, "химик до 7-й")
+	check((WaveMath.composition(Tuning, 9, 1).Chemist or 0) > 0, "химик на 9-й")
+	check((WaveMath.composition(Tuning, 8, 1).Crawler or 0) > 0, "ползуны на 8-й")
+end)
+
+test("очередь спавна: те же типы, боссы в конце", function()
+	local c = WaveMath.composition(Tuning, 15, 3)
+	local q = WaveMath.spawnQueue(c, FakeRng.new(42) :: any)
+	eq(#q, WaveMath.total(c), "длина очереди")
+	local counts: { [string]: number } = {}
+	for _, t in q do
+		counts[t] = (counts[t] or 0) + 1
+	end
+	for id, n in c do
+		eq(counts[id], n, "тип " .. id)
+	end
+	local bosses = 0
+	for id, n in c do
+		if WaveMath.isBossType(id) then
+			bosses += n
+		end
+	end
+	for i = #q - bosses + 1, #q do
+		check(WaveMath.isBossType(q[i]), "босс в конце, позиция " .. i)
+	end
+	for i = 1, #q - bosses do
+		check(not WaveMath.isBossType(q[i]), "обычный в начале, позиция " .. i)
 	end
 end)
 

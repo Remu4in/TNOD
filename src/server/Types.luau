@@ -42,6 +42,7 @@ export type MapInfo = {
 	playerSpawn: Vector3, -- днём: в магазине
 	nightSpawn: Vector3, -- ночью (возрождение командой): в стартовом укрытии
 	wallBuys: { { weaponId: string, prompt: ProximityPrompt } },
+	carSpawns: { CFrame }?, -- режим осмотра: где ставить машины (VehicleService)
 }
 
 return nil

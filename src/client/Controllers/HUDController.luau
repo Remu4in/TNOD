@@ -188,7 +188,7 @@ function HUDController.start()
 			AnchorPoint = Vector2.new(0.5, 1),
 			Position = UDim2.fromScale(0.5, 0.985),
 			Size = UDim2.fromScale(0.42, 0.028),
-			Text = "Shift — бег   ·   C на бегу — подкат   ·   C стоя или шагом — кувырок",
+			Text = "Shift — бег   ·   Q на бегу — подкат   ·   C — кувырок",
 			TextTransparency = 0.35,
 			TextStrokeTransparency = 0.7,
 			TextColor3 = Color3.fromRGB(230, 230, 230),

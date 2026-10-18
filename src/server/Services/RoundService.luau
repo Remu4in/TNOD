@@ -170,7 +170,11 @@ local function night()
 	local players = #Players:GetPlayers()
 	local comp = WaveMath.composition(Config.Waves, wave, players)
 	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave))
-	notifyAll(if comp.Brute > 0 then string.format("Ночь %d. Идёт Громила!", wave) else string.format("Ночь %d", wave), 3)
+	local bossName: string? = nil
+	for _, bossId in WaveMath.bossTypes(Config.Waves, wave) do
+		bossName = Config.Zombies[bossId].name
+	end
+	notifyAll(if bossName then string.format("Ночь %d. Идёт босс: %s!", wave, bossName) else string.format("Ночь %d", wave), 3)
 	while not gameOver do
 		local left = ZombieService.remaining()
 		ReplicatedStorage:SetAttribute("ZombiesLeft", left)

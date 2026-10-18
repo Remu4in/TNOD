@@ -24,6 +24,7 @@
 | `src/client/Controllers/*.luau` | `…Client.Controllers.<Имя>` (Folder → ModuleScript) |
 
 **Источник истины — файлы в `src/`.** Место в Studio почти пустое: карту строит `MapBuilder`.
+**Исключение — готовые модели ассетов:** чистые копии лежат в `ServerStorage.Assets` (внутри файла места, не в репозитории); «печь» `tools/Baker.luau`; сырые и непроверенные — в `ServerStorage.AssetStaging`. Ассеты проверяем скиллом `asset-vetting` (`.claude/skills/asset-vetting`); `Workspace` в Edit-режиме держим пустым от чужих моделей. Трекер ассетов и этапов — `docs/asset_plan.md`. Режим осмотра: `Config.Explore` (локация `World`).
 
 ### Синхронизация с Studio (без Rojo)
 1. `list_roblox_studios` → нужный `studio_id`.
