@@ -137,16 +137,18 @@ local function bloodSplat(pos: Vector3, size: number)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	local ignore: { Instance } = { folder() }
-	local zf = workspace:FindFirstChild("Zombies")
-	if zf then
-		table.insert(ignore, zf)
+	for _, name in { "Zombies", "Corpses", "Soldiers" } do
+		local f = workspace:FindFirstChild(name)
+		if f then
+			table.insert(ignore, f)
+		end
 	end
 	if player.Character then
 		table.insert(ignore, player.Character)
 	end
 	params.FilterDescendantsInstances = ignore
 	local hit = workspace:Raycast(pos + Vector3.new(0, 1.5, 0), Vector3.new((math.random() - 0.5) * 3, -14, (math.random() - 0.5) * 3), params)
-	if not hit or hit.Normal.Y < 0.5 then
+	if not hit or hit.Normal.Y < 0.5 or not hit.Instance.Anchored then
 		return
 	end
 	if #puddles >= MAX_PUDDLES then
