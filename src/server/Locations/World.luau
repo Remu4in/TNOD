@@ -679,7 +679,11 @@ function World.build(): Types.MapInfo
 		playerSpawn = V3(0, 4, spawnZ),
 		nightSpawn = V3(0, 4, spawnZ),
 		wallBuys = {},
-		carSpawns = { CFrame.new(-26, 0, spawnZ + 22), CFrame.new(0, 0, spawnZ + 22), CFrame.new(26, 0, spawnZ + 22) },
+		-- первые три — легковые (Coupe, Sedan, Prius), дальше военные: джип, джип с турелью, грузовик, автобус (имена — в init.server)
+		carSpawns = {
+			CFrame.new(-26, 0, spawnZ + 22), CFrame.new(0, 0, spawnZ + 22), CFrame.new(26, 0, spawnZ + 22),
+			CFrame.new(-52, 0, spawnZ + 22), CFrame.new(52, 0, spawnZ + 22), CFrame.new(-82, 0, spawnZ + 22), CFrame.new(82, 0, spawnZ + 22),
+		},
 	}
 end
 

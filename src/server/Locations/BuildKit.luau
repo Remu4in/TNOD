@@ -57,7 +57,8 @@ local function pointLight(parent: Instance, range: number, brightness: number, c
 end
 
 -- Вход с баррикадой: доски, подсказка починки, точки снаружи/внутри для зомби.
-local function entrance(parent: Instance, id: number, point: string, weight: number, wallPos: Vector3, normal: Vector3, width: number): Types.Window
+local function entrance(parent: Instance, id: number, point: string, weight: number, wallPos: Vector3, normal: Vector3, width: number, height: number?): Types.Window
+	local OPEN_H = height or OPEN_H -- высота проёма: по умолчанию стандартная, у вручную собранных карт — по замеру
 	local model = Instance.new("Model")
 	model.Name = "Window" .. id
 	model.Parent = parent
@@ -67,7 +68,8 @@ local function entrance(parent: Instance, id: number, point: string, weight: num
 	local n = Config.Barricade.Planks
 	for i = 1, n do
 		local y = 0.6 + (OPEN_H - 1.2) * (i - 0.5) / n
-		local size = if alongX then Vector3.new(width + 1, 0.8, 0.4) else Vector3.new(0.4, 0.8, width + 1)
+		local plankH = math.max(0.8, (OPEN_H - 1.2) / n * 1.15) -- доски вплотную друг к другу, без щелей даже в высоком проёме
+		local size = if alongX then Vector3.new(width + 1, plankH, 0.4) else Vector3.new(0.4, plankH, width + 1)
 		local tilt = math.rad((i % 2) * 6 - 3)
 		local plank = BuildKit.part({
 			Name = "Plank" .. i,
@@ -570,5 +572,8 @@ function BuildKit.slot(parent: Instance, pos: Vector3, kind: string)
 	}, parent)
 	p:SetAttribute("SlotType", kind)
 end
+
+-- Вход с баррикадой для карт, собранных вручную (Locations/Custom строит их по маркерам)
+BuildKit.entrance = entrance
 
 return BuildKit

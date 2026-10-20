@@ -232,11 +232,28 @@ function WeaponController.start()
 
 	ContextActionService:BindAction("Reload", function(_, state)
 		if state == Enum.UserInputState.Begin then
+			FxController.cancelInspect(true) -- R прерывает осмотр оружия (F снова запускает)
 			Remotes.get("Reload"):FireServer()
 		end
 		return Enum.ContextActionResult.Sink
 	end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonX)
 	ContextActionService:SetTitle("Reload", "R")
+
+	-- F — осмотр холодного оружия (нож, катана, керамбит, бабочка); Pass: та же клавиша «Разобрать» у баррикады продолжает работать
+	ContextActionService:BindAction("InspectWeapon", function(_, state)
+		if state == Enum.UserInputState.Begin then
+			FxController.inspect()
+		end
+		return Enum.ContextActionResult.Pass
+	end, false, Enum.KeyCode.F)
+
+	-- G — выбросить оружие из рук (подобрать можно на E)
+	ContextActionService:BindAction("DropWeapon", function(_, state)
+		if state == Enum.UserInputState.Begin and equipped() then
+			Remotes.get("DropWeapon"):FireServer()
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.KeyCode.G)
 
 	-- автоматический огонь при удержании
 	task.spawn(function()

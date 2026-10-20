@@ -5,10 +5,12 @@
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local WaveMath = require(Shared:WaitForChild("WaveMath"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local RateLimit = require(Shared:WaitForChild("RateLimit"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local BarricadeService = require(script.Parent:WaitForChild("BarricadeService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
@@ -18,6 +20,7 @@ local DataService = require(script.Parent:WaitForChild("DataService"))
 local MapBuilder = require(script.Parent:WaitForChild("MapBuilder"))
 local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 local BuildingService = require(script.Parent:WaitForChild("BuildingService"))
+local EquipmentService = require(script.Parent:WaitForChild("EquipmentService"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 
 local RoundService = {}
@@ -29,6 +32,34 @@ local locationIndex = 1 -- init.server строит первую локацию 
 local gameOver = false
 local fellAtNight = false
 local rng = Random.new()
+local dayVotes: { [Player]: boolean } = {} -- голоса «завершить день»
+
+-- Голоса: считаем среди игроков, которые сейчас в игре; атрибуты для HUD (DayVotes / DayVoteNeed)
+local function countVotes(): (number, number)
+	local votes, need = 0, 0
+	for _, p in Players:GetPlayers() do
+		need += 1
+		if dayVotes[p] then
+			votes += 1
+		end
+	end
+	ReplicatedStorage:SetAttribute("DayVotes", votes)
+	ReplicatedStorage:SetAttribute("DayVoteNeed", need)
+	return votes, need
+end
+
+-- Ждём seconds секунд дня; true — если все игроки проголосовали и день надо завершить досрочно
+local function waitDayVote(seconds: number): boolean
+	local endsAt = os.clock() + seconds
+	while os.clock() < endsAt and not gameOver do
+		local votes, need = countVotes()
+		if need > 0 and votes >= need then
+			return true
+		end
+		task.wait(0.25)
+	end
+	return false
+end
 
 local function setPhase(phase: string, duration: number?)
 	ReplicatedStorage:SetAttribute("Phase", phase)
@@ -39,12 +70,42 @@ local function notifyAll(text: string, seconds: number)
 	Remotes.get("Notify"):FireAllClients(text, seconds)
 end
 
-local function setNight(night: boolean)
-	Lighting.ClockTime = if night then 0 else 17.5
-	Lighting.Brightness = if night then 0.5 else 2
-	Lighting.OutdoorAmbient = if night then Color3.fromRGB(40, 45, 70) else Color3.fromRGB(130, 120, 110)
-	Lighting.FogEnd = if night then 160 else 600
-	Lighting.FogColor = if night then Color3.fromRGB(15, 18, 30) else Color3.fromRGB(190, 170, 150)
+-- Свет дня берётся таким, каким Руслан настроил его в Studio (снимок при старте); ночью — свой, с другим небом
+local dayLook: { clock: number, brightness: number, ambient: Color3, fogEnd: number, fogColor: Color3 }? = nil
+
+-- Оставляем в Lighting одно небо с именем name; остальные лежат в ServerStorage.Skies (Sky — день, NightSky — ночь, RedNight — ночь с боссом)
+local function setSky(name: string)
+	local storage = ServerStorage:FindFirstChild("Skies")
+	if not storage then
+		return
+	end
+	for _, s in Lighting:GetChildren() do
+		if s:IsA("Sky") and s.Name ~= name then
+			s.Parent = storage
+		end
+	end
+	if not Lighting:FindFirstChild(name) then
+		local s = storage:FindFirstChild(name)
+		if s then
+			s.Parent = Lighting
+		end
+	end
+end
+
+local function setNight(night: boolean, bossNight: boolean?)
+	if not dayLook then
+		dayLook = {
+			clock = Lighting.ClockTime, brightness = Lighting.Brightness, ambient = Lighting.OutdoorAmbient,
+			fogEnd = Lighting.FogEnd, fogColor = Lighting.FogColor,
+		}
+	end
+	local d = dayLook :: { clock: number, brightness: number, ambient: Color3, fogEnd: number, fogColor: Color3 }
+	Lighting.ClockTime = if night then 0 else d.clock
+	Lighting.Brightness = if night then 0.5 else d.brightness
+	Lighting.OutdoorAmbient = if night then Color3.fromRGB(40, 45, 70) else d.ambient
+	Lighting.FogEnd = if night then 400 else d.fogEnd
+	Lighting.FogColor = if night then Color3.fromRGB(15, 18, 30) else d.fogColor
+	setSky(if not night then "Sky" elseif bossNight then "RedNight" else "NightSky")
 end
 
 -- Какая локация нужна для ночи N: смена каждые LocationNights ночей; ещё не построенные пропускаем.
@@ -116,6 +177,7 @@ local function startRound()
 	end
 	BarricadeService.repairAll()
 	BuildingService.reset()
+	EquipmentService.clearAll()
 	EconomyService.resetRound(players)
 	ScoreService.resetRound(players)
 	WeaponService.resetRound(players)
@@ -135,6 +197,10 @@ local function day(first: boolean)
 		loadLocation(want)
 	end
 	EconomyService.newDay()
+	if wave > 0 then
+		ZombieService.sunrise() -- мутанты не переносят солнце: оставшиеся ночью сгорают
+		EquipmentService.onDay() -- электро-проволока обесточена
+	end
 	BuildingService.openShop()
 	if currentMap then
 		PlayerService.setSpawn(currentMap.playerSpawn)
@@ -143,18 +209,29 @@ local function day(first: boolean)
 	setNight(false)
 	BarricadeService.setOpen(true)
 	local t = if first then Config.Round.FirstDayTime else Config.Round.DayTime
-	setPhase("Day", t)
-	notifyAll(if first then "Закупайтесь в магазине и открывайте здания — вносите монеты у вывесок" else "Рассвет. Баррикады убраны — бегите за покупками!", 4)
-	local warn = Config.Round.DayWarnSeconds
-	if t > warn + 2 then
-		waitPhase(t - warn)
-		if not gameOver then
-			notifyAll(string.format("Через %d секунд магазин закроется, баррикады встанут. Кто снаружи — останется снаружи!", warn), 4)
-		end
-		waitPhase(warn)
-	else
-		waitPhase(t)
+	table.clear(dayVotes)
+	for _, p in Players:GetPlayers() do
+		p:SetAttribute("VotedDay", false)
 	end
+	countVotes()
+	setPhase("Day", t)
+	notifyAll(if first then "Закупайтесь в магазине и открывайте здания — вносите монеты у вывесок" else "Рассвет. Мутанты сгорают на солнце — бегите за покупками!", 4)
+	local warn = Config.Round.DayWarnSeconds
+	local early = false
+	if t > warn + 2 then
+		early = waitDayVote(t - warn)
+		if not gameOver and not early then
+			notifyAll(string.format("Через %d секунд наступит ночь, магазины закроются. Кто снаружи — останется снаружи! (V — завершить день)", warn), 4)
+			early = waitDayVote(warn)
+		end
+	else
+		early = waitDayVote(t)
+	end
+	if early and not gameOver then
+		notifyAll("Все готовы — день завершён досрочно", 3)
+	end
+	table.clear(dayVotes)
+	ReplicatedStorage:SetAttribute("DayVotes", 0)
 end
 
 local function night()
@@ -165,8 +242,10 @@ local function night()
 	if currentMap then
 		PlayerService.setSpawn(currentMap.nightSpawn) -- ночью (воскрешение командой) появляемся в стартовом укрытии
 	end
-	setNight(true)
+	local bossIds = WaveMath.bossTypes(Config.Waves, wave)
+	setNight(true, #bossIds > 0)
 	setPhase("Night", nil)
+	local nightEndsAt = os.clock() + Config.Round.NightMaxTime
 	local players = #Players:GetPlayers()
 	local comp = WaveMath.composition(Config.Waves, wave, players)
 	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave))
@@ -178,7 +257,7 @@ local function night()
 	while not gameOver do
 		local left = ZombieService.remaining()
 		ReplicatedStorage:SetAttribute("ZombiesLeft", left)
-		if left == 0 then
+		if left == 0 or os.clock() > nightEndsAt then
 			break
 		end
 		task.wait(0.25)
@@ -250,6 +329,17 @@ end
 
 function RoundService.start(map: Types.MapInfo)
 	currentMap = map
+	Remotes.get("VoteDay").OnServerEvent:Connect(function(player: Player)
+		if ReplicatedStorage:GetAttribute("Phase") ~= "Day" or not RateLimit.allow(player, "VoteDay", 0.4) then
+			return
+		end
+		dayVotes[player] = if dayVotes[player] then nil else true
+		player:SetAttribute("VotedDay", dayVotes[player] == true)
+		countVotes()
+	end)
+	Players.PlayerRemoving:Connect(function(player)
+		dayVotes[player] = nil
+	end)
 	BuildingService.setMap(map)
 	-- зашедшие в перерыв или днём сразу получают персонажа; ночью — ждут рассвета
 	Players.PlayerAdded:Connect(function(player)

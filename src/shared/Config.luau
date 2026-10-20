@@ -80,9 +80,10 @@ local Config = {}
 
 Config.Round = {
 	IntermissionTime = 15,
-	FirstDayTime = 60, -- время на закупку и расход по точкам обороны
-	DayTime = 60,
-	DayWarnSeconds = 10, -- за сколько секунд до ночи предупреждаем, что баррикады закроются
+	FirstDayTime = 120, -- день можно завершить раньше голосованием (клавиша V): когда готовы все игроки
+	DayTime = 120,
+	NightMaxTime = 300, -- ночь заканчивается, когда мутантов не осталось или по этому таймеру (оставшиеся сгорят на рассвете)
+	DayWarnSeconds = 15, -- за сколько секунд до ночи предупреждаем, что баррикады закроются
 	GameOverTime = 8,
 	MaxZombiesAlive = 60,
 	SpawnsPerTick = 2,
@@ -92,15 +93,17 @@ Config.Round = {
 
 -- Локации идут по порядку; смена каждые LocationNights ночей (= 2 босса при BossEvery = 5).
 Config.Locations = {
-	{ id = "City", name = "Городской квартал" },
-	{ id = "Police", name = "Полицейский участок" },
+	{ id = "Custom", name = "Своя карта" }, -- карту Руслан собрал в Studio; код её не строит (Locations/Custom читает маркеры)
 }
 Config.LocationNights = 10
 
 -- Режим осмотра (2026-10-18): вместо раундов строится «Большой мир» (Locations/World), зомби нет, всё открыто,
 -- на базе стоят телепорт-площадки к каждой локации. Выключить (false) — обычная игра на карте City.
-Config.Explore = true
+Config.Explore = false -- true: режим осмотра без раундов
+Config.TestStands = true -- стенды у спавна: тестовое оружие бесплатно, вызов волн мутантов (выключить перед релизом)
+Config.TentMarkRadius = 250 -- метки на военные палатки каждое утро в этом радиусе, студов (1 стад ≈ 0,28 м)
 Config.ExploreZombies = true -- в режиме осмотра ставить проверочных зомби (Зомби 3.0)
+Config.ExploreAutoZombies = false -- true: проверочные зомби сами пополняются; false: волны вызываются кнопками у спавна
 Config.ExploreZombieTypes = { "Walker", "Runner", "Brute", "Military", "Chemist", "Dark", "BucketHead", "Crawler" } -- что показывать (боссов добавьте сами: BossBuff, BossGarg, BossStrong)
 
 -- Машины (VehicleService / VehicleController): аркадная езда
@@ -112,6 +115,76 @@ Config.Vehicle = {
 	drag = 22, -- замедление без газа
 	turn = 2.4, -- рад/с на малой скорости (на большой делится)
 	length = 13, -- итоговая длина кузова в студах
+	curbSlow = 0.5, -- множитель максимальной скорости на бордюре/тротуаре
+	offroadSlow = 0.8, -- и на траве/земле
+}
+
+-- Типы машин (2026-10-19). Шаблон модели — ServerStorage.CarModels.<template> (VehicleBaker); перёд -Z.
+-- Скорости — студов/с, turn — рад/с на малой скорости, density — плотность коробки-корпуса (тяжелее = сильнее толкает
+-- игроков и зомби при столкновении), hp — прочность, ram — давка зомби (см. Config.VehicleRam). Config.Vehicle выше — запасная
+-- настройка для шаблонов без типа. price — цена покупки (покупка машин в игре — отдельный этап, поле пока не читается).
+-- turret — место стрелка и турель на крыше: модель из ServerStorage.Assets.Weapons.Turrets, length — длина в студах,
+-- seat — смещение сиденья стрелка от точки крепления (после масштаба). Стрельба турели — следующий этап.
+export type VehicleType = {
+	id: string,
+	name: string,
+	maxSpeed: number,
+	reverseSpeed: number,
+	accel: number,
+	brake: number,
+	drag: number,
+	turn: number,
+	density: number,
+	hp: number,
+	ramMult: number, -- множитель урона от давки
+	price: number,
+	seats: number, -- мест в машине без стрелка (0 — не ездовая, декор): 1 водитель, 2 переднее пассажирское, 3–4 задние
+	turret: { seat: Vector3, gunPivot: Vector3? }?, -- seat — смещение сиденья стрелка от люка; gunPivot — ось встроенного пулемёта (детали MG шаблона), в родных координатах шаблона
+}
+Config.VehicleTypes = {
+	Car = { id = "Car", name = "Легковая", maxSpeed = 105, reverseSpeed = 30, accel = 55, brake = 110, drag = 22, turn = 2.4, density = 0.5, hp = 300, ramMult = 1, price = 0, seats = 4 },
+	Jeep = { id = "Jeep", name = "Военный джип", maxSpeed = 92, reverseSpeed = 28, accel = 46, brake = 105, drag = 22, turn = 2.2, density = 0.9, hp = 700, ramMult = 1.4, price = 3000, seats = 0 },
+	Van = { id = "Van", name = "Фургон", maxSpeed = 82, reverseSpeed = 26, accel = 38, brake = 95, drag = 22, turn = 1.9, density = 1.1, hp = 800, ramMult = 1.5, price = 2500, seats = 0 },
+	Truck = { id = "Truck", name = "Грузовик", maxSpeed = 72, reverseSpeed = 22, accel = 28, brake = 85, drag = 20, turn = 1.6, density = 1.6, hp = 1100, ramMult = 2, price = 4500, seats = 0 },
+	Bus = { id = "Bus", name = "Автобус", maxSpeed = 62, reverseSpeed = 20, accel = 22, brake = 75, drag = 20, turn = 1.3, density = 2.0, hp = 1400, ramMult = 2.4, price = 5500, seats = 0 },
+	GunJeep = {
+		id = "GunJeep", name = "Джип с турелью", maxSpeed = 92, reverseSpeed = 28, accel = 46, brake = 105, drag = 22, turn = 2.2, density = 0.9, hp = 900, ramMult = 1.4, price = 10000, seats = 4,
+		-- пулемёт уже есть в модели машины (детали «MG»): отдельную турель не ставим, а оживляем встроенный; параметры — Config.TurretGun
+		turret = { seat = Vector3.new(0, -2.2, 0.8), gunPivot = Vector3.new(-0.9, 3.55, -1.6) },
+	},
+} :: { [string]: VehicleType }
+
+-- Шаблон → тип машины и длина (для всех типов): ключ — имя для VehicleService.spawn; template — имя в CarModels, если отличается.
+Config.VehicleModels = {
+	Prius = { type = "Car", length = 13 },
+	Sedan = { type = "Car", length = 13.5 },
+	Coupe = { type = "Car", length = 13 },
+	Humvee = { type = "Jeep", length = 17 },
+	HumveeMedic = { type = "Jeep", length = 17 },
+	MilitaryCar = { type = "Jeep", length = 16 }, -- перёд в шаблоне повёрнут при запекании (yaw π)
+	Ambulance = { type = "Van", length = 18 },
+	Truck = { type = "Truck", length = 26 },
+	Bus = { type = "Bus", length = 30 },
+	GunJeep = { type = "GunJeep", length = 17, template = "Humvee" },
+} :: { [string]: { type: string, length: number, template: string? } }
+
+-- Давка зомби и поломка. Урон зомби = (base + perSpeed × (скорость − minSpeed)) × ramMult типа, не чаще раза в cooldown на зомби.
+-- Боссы (id начинается с «Boss») не страдают: машина получает bossHit урона и урон от резкого торможения (crash*).
+Config.VehicleRam = {
+	minSpeed = 26, -- ниже этой скорости (студов/с) давки нет
+	base = 55,
+	perSpeed = 2.2,
+	cooldown = 0.6, -- пауза между ударами по одному и тому же зомби
+	margin = 1.2, -- запас вокруг коробки-корпуса
+	push = 70, -- отбрасывание выживших зомби, студов/с
+	selfPerHit = 2, -- урон машине за каждого сбитого
+	bossHit = 45,
+	crashDecel = 55, -- потеря скорости за один тик (0,1 с), с которой считается авария
+	crashDamage = 2.2, -- урона за каждый студ/с сверх порога
+	smokeFrac = 0.35, -- доля прочности, ниже которой машина дымит
+	limpFrac = 0.3, -- ниже этой доли прочности — максимальная скорость падает до limpSpeed
+	limpSpeed = 0.7,
+	wreckRemoveAfter = 120, -- секунд до исчезновения остова (0 — не убирать)
 }
 
 Config.Player = {
@@ -158,11 +231,13 @@ export type BuildingDef = {
 
 local Buildings: { BuildingDef } = {
 	{ id = "Cafe", name = "Кафе", cost = 0, info = "Стартовое укрытие" },
-	{ id = "Pharmacy", name = "Медпункт", cost = 500, bonus = "medkits", info = "Аптечки и энергетики" },
-	{ id = "ColdStore", name = "Склад холодного оружия", cost = 1000, bonus = "melee", info = "Холодное оружие бесплатно" },
-	{ id = "Garage", name = "Склад проволоки", cost = 2000, bonus = "wire", info = "Колючая и электро-проволока (скоро)" },
-	{ id = "Armory", name = "Оружейная", cost = 3000, bonus = "turret", info = "Турель (скоро)" },
-	{ id = "Shelter", name = "Убежище", cost = 4000, bonus = "teamLife", info = "Дополнительная жизнь команды" },
+	-- Открытие здания за монеты (вывеска) даёт доступ к НПС-продавцу внутри: он торгует только днём (Config.Vendors)
+	{ id = "Pharmacy", name = "Медпункт", cost = 500, info = "Продавец: аптечки и энергетики" },
+	{ id = "Armory", name = "Оружейная", cost = 1000, info = "Продавец: холодное оружие" },
+	{ id = "Garage", name = "Гараж", cost = 2000, info = "Продавец: колючая и электро-проволока" },
+	{ id = "GunShop", name = "Магазин турелей", cost = 3000, info = "Продавец: турели" },
+	{ id = "Shelter", name = "Убежище", cost = 4000, bonus = "teamLife", info = "Дополнительная жизнь команды и продавец" },
+	{ id = "Factory", name = "Завод", cost = 4000, info = "Внутри военный автомобиль с пулемётом на крыше" },
 }
 Config.Buildings = Buildings
 
@@ -381,6 +456,82 @@ Config.WeaponHold = {
 	Machete = { scale = 1, view = Vector3.new(0.5, -0.5, -1.1), tilt = CFrame.Angles(math.rad(30), math.rad(8), math.rad(-8)) },
 } :: { [string]: WeaponHold }
 
+-- Модели оружия из библиотеки (2026-10-19, паки Rubie's Weapon Collection, запечены tools/WeaponBaker.luau):
+-- ServerStorage.Assets.Weapons.<ref>. Модель уже нормализована: начало координат — хват, дуло/остриё в -Z, верх +Y.
+-- length — итоговая длина модели в студах (масштаб = length / атрибут модели Length); grip — сдвиг модели относительно рукояти
+-- (студы, после масштаба), rot — доворот (подбирается в плейтесте). Нет записи или модели в библиотеке — старый вид из WeaponVisuals.
+-- WeaponHold.scale относится только к старым мешам (WeaponVisuals) и здесь не участвует.
+export type WeaponModelDef = { ref: string, length: number, grip: Vector3?, rot: CFrame? }
+Config.WeaponModels = {
+	Pistol = { ref = "Pistols/Glock19", length = 1.4 },
+	Revolver = { ref = "Revolvers/ColtPython", length = 1.7 },
+	SMG = { ref = "SMG/MP5", length = 2.2 },
+	Shotgun = { ref = "Shotguns/Mossberg500", length = 3.3 },
+	Rifle = { ref = "Rifles/AK12", length = 3.2 },
+	-- LMG и Sniper: подходящих моделей в паках нет (нет пака пулемётов и снайперок) — остаются сгенерированные из WeaponVisuals
+	Knife = { ref = "Melee/CombatKnife", length = 2.1 },
+	Bat = { ref = "Melee/BaseballBat", length = 3.0 },
+	Machete = { ref = "Melee/StandardMachete", length = 2.5 },
+} :: { [string]: WeaponModelDef }
+
+-- ЧЕРНОВИК ассортимента (не подключён к игре; числа предложены 2026-10-19 и утверждаются Русланом / balance-analyst).
+-- Работающий баланс — Config.Weapons выше. class — папка библиотеки; slot — место в магазине (1–12) в порядке роста цены;
+-- tier: "start" | "wall" (стены/вендинг за монеты) | "donate" (за донат, как косметика/ускорение) | "late" (поздняя игра, база).
+export type WeaponDraft = {
+	id: string, name: string, ref: string, tier: string, slot: number?,
+	price: number, damage: number, pellets: number?, fireRate: number, magSize: number?, reserve: number?, reloadTime: number?,
+	note: string?,
+}
+Config.WeaponDraft = {
+	-- Пистолеты
+	{ id = "Pistol", name = "Glock 19", ref = "Pistols/Glock19", tier = "start", price = 0, damage = 20, fireRate = 4, magSize = 12, reserve = -1, reloadTime = 1.2, note = "как сейчас" },
+	{ id = "M1911", name = "M1911", ref = "Pistols/M1911A1", tier = "wall", slot = 1, price = 250, damage = 28, fireRate = 3.2, magSize = 8, reserve = 56, reloadTime = 1.4 },
+	{ id = "FiveSeven", name = "Five-seveN", ref = "Pistols/FiveSeveN", tier = "wall", slot = 2, price = 350, damage = 17, fireRate = 5.5, magSize = 20, reserve = 120, reloadTime = 1.5 },
+	{ id = "DesertEagle", name = "Desert Eagle", ref = "Pistols/DesertEagle", tier = "wall", slot = 6, price = 900, damage = 62, fireRate = 2.0, magSize = 8, reserve = 48, reloadTime = 2.0, note = "мощнее револьвера, мало патронов" },
+	-- Револьверы
+	{ id = "Revolver", name = "Colt Python", ref = "Revolvers/ColtPython", tier = "wall", slot = 3, price = 400, damage = 55, fireRate = 1.6, magSize = 6, reserve = 42, reloadTime = 2.4, note = "как сейчас" },
+	{ id = "Model29", name = "S&W Model 29", ref = "Revolvers/SWModel29", tier = "donate", price = 0, damage = 70, fireRate = 1.3, magSize = 6, reserve = 36, reloadTime = 2.6, note = "магнум .44, косметика-бонус" },
+	-- ПП
+	{ id = "SMG", name = "MP5", ref = "SMG/MP5", tier = "wall", slot = 4, price = 500, damage = 14, fireRate = 10, magSize = 30, reserve = 180, reloadTime = 1.6, note = "как сейчас" },
+	{ id = "Uzi", name = "Uzi", ref = "SMG/Uzi", tier = "wall", slot = 3, price = 450, damage = 12, fireRate = 12, magSize = 32, reserve = 192, reloadTime = 1.7 },
+	{ id = "Thompson", name = "Thompson M1A1", ref = "SMG/M1A1Thompson", tier = "wall", slot = 5, price = 800, damage = 18, fireRate = 9, magSize = 50, reserve = 200, reloadTime = 2.4, note = "барабан" },
+	{ id = "Vector", name = "Kriss Vector", ref = "SMG/KrissVector", tier = "late", price = 1700, damage = 13, fireRate = 15, magSize = 25, reserve = 200, reloadTime = 1.6 },
+	-- Дробовики
+	{ id = "Shotgun", name = "Mossberg 500", ref = "Shotguns/Mossberg500", tier = "wall", slot = 5, price = 750, damage = 12, pellets = 6, fireRate = 1.2, magSize = 6, reserve = 36, reloadTime = 2.2, note = "как сейчас" },
+	{ id = "Sawnoff", name = "Обрез", ref = "Shotguns/SawnOffShotgun", tier = "wall", slot = 2, price = 350, damage = 14, pellets = 7, fireRate = 0.9, magSize = 2, reserve = 24, reloadTime = 1.8, note = "дёшево, 2 выстрела, дальность 40" },
+	{ id = "SPAS12", name = "SPAS-12", ref = "Shotguns/SPAS12", tier = "wall", slot = 8, price = 1400, damage = 11, pellets = 7, fireRate = 2.0, magSize = 8, reserve = 48, reloadTime = 2.8, note = "полуавто" },
+	{ id = "AA12", name = "AA-12", ref = "Shotguns/AA12", tier = "late", price = 2800, damage = 10, pellets = 7, fireRate = 5.0, magSize = 20, reserve = 120, reloadTime = 3.4, note = "автоматический" },
+	-- Винтовки / карабины
+	{ id = "Rifle", name = "AK-12", ref = "Rifles/AK12", tier = "wall", slot = 7, price = 1200, damage = 45, fireRate = 3, magSize = 20, reserve = 120, reloadTime = 2.0, note = "как сейчас" },
+	{ id = "M4A1", name = "M4A1", ref = "Carbines/M4A1", tier = "wall", slot = 6, price = 1000, damage = 36, fireRate = 4.2, magSize = 30, reserve = 180, reloadTime = 2.0 },
+	{ id = "SCAR", name = "SCAR-L", ref = "Rifles/SCARL", tier = "late", price = 2200, damage = 52, fireRate = 3.4, magSize = 25, reserve = 150, reloadTime = 2.2 },
+	{ id = "SKS", name = "СКС", ref = "Carbines/SKS", tier = "wall", slot = 9, price = 1300, damage = 80, fireRate = 1.8, magSize = 10, reserve = 60, reloadTime = 2.6, note = "полуавто, заменит снайперку, пока нет модели снайперки" },
+	-- Тяжёлое (моделей в паках нет — старые сгенерированные)
+	{ id = "LMG", name = "Пулемёт", ref = "", tier = "late", price = 1800, damage = 22, fireRate = 11, magSize = 75, reserve = 300, reloadTime = 4.2, note = "как сейчас; модель из WeaponVisuals" },
+	{ id = "Sniper", name = "Снайперская винтовка", ref = "", tier = "late", price = 1500, damage = 150, fireRate = 0.9, magSize = 5, reserve = 30, reloadTime = 3.0, note = "как сейчас; модель из WeaponVisuals" },
+	-- Гранатомёты (после этапа «Оборудование»; взрывы и урон по площади — новая механика)
+	{ id = "M79", name = "M79", ref = "Launchers/M79", tier = "late", price = 5000, damage = 180, fireRate = 0.5, magSize = 1, reserve = 8, reloadTime = 2.5, note = "радиус 8, не бьёт по своим" },
+	-- Ближний бой
+	{ id = "Knife", name = "Боевой нож", ref = "Melee/CombatKnife", tier = "start", price = 0, damage = 25, fireRate = 2.5, note = "как сейчас" },
+	{ id = "Bat", name = "Бита", ref = "Melee/BaseballBat", tier = "wall", slot = 1, price = 300, damage = 45, fireRate = 1.4, note = "как сейчас" },
+	{ id = "Crowbar", name = "Монтировка", ref = "Melee/Crowbar", tier = "wall", price = 450, damage = 55, fireRate = 1.6 },
+	{ id = "Machete", name = "Мачете", ref = "Melee/StandardMachete", tier = "wall", slot = 2, price = 600, damage = 70, fireRate = 1.8, note = "как сейчас" },
+	{ id = "FireAxe", name = "Пожарный топор", ref = "Melee/FireAxe", tier = "wall", price = 900, damage = 95, fireRate = 1.1 },
+	{ id = "Katana", name = "Катана", ref = "Melee/Katana", tier = "late", price = 1800, damage = 110, fireRate = 2.0 },
+	{ id = "Sledge", name = "Кувалда", ref = "Melee/Sledgehammer", tier = "late", price = 1500, damage = 160, fireRate = 0.7, note = "сильное отбрасывание" },
+	{ id = "Karambit", name = "Керамбит", ref = "Melee/Karambit", tier = "donate", price = 0, damage = 30, fireRate = 3.0, note = "косметика, чуть быстрее ножа" },
+	{ id = "Balisong", name = "Бабочка", ref = "Melee/Balisong", tier = "donate", price = 0, damage = 25, fireRate = 2.5, note = "косметика" },
+} :: { WeaponDraft }
+
+-- Обвесы (только описание и модели; логика обвесов — следующий этап). ref — ServerStorage.Assets.Weapons.Sights.<имя>
+-- Модель стоит основанием на рельсе: начало координат — центр основания, перёд — в -Z. aimY — высота линии прицеливания над рельсой.
+Config.WeaponSights = {
+	{ id = "RedDot", name = "Красная точка", ref = "Sights/RedDot", price = 300, zoom = 1.0, note = "по умолчанию на ПП" },
+	{ id = "EOTech", name = "Голографический EOTech", ref = "Sights/EOTech", price = 600, zoom = 1.0 },
+	{ id = "Holo", name = "Голографический простой", ref = "Sights/Holo", price = 450, zoom = 1.0 },
+	-- 4× и 8× (оптика для снайперки) — моделей нет, искать (ACOG и снайперский прицел из списка Руслана не берём)
+} :: { { id: string, name: string, ref: string, price: number, zoom: number, note: string? } }
+
 -- Анимации персонажа (R15): официальные из Roblox Weapons Kit
 Config.Animations = {
 	aim = "rbxassetid://3972164452", -- RifleAim: оружие в руках, прицеливание
@@ -439,6 +590,80 @@ local MeleeFx: { [string]: MeleeFxDef } = {
 	Machete = { style = "slash", time = 0.34, shake = 2.4 },
 }
 Config.MeleeFx = MeleeFx
+
+-- Тестовый ассортимент (2026-10-19): оружие из Config.WeaponDraft, которого ещё нет в Config.Weapons, достраивается по образцу
+-- базового ствола своего класса (разброс, дальность, отдача, звук, анимации — как у базы; цифры боя — из черновика).
+-- Нужно для меню покупки (ShopController): в режиме осмотра всё бесплатно. Гранатомёты не добавляются (нет взрывов).
+-- Баланс этих записей — черновой; боевые числа утверждает Руслан. Базы: пистолеты → Pistol, револьверы → Revolver, ПП → SMG,
+-- дробовики → Shotgun, винтовки и карабины → Rifle, холодное — Knife/Bat/Machete по размеру.
+local DRAFT_LENGTH = { Pistols = 1.4, Revolvers = 1.7, SMG = 2.2, Shotguns = 3.3, Rifles = 3.2, Carbines = 3.2 }
+local DRAFT_BASE = { Pistols = "Pistol", Revolvers = "Revolver", SMG = "SMG", Shotguns = "Shotgun", Rifles = "Rifle", Carbines = "Rifle" }
+local MELEE_LENGTH: { [string]: number } = { Crowbar = 2.8, FireAxe = 3.2, Sledge = 3.4, Katana = 3.8, Karambit = 1.4, Balisong = 1.7 } -- длина модели в руках, студов
+local MELEE_BASE: { [string]: string } = { Karambit = "Knife", Balisong = "Knife", Crowbar = "Bat", Sledge = "Bat", FireAxe = "Machete", Katana = "Machete" }
+local SHOP_CATEGORIES = { "Пистолеты", "ПП", "Дробовики", "Винтовки", "Тяжёлое", "Ближний бой" }
+local CATEGORY_OF = { Pistols = 1, Revolvers = 1, SMG = 2, Shotguns = 3, Rifles = 4, Carbines = 4, Melee = 6 }
+export type ShopItem = { id: string, category: number }
+local shopList: { ShopItem } = {}
+for _, d in Config.WeaponDraft do
+	local class = string.match(d.ref, "^(%w+)/") or ""
+	if class ~= "Launchers" then
+		local baseId = if class == "Melee" then (MELEE_BASE[d.id] or "Bat") else DRAFT_BASE[class]
+		if not Weapons[d.id] and baseId and Weapons[baseId] then
+			local base = Weapons[baseId]
+			local def = table.clone(base)
+			def.id, def.name, def.price = d.id, d.name, d.price
+			def.damage, def.pellets, def.fireRate = d.damage, d.pellets or base.pellets, d.fireRate
+			if not base.melee then
+				def.magSize, def.reserve, def.reloadTime = d.magSize or base.magSize, d.reserve or base.reserve, d.reloadTime or base.reloadTime
+			end
+			if d.id == "SKS" then
+				def.automatic = false
+			end
+			if d.id == "Sledge" then
+				def.knockback = 80
+			end
+			Weapons[d.id] = def
+			WeaponAim[d.id] = WeaponAim[baseId]
+			WeaponFx[d.id] = WeaponFx[baseId]
+			WeaponSounds[d.id] = WeaponSounds[baseId]
+			MeleeFx[d.id] = MeleeFx[baseId]
+			Config.WeaponModels[d.id] = {
+				ref = d.ref,
+				length = if class == "Melee" then (MELEE_LENGTH[d.id] or 2.5) else DRAFT_LENGTH[class],
+			}
+		end
+		if Weapons[d.id] then
+			table.insert(shopList, { id = d.id, category = CATEGORY_OF[class] or (if class == "" then 5 else 4) })
+		end
+	end
+end
+Config.ShopCategories = SHOP_CATEGORIES
+
+-- Холодное оружие: свой стиль взмаха (MeleeAnim.STYLES), время и тряска камеры; керамбит держится за кольцо (оно в центре кисти)
+local function meleeFx(id: string, style: string, time: number, shake: number)
+	MeleeFx[id] = { style = style, time = time, shake = shake }
+end
+meleeFx("Katana", "katana", 0.3, 2.2)
+meleeFx("Bat", "side", 0.5, 3.4)
+meleeFx("FireAxe", "heavy", 0.85, 5.0)
+meleeFx("Karambit", "swipe", 0.2, 1.2)
+meleeFx("Balisong", "stab", 0.24, 1.4)
+meleeFx("Crowbar", "smash", 0.38, 2.6)
+meleeFx("Sledge", "heavy", 0.95, 6.0)
+if Config.WeaponModels.Karambit then
+	Config.WeaponModels.Karambit.grip = Vector3.new(0, -0.47, 0.78) * (MELEE_LENGTH.Karambit / 1.13) + Vector3.new(0, 0.1, -0.5) -- кольцо у кисти, но лезвие выдвинуто вперёд, чтобы не пряталось за кулаком
+end
+
+-- Хват холодного оружия в руке: dir — куда смотрит остриё в системе кисти (X вправо, Y вверх, −Z вперёд), up — ориентация лезвия.
+-- Tool.Grip считается из этого при сборке инструмента (WeaponService.buildTool).
+export type MeleeHold = { dir: Vector3, up: Vector3 }
+Config.MeleeHold = {
+	-- остриём вверх: нож, бабочка, мачете, бита, топор (по просьбе Руслана); остальные — чуть вперёд
+	default = { dir = Vector3.new(-0.12, 0.96, -0.25), up = Vector3.new(0, 0, 1) },
+	Katana = { dir = Vector3.new(-0.2, 0.8, -0.55), up = Vector3.new(0, 0, 1) },
+	Karambit = { dir = Vector3.new(-0.15, 0.75, -0.6), up = Vector3.new(0, 0, 1) },
+} :: { [string]: MeleeHold }
+Config.ShopList = shopList
 
 -- Порядок стен с оружием в магазине (8 мест, см. BuildKit.shop)
 Config.WallBuys = { "Bat", "Machete", "Revolver", "SMG", "Shotgun", "Rifle", "LMG", "Sniper" }
@@ -640,6 +865,75 @@ Config.Props = {
 	RunnerShareMax = 0.4,
 	RunnerShareGrowth = 0.08,
 	BossEvery = 5,
+}
+
+-- НПС-продавцы в зданиях (VendorService): появляются только днём в открытом за монеты здании.
+-- kind: "item" — расходник (ItemService), "weapon" — оружие из Config.Weapons, "equip" — оборудование (EquipmentService), "life" — жизнь команды.
+export type VendorItem = { id: string, name: string, desc: string, price: number, kind: string }
+export type VendorDef = { name: string, greeting: string, items: { VendorItem } }
+local function weaponItems(ids: { string }): { VendorItem }
+	local list: { VendorItem } = {}
+	for _, id in ids do
+		local d = Weapons[id]
+		if d then
+			table.insert(list, { id = id, name = d.name, desc = string.format("Урон %d · %.1f уд/с", d.damage, d.fireRate), price = d.price, kind = "weapon" })
+		end
+	end
+	return list
+end
+Config.Vendors = {
+	Pharmacy = {
+		name = "Аптекарь", greeting = "Мутанты боятся солнца — а мы боимся ночи. Берите, пока светло.",
+		items = {
+			{ id = "Medkit", name = "Аптечка", desc = "+60 здоровья", price = 150, kind = "item" },
+			{ id = "EnergyDrink", name = "Энергетик", desc = "+70 энергии спринта", price = 100, kind = "item" },
+		},
+	},
+	Armory = {
+		name = "Оружейник", greeting = "Холодное оружие не кончается, как патроны.",
+		items = weaponItems({ "Bat", "Crowbar", "Machete", "FireAxe", "Sledge", "Katana" }),
+	},
+	Garage = {
+		name = "Механик", greeting = "Проволока держит их у стены. Ставь с умом.",
+		items = {
+			{ id = "BarbedWire", name = "Колючая проволока", desc = "Ранит и держит мутантов, пока не порвётся", price = 250, kind = "equip" },
+			{ id = "ElectricWire", name = "Электро-проволока", desc = "Бьёт током и оглушает; до рассвета", price = 600, kind = "equip" },
+		},
+	},
+	GunShop = {
+		name = "Торговец турелями", greeting = "Пулемёт сам не устанет. Пока есть патроны.",
+		items = {
+			{ id = "Turret", name = "Турель", desc = "50 урона раз в 2–4 с, 300 выстрелов", price = 1500, kind = "equip" },
+		},
+	},
+	Shelter = {
+		name = "Смотритель", greeting = "Каждая жизнь на счету.",
+		items = {
+			{ id = "TeamLife", name = "Жизнь команды", desc = "Если все упадут, команда поднимется", price = 2500, kind = "life" },
+		},
+	},
+} :: { [string]: VendorDef }
+
+-- Встроенный пулемёт машины с турелью (VehicleService): сидящий на месте 0 наводит его камерой и стреляет зажатой кнопкой мыши
+Config.TurretGun = {
+	damage = 30, -- по зомби; голова ×HeadshotMultiplier
+	rate = 10, -- выстрелов в секунду
+	spreadDeg = 1.3,
+	range = 350,
+	mag = 100, -- в магазине
+	reserve = 150, -- запас (всего 250)
+	reload = 3.5,
+	yawRate = 4.5, -- рад/с поворот ствола
+	minPitch = -8, -- градусов
+	maxPitch = 60,
+	recoil = 0.35, -- откат ствола, студов (в родном масштабе)
+}
+
+-- Оборудование (EquipmentService): покупается у продавцов, ставится кликом на землю
+Config.Equipment = {
+	BarbedWire = { name = "Колючая проволока", damage = 8, tick = 0.5, hits = 60, max = 6, size = Vector3.new(10, 1.4, 2.5), reach = 22 },
+	ElectricWire = { name = "Электро-проволока", damage = 25, tick = 2, stun = 2.5, max = 4, size = Vector3.new(10, 0.6, 2.5), reach = 22 },
+	Turret = { name = "Турель", damage = 50, minCooldown = 2, maxCooldown = 4, range = 90, ammo = 300, max = 2, length = 3.4, reach = 22 },
 }
 
 return Config

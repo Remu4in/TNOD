@@ -29,6 +29,8 @@ export type BuildingInfo = {
 	signPrompt: ProximityPrompt?, -- нет у бесплатных зданий
 	signLabel: TextLabel?,
 	spots: { Spot },
+	zone: { center: Vector3, size: Vector3 }?, -- объём здания: ночью оттуда выставляют игроков
+	exit: Vector3?, -- куда выставлять (снаружи у входа)
 }
 
 export type MapInfo = {
@@ -43,6 +45,10 @@ export type MapInfo = {
 	nightSpawn: Vector3, -- ночью (возрождение командой): в стартовом укрытии
 	wallBuys: { { weaponId: string, prompt: ProximityPrompt } },
 	carSpawns: { CFrame }?, -- режим осмотра: где ставить машины (VehicleService)
+	shops: { { name: string, center: Vector3, radius: number } }?, -- военные палатки: магазин оружия днём, укрытие ночью
+	carNames: { string }?,
+	vendors: { { id: string, position: Vector3, facing: Vector3 } }?, -- места НПС-продавцов (Markers/Vendor_<id>)
+	barriers: { BasePart }?, -- ночные заграждения (Markers/Barrier_*): днём открыты, ночью — стальные решётки -- имена шаблонов машин для carSpawns (Config.VehicleModels), по порядку
 }
 
 return nil

@@ -15,6 +15,10 @@ local DataService = require(Services:WaitForChild("DataService"))
 local RoundService = require(Services:WaitForChild("RoundService"))
 local ScoreService = require(Services:WaitForChild("ScoreService"))
 local StaminaService = require(Services:WaitForChild("StaminaService"))
+local ShopService = require(Services:WaitForChild("ShopService"))
+local VendorService = require(Services:WaitForChild("VendorService"))
+local EquipmentService = require(Services:WaitForChild("EquipmentService"))
+local SoldierService = require(Services:WaitForChild("SoldierService"))
 
 -- Пустой скрипт Health заменяет встроенный реген Roblox (реген свой — в PlayerService)
 local scs = StarterPlayer:FindFirstChildOfClass("StarterCharacterScripts")
@@ -24,21 +28,68 @@ if scs and not scs:FindFirstChild("Health") then
 	stub.Parent = scs
 end
 
+-- Тестовые стенды у спавна: оружие бесплатно (меню), вызов волны мутантов, особых, уборка
+local function buildTestStands(sp: Vector3)
+	local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
+	local function pad(name: string, offset: Vector3, color: Color3, label: string, action: string, onTrigger: (Player) -> ())
+		local part = Instance.new("Part")
+		part.Name = name
+		part.Anchored = true
+		part.Size = Vector3.new(4, 5, 2)
+		part.Position = Vector3.new(sp.X, 0, sp.Z) + offset + Vector3.new(0, 2.5, 0)
+		part.Color = color
+		part.Material = Enum.Material.Neon
+		part.Parent = workspace
+		local gui = Instance.new("BillboardGui")
+		gui.Size = UDim2.fromOffset(180, 36)
+		gui.StudsOffset = Vector3.new(0, 4, 0)
+		gui.AlwaysOnTop = true
+		gui.Parent = part
+		local text = Instance.new("TextLabel")
+		text.Size = UDim2.fromScale(1, 1)
+		text.BackgroundTransparency = 0.3
+		text.BackgroundColor3 = Color3.new(0, 0, 0)
+		text.TextColor3 = Color3.new(1, 1, 1)
+		text.Font = Enum.Font.GothamBold
+		text.TextScaled = true
+		text.Text = label
+		text.Parent = gui
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = action
+		prompt.ObjectText = label
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = 10
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = part
+		prompt.Triggered:Connect(onTrigger)
+	end
+	ShopService.addPoint("Тестовый стенд", Vector3.new(sp.X - 12, sp.Y, sp.Z + 8), 16, true, false, false)
+	pad("TestShop", Vector3.new(-12, 0, 8), Color3.fromRGB(255, 170, 40), "ОРУЖИЕ (тест)", "Открыть меню", function(player)
+		Remotes.get("ShopOpen"):FireClient(player)
+	end)
+	local waves: { [string]: { string } } = {
+		["Волна"] = { "Walker", "Walker", "Walker", "Walker", "Walker", "Walker", "Runner", "Runner", "Runner", "Brute" },
+		["Особые"] = { "Military", "Military", "Chemist", "Dark", "Dark", "BucketHead", "BucketHead", "Crawler", "Crawler" },
+	}
+	pad("TestWave", Vector3.new(-4, 0, 8), Color3.fromRGB(220, 60, 60), "ВОЛНА ЗОМБИ", "Вызвать волну", function()
+		ZombieService.enqueue(waves["Волна"], 1)
+	end)
+	pad("TestSpecial", Vector3.new(4, 0, 8), Color3.fromRGB(150, 60, 200), "ОСОБЫЕ ЗОМБИ", "Вызвать особых", function()
+		ZombieService.enqueue(waves["Особые"], 1)
+	end)
+	pad("TestClear", Vector3.new(12, 0, 8), Color3.fromRGB(70, 160, 90), "ОТМЕНИТЬ ВОЛНУ (ДЕНЬ)", "Убрать мутантов, включить день", function()
+		ZombieService.clearAll()
+	end)
+end
+
 -- Режим осмотра: строим большой мир, без раундов и зомби (см. Config.Explore)
 if Config.Explore then
-	local Lighting = game:GetService("Lighting")
-	Lighting.ClockTime = 14
-	Lighting.Brightness = 3
-	Lighting.FogEnd = 100000
-	for _, c in Lighting:GetChildren() do -- ночные Sky не нужны днём: убираем только на время игры
-		if c:IsA("Sky") then
-			c.Parent = nil
-		end
-	end
-	local exploreMap = MapBuilder.build("World")
+	-- карту строит Руслан руками в Studio: код ничего не генерирует и не трогает освещение (Locations/Custom только читает маркеры)
+	local exploreMap = MapBuilder.build("Custom")
 	ReplicatedStorage:SetAttribute("Location", exploreMap.name)
 	ReplicatedStorage:SetAttribute("Phase", "Day")
 	PlayerService.init(exploreMap.playerSpawn, function() end)
+	ShopService.init(exploreMap)
 	WeaponService.init(exploreMap)
 	DataService.init()
 	ScoreService.init()
@@ -56,21 +107,25 @@ if Config.Explore then
 			end
 		end)
 	end
-	Players.PlayerAdded:Connect(watch)
+	-- игрок, вошедший позже запуска скрипта (карта теперь грузится мгновенно), тоже должен получить персонажа
+	Players.PlayerAdded:Connect(function(player)
+		watch(player)
+		player:LoadCharacter()
+	end)
 	for _, player in Players:GetPlayers() do
 		watch(player)
 		player:LoadCharacter()
 	end
 	local VehicleService = require(Services:WaitForChild("VehicleService"))
 	VehicleService.init()
-	local carNames = { "Coupe", "Sedan", "Prius" }
+	-- ездовые: Mercedes (Coupe), Toyota (Prius), военный джип с турелью; остальные машины пока без посадки
+	-- места машин — маркеры Workspace.Markers.VehicleSpawn_<Шаблон> (Coupe, Prius, GunJeep …)
 	for i, cf in exploreMap.carSpawns or {} do
-		VehicleService.spawn(carNames[(i - 1) % #carNames + 1], cf)
+		VehicleService.spawn((exploreMap.carNames :: { string })[i], cf)
 	end
 	-- проверочные зомби (Зомби 3.0): по 3 штуки (Ходок, Бегун, Громила) в 50 студах от спавна, пополняются
 	if Config.ExploreZombies then
-		local sp = exploreMap.playerSpawn
-		ZombieService.init({ zombieSpawns = { sp + Vector3.new(0, 3, -50) } } :: any, function() end)
+		ZombieService.init({ zombieSpawns = exploreMap.zombieSpawns } :: any, function() end)
 		-- отладочный вход для тестов из Studio (execute_luau получает свою копию модуля, а не рабочую)
 		local debugFn = Instance.new("BindableFunction")
 		debugFn.Name = "ExploreZombieDebug"
@@ -87,14 +142,9 @@ if Config.Explore then
 			return nil
 		end
 		debugFn.Parent = game:GetService("ServerStorage")
-		task.spawn(function()
-			while true do
-				if ZombieService.remaining() < 3 and #Players:GetPlayers() > 0 then
-					ZombieService.enqueue(Config.ExploreZombieTypes, 1)
-				end
-				task.wait(8)
-			end
-		end)
+	end
+	if Config.TestStands then
+		buildTestStands(exploreMap.playerSpawn)
 	end
 	print("[NightOfTheDead] режим осмотра: " .. exploreMap.name)
 	return
@@ -110,6 +160,20 @@ WeaponService.init(map)
 DataService.init()
 ScoreService.init()
 StaminaService.init()
+ShopService.init(map)
 RoundService.start(map)
+EquipmentService.init()
+VendorService.init(map)
+SoldierService.init()
+
+-- ездовые машины: маркеры Workspace.Markers.VehicleSpawn_<Шаблон>
+local VehicleService = require(Services:WaitForChild("VehicleService"))
+VehicleService.init()
+for i, cf in map.carSpawns or {} do
+	VehicleService.spawn((map.carNames :: { string })[i], cf)
+end
+if Config.TestStands then
+	buildTestStands(map.playerSpawn)
+end
 
 print("[NightOfTheDead] сервер запущен, локация: " .. first.name)

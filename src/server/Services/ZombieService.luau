@@ -1238,6 +1238,33 @@ function ZombieService.queryNear(pos: Vector3, radius: number): { { model: Model
 	return result
 end
 
+-- Рассвет: мутанты не переносят солнце — загораются и гибнут за несколько секунд (без награды); очередь спавна сбрасывается
+function ZombieService.sunrise()
+	table.clear(queue)
+	for model, z in active do
+		if z.alive then
+			local gen = z.gen
+			local delay = 0.5 + math.random() * 3.5
+			local fire = Instance.new("Fire")
+			fire.Size = 9
+			fire.Heat = 8
+			fire.Parent = z.root
+			Debris:AddItem(fire, delay + 0.4)
+			task.delay(delay, function()
+				if z.alive and z.gen == gen and active[model] == z then
+					ZombieService.damage(model, z.hp + 1, nil, nil)
+				end
+			end)
+		end
+	end
+end
+
+-- Тип живого зомби по модели (машины: боссов не давим); nil — модель не активна или зомби мёртв
+function ZombieService.defOf(model: Model): Config.ZombieDef?
+	local z = active[model]
+	return if z and z.alive then z.def else nil
+end
+
 function ZombieService.isZombiePart(part: BasePart): (Model?, boolean)
 	local model = part:FindFirstAncestorOfClass("Model")
 	if model and active[model] then

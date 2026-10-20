@@ -26,6 +26,7 @@ local infos: { [string]: Types.BuildingInfo } = {}
 local funded: { [string]: number } = {}
 local unlocked: { [string]: boolean } = {}
 local stock: { [string]: { [string]: number } } = {} -- здание → предмет ("medkit"/"energy") → сколько осталось
+local isNight = false -- ночью здания закрыты (кроме укрытий): вывески и продавцы не работают
 local claimed: { [string]: { [Player]: boolean } } = {} -- склад холодного оружия: кто уже взял
 
 local function notify(player: Player?, text: string, seconds: number)
@@ -54,7 +55,7 @@ local function updateSign(id: string)
 			else string.format("%s\n● %d / %d", def.name, funded[id] or 0, def.cost)
 	end
 	if info.signPrompt then
-		info.signPrompt.Enabled = not open
+		info.signPrompt.Enabled = not open and not isNight
 		info.signPrompt.ObjectText = def.name
 		info.signPrompt.ActionText = string.format("Вложить %d ●", stepOf(def))
 	end
@@ -67,7 +68,7 @@ local function updateSpots(id: string)
 	end
 	local open = unlocked[id] == true
 	for _, spot in info.spots do
-		local enabled = open
+		local enabled = open and not isNight
 		if spot.kind == "medkit" or spot.kind == "energy" then
 			local left = if stock[id] then (stock[id][spot.kind] or 0) else 0
 			enabled = open and left > 0
@@ -223,13 +224,68 @@ local function expelFromShop()
 	end
 end
 
-function BuildingService.closeShop()
-	BarricadeService.setPointLocked("shop", true)
-	expelFromShop()
+-- Ночные заграждения (ворота базы): ночью — стальная решётка, днём — проход свободен
+local function setBarriers(closed: boolean)
+	local m = map
+	if not m or not m.barriers then
+		return
+	end
+	for _, b in m.barriers do
+		b.Material = Enum.Material.DiamondPlate
+		b.Color = Color3.fromRGB(55, 58, 62)
+		b.CanCollide = closed
+		b.CanQuery = closed
+		b.Transparency = if closed then 0 else 1
+	end
 end
 
+-- Игроков внутри здания (по объёму zone) выставляем к выходу
+local function expelFromBuilding(info: Types.BuildingInfo)
+	local zone = info.zone
+	if not zone then
+		return
+	end
+	local half = zone.size / 2 + Vector3.new(1, 0, 1)
+	for _, player in Players:GetPlayers() do
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root then
+			local rel = root.Position - zone.center
+			if math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z then
+				local exit = info.exit or Vector3.new(zone.center.X + half.X + 6, zone.center.Y, zone.center.Z)
+				player.Character:PivotTo(CFrame.new(exit + Vector3.new(0, 3, 0)))
+				notify(player, info.name .. " закрыто на ночь", 3)
+			end
+		end
+	end
+end
+
+-- Ночь: все открываемые здания закрыты стальными щитами, продавцов нет, игроков внутри выставляют на улицу.
+-- (Укрытия — кафе и палатки — работают как раньше: баррикады из досок, их ломают мутанты.)
+function BuildingService.closeShop()
+	isNight = true
+	setBarriers(true)
+	BarricadeService.setPointLocked("shop", true)
+	expelFromShop()
+	for id, info in infos do
+		BarricadeService.setPointLocked(id, true)
+		expelFromBuilding(info)
+		updateSign(id)
+		updateSpots(id)
+	end
+	ReplicatedStorage:SetAttribute("BuildingsOpen", false)
+end
+
+-- День: здания, открытые за монеты, снова работают; неоткрытые остаются закрытыми
 function BuildingService.openShop()
+	isNight = false
+	setBarriers(false)
 	BarricadeService.setPointLocked("shop", false)
+	for id in infos do
+		BarricadeService.setPointLocked(id, unlocked[id] ~= true)
+		updateSign(id)
+		updateSpots(id)
+	end
+	ReplicatedStorage:SetAttribute("BuildingsOpen", true)
 end
 
 return BuildingService

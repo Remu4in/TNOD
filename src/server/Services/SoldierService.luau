@@ -1,0 +1,329 @@
+--!strict
+-- Военные НПС на базе (модели лежат в Workspace.Soldiers, расставлены в Studio) живут круглосуточно и заняты делом:
+--   patrol — ходят по своему участку базы и иногда останавливаются (иногда с жестом),
+--   guard  — стоят на посту, оглядываются по сторонам,
+--   chat   — стоят парами лицом друг к другу и жестикулируют (разговаривают).
+-- Мутанты целятся только в игроков (ZombieService ищет цель среди Players), солдат не трогают.
+
+local PathfindingService = game:GetService("PathfindingService")
+local RunService = game:GetService("RunService")
+
+local SoldierService = {}
+
+local ANIMS = {
+	R15 = {
+		idle = "rbxassetid://507766666",
+		walk = "rbxassetid://507777826",
+		emotes = { "rbxassetid://507770239", "rbxassetid://507770453", "rbxassetid://507770677", "rbxassetid://507770818" }, -- wave, point, cheer, laugh
+	},
+	R6 = {
+		idle = "rbxassetid://180435571",
+		walk = "rbxassetid://180426354",
+		emotes = {},
+	},
+}
+
+type Soldier = {
+	model: Model,
+	hum: Humanoid,
+	root: BasePart,
+	mode: string,
+	home: Vector3,
+	homeYaw: number,
+	idle: AnimationTrack?,
+	walk: AnimationTrack?,
+	emotes: { AnimationTrack },
+	nextAt: number,
+	state: string, -- "pause" | "walk"
+	waypoints: { PathWaypoint },
+	wpIndex: number,
+	lastPos: Vector3,
+	stuckSince: number,
+	targetYaw: number,
+	partner: Soldier?,
+}
+
+local soldiers: { Soldier } = {}
+local rng = Random.new()
+local PATROL_RADIUS = 26
+
+local function loadTrack(animator: Animator, id: string, looped: boolean): AnimationTrack?
+	local anim = Instance.new("Animation")
+	anim.AnimationId = id
+	local ok, track = pcall(function()
+		return animator:LoadAnimation(anim)
+	end)
+	if ok and track then
+		track.Looped = looped
+		return track
+	end
+	return nil
+end
+
+local function groundPoint(pos: Vector3): Vector3?
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local excl: { Instance } = {}
+	local folder = workspace:FindFirstChild("Soldiers")
+	if folder then
+		table.insert(excl, folder)
+	end
+	params.FilterDescendantsInstances = excl
+	local hit = workspace:Raycast(pos + Vector3.new(0, 30, 0), Vector3.new(0, -60, 0), params)
+	return if hit then hit.Position else nil
+end
+
+local function playEmote(s: Soldier)
+	if #s.emotes == 0 then
+		return
+	end
+	local track = s.emotes[rng:NextInteger(1, #s.emotes)]
+	if track.Length > 0 or true then
+		track:Play(0.2)
+	end
+end
+
+local function faceYaw(s: Soldier, yaw: number, dt: number)
+	local _, current, _ = s.root.CFrame:ToOrientation()
+	local diff = (yaw - current + math.pi) % (2 * math.pi) - math.pi
+	local step = math.clamp(diff, -dt * 1.6, dt * 1.6)
+	s.root.CFrame = CFrame.new(s.root.Position) * CFrame.Angles(0, current + step, 0)
+end
+
+local function newPatrolTarget(s: Soldier)
+	for _ = 1, 8 do
+		local a = rng:NextNumber(0, math.pi * 2)
+		local r = rng:NextNumber(8, PATROL_RADIUS)
+		local p = groundPoint(s.home + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r))
+		if p and math.abs(p.Y - s.home.Y) < 4 then
+			local path = PathfindingService:CreatePath({ AgentRadius = 2, AgentHeight = 5, AgentCanJump = false })
+			local ok = pcall(function()
+				path:ComputeAsync(s.root.Position, p)
+			end)
+			if ok and path.Status == Enum.PathStatus.Success then
+				s.waypoints = path:GetWaypoints()
+				s.wpIndex = 2
+				s.state = "walk"
+				s.stuckSince = os.clock()
+				s.lastPos = s.root.Position
+				return
+			end
+		end
+	end
+	s.state = "pause"
+	s.nextAt = os.clock() + 2
+end
+
+local function setMoving(s: Soldier, moving: boolean)
+	local walk, idle = s.walk, s.idle
+	if moving then
+		if walk and not walk.IsPlaying then
+			walk:Play(0.2)
+		end
+		if idle and idle.IsPlaying then
+			idle:Stop(0.2)
+		end
+	else
+		if idle and not idle.IsPlaying then
+			idle:Play(0.2)
+		end
+		if walk and walk.IsPlaying then
+			walk:Stop(0.2)
+		end
+	end
+end
+
+local function step(s: Soldier, now: number, dt: number)
+	if s.mode == "patrol" then
+		if s.state == "pause" then
+			setMoving(s, false)
+			if now >= s.nextAt then
+				newPatrolTarget(s)
+			end
+		else
+			local wp = s.waypoints[s.wpIndex]
+			if not wp then
+				s.state = "pause"
+				s.nextAt = now + rng:NextNumber(3, 8)
+				if rng:NextNumber() < 0.35 then
+					playEmote(s)
+				end
+				return
+			end
+			setMoving(s, true)
+			s.hum:MoveTo(wp.Position)
+			if (Vector3.new(wp.Position.X, 0, wp.Position.Z) - Vector3.new(s.root.Position.X, 0, s.root.Position.Z)).Magnitude < 3 then
+				s.wpIndex += 1
+			end
+			-- застрял: пауза и новая цель
+			if (s.root.Position - s.lastPos).Magnitude > 1.5 then
+				s.lastPos = s.root.Position
+				s.stuckSince = now
+			elseif now - s.stuckSince > 4 then
+				s.state = "pause"
+				s.nextAt = now + 1
+			end
+		end
+	elseif s.mode == "guard" then
+		setMoving(s, false)
+		if now >= s.nextAt then
+			s.targetYaw = s.homeYaw + rng:NextNumber(-1.2, 1.2)
+			s.nextAt = now + rng:NextNumber(3, 7)
+			if rng:NextNumber() < 0.15 then
+				playEmote(s)
+			end
+		end
+		faceYaw(s, s.targetYaw, dt)
+	elseif s.mode == "chat" then
+		setMoving(s, false)
+		local p = s.partner
+		if p then
+			local to = p.root.Position - s.root.Position
+			faceYaw(s, math.atan2(-to.X, -to.Z), dt)
+		end
+		if now >= s.nextAt then
+			s.nextAt = now + rng:NextNumber(4, 9)
+			if rng:NextNumber() < 0.6 then
+				playEmote(s)
+			end
+		end
+	end
+end
+
+-- Снаряжение (оружие, жилеты, шлемы) в моделях лежит отдельными деталями без суставов: пока они якорные, всё на месте,
+-- а без якоря падает на землю. Перед снятием якорей приваривает каждую «лишнюю» деталь к ближайшей детали тела.
+local function attachLooseParts(model: Model)
+	local connected: { [BasePart]: boolean } = {}
+	for _, d in model:GetDescendants() do
+		if d:IsA("Motor6D") or d:IsA("Weld") or d:IsA("WeldConstraint") or d:IsA("ManualWeld") then
+			local a = (d :: any).Part0
+			local b = (d :: any).Part1
+			if typeof(a) == "Instance" and a:IsA("BasePart") then
+				connected[a] = true
+			end
+			if typeof(b) == "Instance" and b:IsA("BasePart") then
+				connected[b] = true
+			end
+		end
+	end
+	local body: { BasePart } = {}
+	for part in connected do
+		table.insert(body, part)
+	end
+	if #body == 0 then
+		return
+	end
+	local attached = 0
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") and not connected[d] then
+			local best: BasePart? = nil
+			local bd = math.huge
+			for _, b in body do
+				local dist = (b.Position - d.Position).Magnitude
+				if dist < bd then
+					best, bd = b, dist
+				end
+			end
+			if best then
+				local w = Instance.new("WeldConstraint")
+				w.Part0 = best
+				w.Part1 = d
+				w.Parent = d
+				d.Massless = true
+				d.CanCollide = false
+				attached += 1
+			end
+		end
+	end
+	if attached > 0 then
+		model:SetAttribute("AttachedGear", attached)
+	end
+end
+
+function SoldierService.init()
+	local folder = workspace:FindFirstChild("Soldiers")
+	if not folder then
+		return
+	end
+	local list: { Soldier } = {}
+	for i, model in folder:GetChildren() do
+		local hum = model:FindFirstChildOfClass("Humanoid")
+		local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if model:IsA("Model") and hum and root then
+			-- солдаты не умирают; больше не якорные: ходят и стоят на ногах физически
+			hum.BreakJointsOnDeath = false
+			hum.RequiresNeck = false
+			hum.MaxHealth = math.huge
+			hum.Health = math.huge
+			hum.WalkSpeed = 7
+			attachLooseParts(model) -- пока модель якорная и всё на своих местах
+			for _, d in model:GetDescendants() do
+				if d:IsA("BasePart") then
+					d.Anchored = false
+				end
+			end
+			root:SetNetworkOwner(nil)
+			local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
+			local set = if hum.RigType == Enum.HumanoidRigType.R15 then ANIMS.R15 else ANIMS.R6
+			local emotes: { AnimationTrack } = {}
+			for _, id in set.emotes do
+				local t = loadTrack(animator, id, false)
+				if t then
+					table.insert(emotes, t)
+				end
+			end
+			local _, yaw, _ = root.CFrame:ToOrientation()
+			local s: Soldier = {
+				model = model, hum = hum, root = root,
+				mode = if i % 5 <= 1 then "patrol" elseif i % 5 <= 3 then "guard" else "chat",
+				home = root.Position, homeYaw = yaw,
+				idle = loadTrack(animator, set.idle, true), walk = loadTrack(animator, set.walk, true), emotes = emotes,
+				nextAt = os.clock() + rng:NextNumber(0, 4), state = "pause", waypoints = {}, wpIndex = 1,
+				lastPos = root.Position, stuckSince = os.clock(), targetYaw = yaw, partner = nil,
+			}
+			if s.idle then
+				s.idle:Play()
+				s.idle.TimePosition = rng:NextNumber(0, 2)
+			end
+			table.insert(list, s)
+		end
+	end
+	-- пары для разговора: каждый «болтун» берёт ближайшего другого болтуна
+	for _, a in list do
+		if a.mode == "chat" then
+			local best: Soldier? = nil
+			local bd = math.huge
+			for _, b in list do
+				if b ~= a and b.mode == "chat" then
+					local d = (a.root.Position - b.root.Position).Magnitude
+					if d < bd then
+						best, bd = b, d
+					end
+				end
+			end
+			a.partner = best
+			if bd > 25 then
+				a.mode = "guard" -- напарник далеко: становится часовым
+			end
+		end
+	end
+	soldiers = list
+
+	local acc = 0
+	RunService.Heartbeat:Connect(function(dt: number)
+		acc += dt
+		if acc < 0.1 then
+			return
+		end
+		local now = os.clock()
+		for _, s in soldiers do
+			if s.model.Parent then
+				step(s, now, acc)
+			end
+		end
+		acc = 0
+	end)
+	print("[SoldierService] солдат: " .. #soldiers)
+end
+
+return SoldierService

@@ -15,6 +15,17 @@ local NAMES = {
 	"HitFeedback", -- сервер → стрелку: (position: Vector3, damage: number, killed: boolean, headshot: boolean)
 	"ShotFx", -- сервер → всем: (shooter: Player, origin: Vector3, hits: {Vector3}, weaponId: string)
 	"ReloadFx", -- сервер → всем: (player: Player, weaponId: string) — звук перезарядки
+	"BuyWeapon", -- клиент → сервер: (weaponId: string) — купить/взять оружие из меню (в режиме осмотра бесплатно)
+	"ShopOpen", -- сервер → клиенту: () — открыть меню покупки (терминал на спавне)
+	"DropWeapon", -- клиент → сервер: () — выбросить оружие из рук (G); подбор — ProximityPrompt (E) на выброшенном оружии
+	"SwitchSeat", -- клиент → сервер: (index: number) — пересесть в машине на место index (1 водитель, 2–4 пассажиры, 0 турель)
+	"TentMarkers", -- сервер → клиенту: ({ { pos: Vector3, name: string } }) — метки на военные палатки поблизости (пусто — снять)
+	"VoteDay", -- клиент → сервер: () — поставить/снять голос «завершить день» (все проголосовали — наступает ночь)
+	"VendorBuy", -- клиент → сервер: (vendorId: string, itemId: string) — купить у НПС-продавца (цену и условия проверяет сервер)
+	"PlaceEquipment", -- клиент → сервер: (position: Vector3) — поставить оборудование из рук (турель, проволока) в точку на земле
+	"TurretAim", -- клиент → сервер: (direction: Vector3) — куда стрелок наводит пулемёт машины (направление камеры)
+	"TurretFire", -- клиент → сервер: () — очередь пулемёта (пока зажата кнопка; темп и патроны считает сервер)
+	"TurretReload", -- клиент → сервер: () — перезарядка пулемёта машины
 	"Notify", -- сервер → клиенту/всем: (text: string, seconds: number)
 }
 

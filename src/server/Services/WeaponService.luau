@@ -3,16 +3,20 @@
 -- Клиент присылает только «выстрелил отсюда туда»; сервер проверяет и сам делает рейкаст и урон.
 
 local AssetService = game:GetService("AssetService")
+local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
 local Ballistics = require(Shared:WaitForChild("Ballistics"))
+local MeleeAnim = require(Shared:WaitForChild("MeleeAnim"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local EconomyService = require(script.Parent:WaitForChild("EconomyService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
+local ShopService = require(script.Parent:WaitForChild("ShopService"))
 
 local WeaponService = {}
 
@@ -52,8 +56,52 @@ local function loadMesh(meshId: string): MeshPart?
 	return meshTemplates[meshId]
 end
 
--- Handle — невидимая рукоять 1×1×1; внешний вид — меши из Config.WeaponVisuals, привязанные Weld'ами.
--- Если меш не загрузился, остаётся простой цветной блок.
+-- Готовая модель из библиотеки ServerStorage.Assets.Weapons.<ref> (запечена tools/WeaponBaker; сети не требует)
+local function libraryModel(ref: string): Model?
+	local node: Instance? = ServerStorage:FindFirstChild("Assets")
+	for _, name in string.split("Weapons/" .. ref, "/") do
+		node = if node then node:FindFirstChild(name) else nil
+	end
+	return if node and node:IsA("Model") then node else nil
+end
+
+-- Детали модели библиотеки → в Tool, привязаны к Handle (начало координат модели = хват, дуло в -Z).
+-- Масштаб = нужная длина / длина модели. Возвращает число добавленных деталей.
+local function addLibraryParts(tool: Tool, handle: BasePart, def: Config.WeaponModelDef): number
+	local model = libraryModel(def.ref)
+	if not model then
+		return 0
+	end
+	local natural = model:GetAttribute("Length")
+	local scale = if typeof(natural) == "number" and natural > 0 then def.length / natural else 1
+	local shift = CFrame.new((def.grip or Vector3.zero)) * (def.rot or CFrame.identity)
+	local added = 0
+	for _, src in model:GetChildren() do
+		if src:IsA("MeshPart") then
+			local part = src:Clone()
+			part.Size = src.Size * scale
+			part.Anchored = false
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CanTouch = false
+			part.Massless = true
+			local weld = Instance.new("Weld")
+			weld.Part0 = handle
+			weld.Part1 = part
+			weld.C0 = shift * (src.CFrame.Rotation + src.Position * scale)
+			weld.Parent = part
+			part.Parent = tool
+			added += 1
+		end
+	end
+	if added > 0 then
+		tool:SetAttribute("ModelRef", def.ref)
+	end
+	return added
+end
+
+-- Handle — невидимая рукоять 1×1×1; внешний вид — модель из библиотеки (Config.WeaponModels) или меши
+-- из Config.WeaponVisuals, привязанные Weld'ами. Если ничего не получилось, остаётся простой цветной блок.
 local function buildTool(def: Config.WeaponDef): Tool
 	local tool = Instance.new("Tool")
 	tool.Name = def.name
@@ -71,9 +119,14 @@ local function buildTool(def: Config.WeaponDef): Tool
 	handle.Parent = tool
 
 	local built = 0
+	local modelDef = Config.WeaponModels[def.id]
+	if modelDef then
+		built = addLibraryParts(tool, handle, modelDef)
+	end
 	local hold = Config.WeaponHold[def.id]
 	local scale = if hold then hold.scale else 1
-	for _, vp in Config.WeaponVisuals[def.id] or {} do
+	local visuals: { Config.VisualPart } = if built == 0 then (Config.WeaponVisuals[def.id] or {}) else {}
+	for _, vp in visuals do
 		local template = loadMesh(vp.mesh)
 		if template then
 			local part = template:Clone()
@@ -92,6 +145,11 @@ local function buildTool(def: Config.WeaponDef): Tool
 			part.Parent = tool
 			built += 1
 		end
+	end
+	if def.melee then
+		-- хват: остриё вперёд-вверх от кисти (MeleeHold), взмахи и осмотр двигают Grip относительно него
+		local hold = Config.MeleeHold[def.id] or Config.MeleeHold.default
+		tool.Grip = CFrame.lookAt(Vector3.zero, hold.dir.Unit, hold.up):Inverse()
 	end
 	if built == 0 then
 		handle.Size = Vector3.new(0.4, 0.6, if def.id == "Pistol" then 1.2 else 2.6)
@@ -347,61 +405,75 @@ local function onMelee(player: Player, direction: unknown)
 		return
 	end
 	st.lastShot = now
+	-- звук/анимация взмаха идут сразу, а удар по зомби — в момент попадания в анимации (у топора и кувалды это после замаха)
+	Remotes.get("MeleeFx"):FireAllClients(player, weaponId)
+	local fx = Config.MeleeFx[weaponId]
+	local hitDelay = if fx then fx.time * (MeleeAnim.HIT[fx.style] or 0.5) else 0
 
-	local origin = head.Position
-	local halfArc = math.rad((def.arcDeg or 90) / 2)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	local exclude: { Instance } = {}
-	for _, p in Players:GetPlayers() do
-		if p.Character then
-			table.insert(exclude, p.Character)
+	local function strike()
+		local head2 = player.Character and player.Character:FindFirstChild("Head") :: BasePart?
+		if not head2 or not PlayerService.isUp(player) or equippedWeapon(player) ~= weaponId then
+			return
 		end
-	end
-	local zombiesFolder = workspace:FindFirstChild("Zombies")
-	if zombiesFolder then
-		table.insert(exclude, zombiesFolder)
-	end
-	params.FilterDescendantsInstances = exclude
-
-	-- кандидаты: в радиусе, внутри сектора и без стены между игроком и зомби
-	local candidates: { { model: Model, root: BasePart, dist: number } } = {}
-	for _, z in ZombieService.queryNear(origin, def.range + 3) do
-		local toZombie = z.root.Position - origin
-		local dist = toZombie.Magnitude
-		if dist > 0.01 and dist - 1.5 <= def.range then
-			local angle = math.acos(math.clamp(d:Dot(toZombie.Unit), -1, 1))
-			if angle <= halfArc and not workspace:Raycast(origin, toZombie, params) then
-				table.insert(candidates, { model = z.model, root = z.root, dist = dist })
+		local origin = head2.Position
+		local halfArc = math.rad((def.arcDeg or 90) / 2)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		local exclude: { Instance } = {}
+		for _, p in Players:GetPlayers() do
+			if p.Character then
+				table.insert(exclude, p.Character)
 			end
 		end
-	end
-	table.sort(candidates, function(a, b)
-		return a.dist < b.dist
-	end)
+		local zombiesFolder = workspace:FindFirstChild("Zombies")
+		if zombiesFolder then
+			table.insert(exclude, zombiesFolder)
+		end
+		params.FilterDescendantsInstances = exclude
 
-	local totalDamage = 0
-	local killedAny = false
-	local firstPos: Vector3? = nil
-	for i = 1, math.min(#candidates, def.maxTargets or 1) do
-		local c = candidates[i]
-		local away = Vector3.new(c.root.Position.X - origin.X, 0, c.root.Position.Z - origin.Z)
-		local applied, killed = ZombieService.damage(c.model, def.damage, player, {
-			dir = away,
-			push = def.knockback,
-			stagger = 0.35,
-		})
-		if applied then
-			totalDamage += def.damage
-			killedAny = killedAny or killed
-			firstPos = firstPos or c.root.Position
+		-- кандидаты: в радиусе, внутри сектора и без стены между игроком и зомби
+		local candidates: { { model: Model, root: BasePart, dist: number } } = {}
+		for _, z in ZombieService.queryNear(origin, def.range + 3) do
+			local toZombie = z.root.Position - origin
+			local dist = toZombie.Magnitude
+			if dist > 0.01 and dist - 1.5 <= def.range then
+				local angle = math.acos(math.clamp(d:Dot(toZombie.Unit), -1, 1))
+				if angle <= halfArc and not workspace:Raycast(origin, toZombie, params) then
+					table.insert(candidates, { model = z.model, root = z.root, dist = dist })
+				end
+			end
+		end
+		table.sort(candidates, function(a, b)
+			return a.dist < b.dist
+		end)
+
+		local totalDamage = 0
+		local killedAny = false
+		local firstPos: Vector3? = nil
+		for i = 1, math.min(#candidates, def.maxTargets or 1) do
+			local c = candidates[i]
+			local away = Vector3.new(c.root.Position.X - origin.X, 0, c.root.Position.Z - origin.Z)
+			local applied, killed = ZombieService.damage(c.model, def.damage, player, {
+				dir = away,
+				push = def.knockback,
+				stagger = 0.35,
+			})
+			if applied then
+				totalDamage += def.damage
+				killedAny = killedAny or killed
+				firstPos = firstPos or c.root.Position
+			end
+		end
+		if totalDamage > 0 then
+			EconomyService.add(player, Config.Economy.CoinsPerHit)
+			Remotes.get("HitFeedback"):FireClient(player, firstPos, totalDamage, killedAny, false)
 		end
 	end
-	if totalDamage > 0 then
-		EconomyService.add(player, Config.Economy.CoinsPerHit)
-		Remotes.get("HitFeedback"):FireClient(player, firstPos, totalDamage, killedAny, false)
+	if hitDelay > 0.03 then
+		task.delay(hitDelay, strike)
+	else
+		strike()
 	end
-	Remotes.get("MeleeFx"):FireAllClients(player, weaponId)
 end
 
 local function onWallBuy(player: Player, weaponId: string)
@@ -435,6 +507,181 @@ local function onWallBuy(player: Player, weaponId: string)
 		Remotes.get("Notify"):FireClient(player, "Куплено: " .. def.name, 1.5)
 	else
 		Remotes.get("Notify"):FireClient(player, "Не хватает монет", 1.5)
+	end
+end
+
+-- Выбросить оружие из рук (G) и подобрать чужое/своё (E по ProximityPrompt): так можно делиться оружием с командой.
+-- Выброшенное оружие — физическая модель с невидимой коллизией на Handle; патроны (магазин и запас) хранятся в атрибутах.
+local DROP_LIFETIME = 180
+local PICKUP_RANGE = 16
+
+local function dropsFolder(): Folder
+	local f = workspace:FindFirstChild("DroppedWeapons")
+	if not f then
+		f = Instance.new("Folder")
+		f.Name = "DroppedWeapons"
+		f.Parent = workspace
+	end
+	return f :: Folder
+end
+
+local function hasWeapon(player: Player, weaponId: string): boolean
+	local inv = owned[player]
+	return inv ~= nil and inv[weaponId] ~= nil
+end
+
+local function giveWithAmmo(player: Player, weaponId: string, mag: number, reserve: number)
+	local def = Config.Weapons[weaponId]
+	local inv = owned[player]
+	if not inv then
+		inv = {}
+		owned[player] = inv
+	end
+	inv[weaponId] = { mag = math.min(mag, def.magSize), reserve = reserve, lastShot = 0, reloadingUntil = 0, burst = 0 }
+	giveTool(player, weaponId)
+end
+
+local function equipWeapon(player: Player, weaponId: string)
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if hum and backpack then
+		for _, t in backpack:GetChildren() do
+			if t:IsA("Tool") and t:GetAttribute("WeaponId") == weaponId then
+				hum:EquipTool(t)
+				return
+			end
+		end
+	end
+end
+
+local function onPickup(player: Player, drop: Model)
+	if not drop.Parent or not PlayerService.isUp(player) then
+		return
+	end
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local handle = drop.PrimaryPart
+	if not hrp or not handle or (hrp.Position - handle.Position).Magnitude > PICKUP_RANGE then
+		return
+	end
+	local weaponId = drop:GetAttribute("WeaponId")
+	if typeof(weaponId) ~= "string" or not Config.Weapons[weaponId] then
+		return
+	end
+	local def = Config.Weapons[weaponId]
+	local mag = (drop:GetAttribute("Mag") :: number?) or 0
+	local reserve = (drop:GetAttribute("Reserve") :: number?) or 0
+	if hasWeapon(player, weaponId) then
+		if def.melee then
+			Remotes.get("Notify"):FireClient(player, "Уже есть", 1.5)
+			return
+		end
+		-- такое оружие уже есть: забираем только патроны
+		local st = owned[player][weaponId]
+		if st.reserve >= 0 then
+			st.reserve += mag + math.max(reserve, 0)
+		end
+		syncAmmo(player, weaponId)
+		Remotes.get("Notify"):FireClient(player, "Патроны: " .. def.name, 1.5)
+	else
+		giveWithAmmo(player, weaponId, mag, reserve)
+		equipWeapon(player, weaponId)
+		Remotes.get("Notify"):FireClient(player, "Подобрано: " .. def.name, 1.5)
+	end
+	drop:Destroy()
+end
+
+local function spawnDrop(weaponId: string, mag: number, reserve: number, cf: CFrame, velocity: Vector3)
+	local def = Config.Weapons[weaponId]
+	local tool = buildTool(def)
+	local model = Instance.new("Model")
+	model.Name = "Drop_" .. weaponId
+	local handle = tool:FindFirstChild("Handle") :: BasePart
+	for _, c in tool:GetChildren() do
+		if c:IsA("BasePart") then
+			c.Anchored = false
+			c.Parent = model
+		end
+	end
+	tool:Destroy()
+	handle.Size = Vector3.new(1.4, 0.5, 1.4)
+	handle.Transparency = 1
+	handle.CanCollide = true
+	handle.CanQuery = true
+	handle.Massless = false
+	model.PrimaryPart = handle
+	model:SetAttribute("WeaponId", weaponId)
+	model:SetAttribute("Mag", mag)
+	model:SetAttribute("Reserve", reserve)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Подобрать"
+	prompt.ObjectText = def.name
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 9
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = handle
+	prompt.Triggered:Connect(function(player: Player)
+		onPickup(player, model)
+	end)
+	model:PivotTo(cf)
+	model.Parent = dropsFolder()
+	handle.AssemblyLinearVelocity = velocity
+	handle.AssemblyAngularVelocity = Vector3.new(0, 4, 0)
+	Debris:AddItem(model, DROP_LIFETIME)
+end
+
+local function onDrop(player: Player)
+	if not RateLimit.allow(player, "Drop", 0.4) or not PlayerService.isUp(player) then
+		return
+	end
+	local weaponId, tool = equippedWeapon(player)
+	local inv = owned[player]
+	local head = player.Character and player.Character:FindFirstChild("Head") :: BasePart?
+	if not weaponId or not tool or not inv or not inv[weaponId] or not head then
+		return
+	end
+	local st = inv[weaponId]
+	inv[weaponId] = nil
+	tool:Destroy()
+	local look = head.CFrame.LookVector
+	spawnDrop(weaponId, st.mag, st.reserve, CFrame.new(head.Position + look * 2.5), look * 24 + Vector3.new(0, 10, 0))
+end
+
+-- Покупка из меню (ShopController). В режиме осмотра всё бесплатно; иначе — как со стены (цена, ночью закрыто).
+local shopIds: { [string]: boolean } = {}
+for _, item in Config.ShopList do
+	shopIds[item.id] = true
+end
+
+local function onShopBuy(player: Player, weaponId: unknown)
+	if typeof(weaponId) ~= "string" or not shopIds[weaponId] or not RateLimit.allow(player, "Buy", 0.2) then
+		return
+	end
+	if not PlayerService.isUp(player) then
+		return
+	end
+	-- купить можно только у магазина: военная палатка (платно, днём) или тестовый стенд (бесплатно)
+	local point = ShopService.pointFor(player)
+	if not point then
+		Remotes.get("Notify"):FireClient(player, "Оружие продаётся в военных палатках", 2)
+		return
+	end
+	if Config.Explore or point.free then
+		grant(player, weaponId)
+	else
+		onWallBuy(player, weaponId)
+	end
+	-- сразу берём купленное в руки
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if hum and backpack then
+		for _, t in backpack:GetChildren() do
+			if t:IsA("Tool") and t:GetAttribute("WeaponId") == weaponId then
+				hum:EquipTool(t)
+				break
+			end
+		end
 	end
 end
 
@@ -472,6 +719,8 @@ function WeaponService.init(map: Types.MapInfo)
 	end)
 	Remotes.get("Fire").OnServerEvent:Connect(onFire)
 	Remotes.get("Melee").OnServerEvent:Connect(onMelee)
+	Remotes.get("BuyWeapon").OnServerEvent:Connect(onShopBuy)
+	Remotes.get("DropWeapon").OnServerEvent:Connect(onDrop)
 	Remotes.get("Reload").OnServerEvent:Connect(function(player: Player)
 		if not RateLimit.allow(player, "Reload", 0.3) then
 			return

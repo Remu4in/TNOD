@@ -3,13 +3,21 @@
 -- скорость и поворот. Сервер сеть для сидящего отдаёт клиенту, поэтому управление отзывчивое.
 -- Для тестов: атрибуты DbgThrottle / DbgSteer на сиденье подменяют ввод.
 
+local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
 local RunService = game:GetService("RunService")
 local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Config"))
+local Remotes = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Remotes"))
 
 local VehicleController = {}
 
-local T = Config.Vehicle
+-- Настройка езды берётся по типу машины (атрибут VehicleType, Config.VehicleTypes); нет типа — запасная Config.Vehicle
+local function tuneOf(model: Instance): { maxSpeed: number, reverseSpeed: number, accel: number, brake: number, drag: number, turn: number }
+	local typeId = model:GetAttribute("VehicleType")
+	local t = if typeof(typeId) == "string" then Config.VehicleTypes[typeId] else nil
+	return t or Config.Vehicle
+end
 
 local function approach(v: number, target: number, step: number): number
 	if v < target then
@@ -18,8 +26,115 @@ local function approach(v: number, target: number, step: number): number
 	return math.max(v - step, target)
 end
 
+-- Панель мест вместо панели оружия: 1 водитель, 2 переднее пассажирское, 3–4 задние, 0 турель (если есть).
+-- Клик или клавиша с номером места пересаживает на свободное место (сервер проверяет).
+local SEAT_LABELS: { [number]: string } = { [1] = "Водитель", [2] = "Пассажир", [3] = "Сзади слева", [4] = "Сзади справа", [0] = "Турель" }
+local SEAT_ORDER = { 1, 2, 3, 4, 0 }
+local SEAT_KEYS: { [Enum.KeyCode]: number } = {
+	[Enum.KeyCode.One] = 1, [Enum.KeyCode.Two] = 2, [Enum.KeyCode.Three] = 3, [Enum.KeyCode.Four] = 4, [Enum.KeyCode.Zero] = 0,
+}
+
+local function startSeatPanel(player: Player)
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "SeatPanel"
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 12
+	gui.Enabled = false
+	gui.Parent = player:WaitForChild("PlayerGui")
+	local row = Instance.new("Frame")
+	row.AnchorPoint = Vector2.new(0.5, 1)
+	row.Position = UDim2.new(0.5, 0, 1, -14)
+	row.Size = UDim2.fromOffset(0, 64)
+	row.AutomaticSize = Enum.AutomaticSize.X
+	row.BackgroundTransparency = 1
+	row.Parent = gui
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.Padding = UDim.new(0, 6)
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Parent = row
+
+	local buttons: { [number]: TextButton } = {}
+	for _, index in SEAT_ORDER do
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.fromOffset(86, 64)
+		b.Font = Enum.Font.GothamBold
+		b.TextSize = 14
+		b.TextWrapped = true
+		b.LayoutOrder = if index == 0 then 5 else index
+		b.Text = index .. "\n" .. SEAT_LABELS[index]
+		b.Visible = false
+		b.Parent = row
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 6)
+		c.Parent = b
+		b.Activated:Connect(function()
+			Remotes.get("SwitchSeat"):FireServer(index)
+		end)
+		buttons[index] = b
+	end
+
+	local active = false
+	local function setActive(on: boolean)
+		if on == active then
+			return
+		end
+		active = on
+		gui.Enabled = on
+		pcall(function()
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, not on)
+		end)
+		if on then
+			ContextActionService:BindActionAtPriority("SeatKeys", function(_, state, input)
+				if state == Enum.UserInputState.Begin then
+					local index = SEAT_KEYS[input.KeyCode]
+					if index ~= nil and buttons[index] and buttons[index].Visible then
+						Remotes.get("SwitchSeat"):FireServer(index)
+					end
+				end
+				return Enum.ContextActionResult.Sink
+			end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four, Enum.KeyCode.Zero)
+		else
+			ContextActionService:UnbindAction("SeatKeys")
+		end
+	end
+
+	RunService.Heartbeat:Connect(function()
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		local seat = hum and hum.SeatPart
+		local model = seat and seat.Parent
+		if not seat or not model or model:GetAttribute("Vehicle") ~= true or seat:GetAttribute("SeatIndex") == nil then
+			setActive(false)
+			return
+		end
+		setActive(true)
+		local mine = seat:GetAttribute("SeatIndex")
+		local present: { [number]: Seat | VehicleSeat } = {}
+		for _, d in model:GetChildren() do
+			local idx = d:GetAttribute("SeatIndex")
+			if typeof(idx) == "number" and (d:IsA("Seat") or d:IsA("VehicleSeat")) then
+				present[idx] = d
+			end
+		end
+		for index, b in buttons do
+			local s = present[index]
+			b.Visible = s ~= nil
+			if s then
+				local taken = s.Occupant ~= nil
+				b.BackgroundColor3 = if index == mine then Color3.fromRGB(255, 170, 40) elseif taken then Color3.fromRGB(120, 45, 45) else Color3.fromRGB(40, 44, 52)
+				b.TextColor3 = if index == mine then Color3.new(0, 0, 0) else Color3.new(1, 1, 1)
+				b.BackgroundTransparency = if taken and index ~= mine then 0.35 else 0.1
+			end
+		end
+	end)
+end
+
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Exclude
+
 function VehicleController.start()
 	local player = Players.LocalPlayer
+	startSeatPanel(player)
 	RunService.Heartbeat:Connect(function(dt: number)
 		local character = player.Character
 		local hum = character and character:FindFirstChildOfClass("Humanoid")
@@ -29,8 +144,25 @@ function VehicleController.start()
 		end
 		local model = seat.Parent
 		local root = model and (model :: Model).PrimaryPart
-		if not root then
+		if not root or not model or model:GetAttribute("Wrecked") == true then
 			return
+		end
+		local T = tuneOf(model)
+		-- сильно побитая машина едет медленнее (Config.VehicleRam.limpFrac / limpSpeed)
+		local hp, maxHp = model:GetAttribute("Hp"), model:GetAttribute("MaxHp")
+		local speedMul = 1
+		if typeof(hp) == "number" and typeof(maxHp) == "number" and maxHp > 0 and hp / maxHp < Config.VehicleRam.limpFrac then
+			speedMul = Config.VehicleRam.limpSpeed
+		end
+		-- что под машиной: на бордюре/тротуаре едем медленнее, по траве чуть медленнее
+		groundParams.FilterDescendantsInstances = { model, character }
+		local below = workspace:Raycast(root.Position, Vector3.new(0, -(root.Size.Y / 2 + 6), 0), groundParams)
+		if below then
+			if below.Instance.CollisionGroup == "Curb" then
+				speedMul *= Config.Vehicle.curbSlow
+			elseif below.Material == Enum.Material.Grass or below.Material == Enum.Material.Ground or below.Material == Enum.Material.Mud then
+				speedMul *= Config.Vehicle.offroadSlow
+			end
 		end
 		local v = root.AssemblyLinearVelocity
 		local fwd = root.CFrame.LookVector * Vector3.new(1, 0, 1)
@@ -44,7 +176,7 @@ function VehicleController.start()
 		local target = 0
 		local rate = T.drag
 		if throttle > 0.05 then
-			target = T.maxSpeed * throttle
+			target = T.maxSpeed * speedMul * throttle
 			rate = if speed < -1 then T.brake else T.accel
 		elseif throttle < -0.05 then
 			target = -T.reverseSpeed

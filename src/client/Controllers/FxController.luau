@@ -11,6 +11,7 @@ local TweenService = game:GetService("TweenService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local WeaponSfx = require(Shared:WaitForChild("WeaponSfx"))
+local MeleeAnim = require(Shared:WaitForChild("MeleeAnim"))
 
 local FxController = {}
 
@@ -295,58 +296,91 @@ function FxController.onHit(pos: Vector3, damage: number, killed: boolean, heads
 end
 
 -- Взмах ближнего боя: рукоять двигается по ключевым позам (через Tool.Grip), камера подаётся вперёд
-type Pose = { t: number, cf: CFrame }
-
-local STYLES: { [string]: { Pose } } = {
-	-- колющий: назад — резкий выпад — возврат
-	stab = {
-		{ t = 0, cf = CFrame.identity },
-		{ t = 0.3, cf = CFrame.new(0, 0.05, 0.45) * CFrame.Angles(0.15, 0, 0) },
-		{ t = 0.5, cf = CFrame.new(0, -0.05, -0.95) * CFrame.Angles(-0.1, 0, 0) },
-		{ t = 1, cf = CFrame.identity },
-	},
-	-- рубящий по диагонали: замах за плечо — широкая дуга вниз-влево — возврат
-	slash = {
-		{ t = 0, cf = CFrame.identity },
-		{ t = 0.3, cf = CFrame.new(0.3, 0.15, 0.3) * CFrame.Angles(0.6, -0.55, -0.35) },
-		{ t = 0.55, cf = CFrame.new(-0.4, -0.2, -0.75) * CFrame.Angles(-0.85, 0.85, 0.3) },
-		{ t = 1, cf = CFrame.identity },
-	},
-	-- сверху вниз: тяжёлый замах и удар
-	smash = {
-		{ t = 0, cf = CFrame.identity },
-		{ t = 0.38, cf = CFrame.new(0.1, 0.55, 0.25) * CFrame.Angles(1.15, 0, 0) },
-		{ t = 0.6, cf = CFrame.new(0, -0.45, -0.75) * CFrame.Angles(-1.05, 0, 0) },
-		{ t = 1, cf = CFrame.identity },
-	},
-}
-
+-- Позы взмахов и осмотра — в Shared/MeleeAnim
 local swing: { tool: Tool, style: string, started: number, duration: number, baseGrip: CFrame }? = nil
 
 local function poseAt(style: string, u: number): CFrame
-	local keys = STYLES[style]
-	for i = 2, #keys do
-		local a, b = keys[i - 1], keys[i]
-		if u <= b.t then
-			local k = (u - a.t) / math.max(1e-4, b.t - a.t)
-			k = TweenService:GetValue(k, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
-			return a.cf:Lerp(b.cf, k)
-		end
-	end
-	return CFrame.identity
+	return MeleeAnim.poseAt(style, u)
 end
 
 function FxController.onLocalSwing(tool: Tool, weaponId: string)
 	local fx = Config.MeleeFx[weaponId]
-	if not fx or not STYLES[fx.style] then
+	if not fx or not MeleeAnim.STYLES[fx.style] then
 		return
 	end
+	FxController.cancelInspect()
 	if swing then
 		swing.tool.Grip = swing.baseGrip
 	end
 	swing = { tool = tool, style = fx.style, started = os.clock(), duration = fx.time, baseGrip = tool.Grip }
 	-- короткий «подаёт плечом» вперёд
 	kickCamera(-0.6, 0.6, 1.2)
+end
+
+-- Осмотр холодного оружия (клавиша F): оружие двигается по MeleeAnim.INSPECT, части модели — вокруг шарниров
+type InspectPart = { weld: Weld, base: CFrame, pivot: Vector3, key: string }
+local inspecting: { tool: Tool, started: number, time: number, frame: (number) -> MeleeAnim.InspectFrame, baseGrip: CFrame, parts: { InspectPart } }? = nil
+
+-- Плавный возврат оружия в руку после прерванного осмотра (как в CS2: F — осмотр, R — отмена, F — снова)
+local returning: { tool: Tool, from: CFrame, to: CFrame, started: number }? = nil
+local RETURN_TIME = 0.14
+
+-- smooth: вернуть оружие плавно (R, смена оружия) или мгновенно (перезапуск осмотра клавишей F)
+function FxController.cancelInspect(smooth: boolean?)
+	local i = inspecting
+	if i then
+		if i.tool.Parent then
+			if smooth then
+				returning = { tool = i.tool, from = i.tool.Grip, to = i.baseGrip, started = os.clock() }
+			else
+				i.tool.Grip = i.baseGrip
+			end
+		end
+		for _, p in i.parts do
+			if p.weld.Parent then
+				p.weld.C0 = p.base
+			end
+		end
+		inspecting = nil
+	end
+end
+
+function FxController.inspect()
+	local tool = toolOf(player.Character)
+	if not tool or tool:GetAttribute("Melee") ~= true or swing then
+		return
+	end
+	local id = tostring(tool:GetAttribute("WeaponId"))
+	local def = MeleeAnim.INSPECT[id]
+	if not def then
+		return
+	end
+	-- F во время осмотра перезапускает его с начала; идущий возврат после R сразу заканчивается
+	FxController.cancelInspect(false)
+	if returning then
+		returning.tool.Grip = returning.to
+		returning = nil
+	end
+	local handle = handleOf(tool)
+	local parts: { InspectPart } = {}
+	local keys = def.frame(0.5).parts
+	if keys and handle then
+		for _, d in tool:GetChildren() do
+			if d:IsA("BasePart") and d ~= handle then
+				local weld = d:FindFirstChildOfClass("Weld")
+				if weld and weld.Part0 == handle then
+					for key in keys do
+						if string.sub(d.Name, 1, #key) == key then
+							-- шарнир рукояти: её конец со стороны клинка (-Z), длина — наибольший размер детали
+							local half = math.max(d.Size.X, d.Size.Y, d.Size.Z) / 2
+							table.insert(parts, { weld = weld, base = weld.C0, pivot = weld.C0.Position + Vector3.new(0, 0, -half), key = key })
+						end
+					end
+				end
+			end
+		end
+	end
+	inspecting = { tool = tool, started = os.clock(), time = def.time, frame = def.frame, baseGrip = tool.Grip, parts = parts }
 end
 
 -- Покадровое применение отдачи и взмаха -----------------------------------
@@ -414,6 +448,39 @@ function FxController.start()
 		for _, w in weaponWelds do
 			if w.weld.Parent then
 				w.weld.C0 = w.base * offset
+			end
+		end
+
+		-- плавный возврат после отмены осмотра
+		local ret = returning
+		if ret then
+			local k = (os.clock() - ret.started) / RETURN_TIME
+			if k >= 1 or not ret.tool.Parent then
+				if ret.tool.Parent then
+					ret.tool.Grip = ret.to
+				end
+				returning = nil
+			else
+				ret.tool.Grip = ret.from:Lerp(ret.to, k)
+			end
+		end
+
+		-- осмотр ближнего оружия
+		local ins = inspecting
+		if ins then
+			local active = toolOf(player.Character)
+			local u = (os.clock() - ins.started) / ins.time
+			if active ~= ins.tool or u >= 1 or swing then
+				FxController.cancelInspect(active == ins.tool and u < 1)
+			else
+				local frame = ins.frame(u)
+				ins.tool.Grip = ins.baseGrip * frame.grip:Inverse()
+				for _, part in ins.parts do
+					local rot = frame.parts and frame.parts[part.key]
+					if rot and part.weld.Parent then
+						part.weld.C0 = CFrame.new(part.pivot) * rot * CFrame.new(-part.pivot) * part.base
+					end
+				end
 			end
 		end
 
