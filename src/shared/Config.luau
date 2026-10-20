@@ -82,10 +82,13 @@ Config.Round = {
 	IntermissionTime = 15,
 	FirstDayTime = 120, -- день можно завершить раньше голосованием (клавиша V): когда готовы все игроки
 	DayTime = 120,
-	NightMaxTime = 300, -- ночь заканчивается, когда мутантов не осталось или по этому таймеру (оставшиеся сгорят на рассвете)
+	NightMinTime = 420, -- длина ночи: 7 минут на 1-й волне, +NightPerWave секунд за каждую следующую, не больше NightMaxTime
+	NightPerWave = 10,
+	NightMaxTime = 600, -- ночь заканчивается, когда мутантов не осталось или по таймеру (оставшиеся сгорят на рассвете)
 	DayWarnSeconds = 15, -- за сколько секунд до ночи предупреждаем, что баррикады закроются
 	GameOverTime = 8,
-	MaxZombiesAlive = 60,
+	ZombiesAlivePerPlayer = 40, -- одновременно живых мутантов на игрока; остальные ждут в очереди спавна
+	ZombiesAliveMin = 40,
 	SpawnsPerTick = 2,
 	SpawnTick = 0.25,
 	AiTick = 0.2, -- как часто зомби пересчитывают цель
@@ -194,6 +197,7 @@ Config.Player = {
 	-- Движение: зомби быстрее ходьбы (Ходок 14 > 13), но спринт за энергию их обгоняет
 	WalkSpeed = 13,
 	SprintSpeed = 21,
+	BackwardSpeedFactor = 0.75, -- спиной вперёд идём медленнее
 	DownedWalkSpeed = 4,
 	-- Энергия: 5 с непрерывного спринта тратят всю, полностью восстанавливается за 15 с
 	EnergyMax = 100,
@@ -639,6 +643,23 @@ for _, d in Config.WeaponDraft do
 end
 Config.ShopCategories = SHOP_CATEGORIES
 
+-- Класс оружия для прогрессии (Config.ThreatClasses): по папке модели; пулемёт и снайперка без модели — по id
+local THREAT_BY_CLASS = { SMG = "SMG", Shotguns = "Shotgun", Rifles = "Rifle", Carbines = "Rifle" }
+local WeaponThreat: { [string]: string } = {}
+for _, d in Config.WeaponDraft do
+	local class = string.match(d.ref, "^(%w+)/") or ""
+	local kind = THREAT_BY_CLASS[class]
+	if d.id == "LMG" then
+		kind = "MG"
+	elseif d.id == "Sniper" then
+		kind = "Rifle"
+	end
+	if kind then
+		WeaponThreat[d.id] = kind
+	end
+end
+Config.WeaponThreat = WeaponThreat
+
 -- Холодное оружие: свой стиль взмаха (MeleeAnim.STYLES), время и тряска камеры; керамбит держится за кольцо (оно в центре кисти)
 local function meleeFx(id: string, style: string, time: number, shake: number)
 	MeleeFx[id] = { style = style, time = time, shake = shake }
@@ -856,15 +877,55 @@ Config.Props = {
 	shelf = { id = "shelf", mesh = "rbxassetid://82671446985249", texture = "rbxassetid://92562520345154", size = Vector3.new(4.377, 7.000, 2.694) },
 	weapon_rack = { id = "weapon_rack", mesh = "rbxassetid://74726149311071", texture = "rbxassetid://89623108733746", size = Vector3.new(5.728, 5.500, 3.274) },
 	workbench = { id = "workbench", mesh = "rbxassetid://88300467054470", texture = "rbxassetid://70826351294526", size = Vector3.new(7.453, 3.400, 4.289) },
-} :: { [string]: MeshProp }Config.Waves = {
-	BaseCount = 6,
-	CountPerWave = 3,
+} :: { [string]: MeshProp }
+
+-- Прогрессия волн (WaveMath). Количество: 20 на игрока на 1-й волне, дальше каждую волну +GrowthMin..GrowthMax (бросок один на волну),
+-- всё это умножается на 1 + PlayerCountFactor·(игроков − 1); добавка за оружие команды — ThreatClasses[класс].bonus (один раз за класс);
+-- потолок на волну: CapSolo, для команды × (1 + CapPerExtraPlayer·(игроков − 1)) — 250 соло, 500 вчетвером.
+-- Качество: HP растёт каждую волну и ещё зависит от «уровня угрозы» (Config.Threat.Tiers — вооружённость команды), скорость чуть растёт, но не выше SpeedCeil (спринт игрока — 21).
+Config.Waves = {
+	BaseCountPerPlayer = 20,
+	GrowthMin = 10,
+	GrowthMax = 20,
 	PlayerCountFactor = 0.5,
+	CapSolo = 250,
+	CapPerExtraPlayer = 1 / 3,
 	HpGrowthPerWave = 0.15,
-	RunnersFromWave = 3,
+	SpeedGrowthPerWave = 0.01,
+	SpeedCeil = 18,
+	RunnersFromWave = 2,
 	RunnerShareMax = 0.4,
 	RunnerShareGrowth = 0.08,
 	BossEvery = 5,
+}
+
+-- Класс оружия для прогрессии: у каждого — вес (для уровня угрозы) и добавка зомби к волне (диапазон, случайно один раз на волну).
+-- Считаются любые оружия в инвентаре игроков на момент начала ночи; пистолеты и холодное — нет.
+Config.ThreatClasses = {
+	SMG = { weight = 7, bonusMin = 5, bonusMax = 10 },
+	Shotgun = { weight = 7, bonusMin = 5, bonusMax = 10 },
+	Rifle = { weight = 15, bonusMin = 10, bonusMax = 20 },
+	MG = { weight = 15, bonusMin = 10, bonusMax = 20 },
+}
+-- Уровни угрозы по среднему весу оружия на игрока: min — нижняя граница; hp — множитель здоровья; runners — добавка к доле бегунов;
+-- early — на сколько волн раньше приходят особые зомби.
+Config.Threat = {
+	Tiers = {
+		{ min = 0, hp = 1.0, runners = 0, early = 0 },
+		{ min = 7, hp = 1.1, runners = 0.05, early = 0 },
+		{ min = 15, hp = 1.2, runners = 0.1, early = 1 },
+		{ min = 29, hp = 1.35, runners = 0.15, early = 1 },
+	},
+}
+
+-- Рейтинговые очки (не монеты): копятся за раунд, идут в профиль и в глобальный лидерборд (RatingService)
+Config.Rating = {
+	Kill = 5,
+	HeadshotKill = 5, -- добавка за убийство выстрелом в голову
+	BossKill = 100,
+	BuildingOpened = 50, -- тому, кто внёс последний взнос
+	NightSurvived = 30, -- × номер волны, каждому, кто дожил до конца ночи
+	ClearBonus = 20, -- × номер волны × (1 − доля ночи, которая ушла на зачистку): быстрая зачистка
 }
 
 -- НПС-продавцы в зданиях (VendorService): появляются только днём в открытом за монеты здании.

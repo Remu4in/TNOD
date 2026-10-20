@@ -94,6 +94,8 @@ local function applyBonus(id: string)
 	end
 end
 
+local onUnlocked: ((Player, string) -> ())? = nil -- кто внёс последний взнос (для рейтинга)
+
 local function unlock(id: string)
 	local def = defs[id]
 	unlocked[id] = true
@@ -120,6 +122,9 @@ local function contribute(player: Player, id: string)
 	funded[id] = (funded[id] or 0) + amount
 	if funded[id] >= def.cost then
 		unlock(id)
+		if onUnlocked then
+			(onUnlocked :: (Player, string) -> ())(player, id)
+		end
 	else
 		updateSign(id)
 	end
@@ -155,6 +160,10 @@ local function onSpot(player: Player, id: string, spot: Types.Spot)
 end
 
 -- Новый раунд (и новая локация): всё закрыто, кроме бесплатных зданий
+function BuildingService.setUnlockHandler(handler: (Player, string) -> ())
+	onUnlocked = handler
+end
+
 function BuildingService.reset()
 	ReplicatedStorage:SetAttribute("TeamLives", 0)
 	table.clear(funded)

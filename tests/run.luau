@@ -5,11 +5,16 @@
 local WaveMath = require("../src/shared/WaveMath")
 
 local Tuning = {
-	BaseCount = 6,
-	CountPerWave = 3,
+	BaseCountPerPlayer = 20,
+	GrowthMin = 10,
+	GrowthMax = 20,
 	PlayerCountFactor = 0.5,
+	CapSolo = 250,
+	CapPerExtraPlayer = 1 / 3,
 	HpGrowthPerWave = 0.15,
-	RunnersFromWave = 3,
+	SpeedGrowthPerWave = 0.01,
+	SpeedCeil = 18,
+	RunnersFromWave = 2,
 	RunnerShareMax = 0.4,
 	RunnerShareGrowth = 0.08,
 	BossEvery = 5,
@@ -48,17 +53,56 @@ local function check(c: boolean, msg: string)
 	end
 end
 
-test("число зомби растёт с волной", function()
+local ClassDefs = {
+	SMG = { weight = 7, bonusMin = 5, bonusMax = 10 },
+	Shotgun = { weight = 7, bonusMin = 5, bonusMax = 10 },
+	Rifle = { weight = 15, bonusMin = 10, bonusMax = 20 },
+	MG = { weight = 15, bonusMin = 10, bonusMax = 20 },
+}
+local Tiers = {
+	{ min = 0, hp = 1.0, runners = 0, early = 0 },
+	{ min = 7, hp = 1.1, runners = 0.05, early = 0 },
+	{ min = 15, hp = 1.2, runners = 0.1, early = 1 },
+	{ min = 29, hp = 1.35, runners = 0.15, early = 1 },
+}
+local function threatOf(loadouts: { { string } }, seed: number?)
+	return WaveMath.makeThreat(ClassDefs, Tiers, loadouts, seed or 1)
+end
+
+test("1-я волна без оружия: 20 на игрока", function()
+	for p = 1, 4 do
+		eq(WaveMath.zombieCount(Tuning, 1, p), 20 * p, "игроков " .. p)
+	end
+end)
+
+test("число зомби не убывает с волной", function()
 	local prev = 0
 	for w = 1, 30 do
-		local n = WaveMath.zombieCount(Tuning, w, 1)
-		check(n > prev, "волна " .. w .. " не больше предыдущей")
+		local n = WaveMath.zombieCount(Tuning, w, 1, threatOf({ {} }))
+		check(n >= prev, "волна " .. w .. " меньше предыдущей")
 		prev = n
 	end
 end)
 
-test("первая волна соло = BaseCount", function()
-	eq(WaveMath.zombieCount(Tuning, 1, 1), 6, "волна 1")
+test("потолок: соло 250, вчетвером 500, с любым оружием", function()
+	local full = { "SMG", "Shotgun", "Rifle", "MG" }
+	eq(WaveMath.zombieCount(Tuning, 20, 1, threatOf({ full })), 250, "соло")
+	eq(WaveMath.zombieCount(Tuning, 20, 4, threatOf({ full, full, full, full })), 500, "вчетвером")
+	for w = 1, 40 do
+		check(WaveMath.zombieCount(Tuning, w, 1, threatOf({ full })) <= 250, "соло, волна " .. w)
+	end
+end)
+
+test("рост по волнам: 10–20 соло, бросок воспроизводим", function()
+	for seed = 1, 20 do
+		local prev = WaveMath.zombieCount(Tuning, 1, 1, threatOf({ {} }, seed))
+		for w = 2, 8 do
+			local n = WaveMath.zombieCount(Tuning, w, 1, threatOf({ {} }, seed))
+			check(n - prev >= 10 and n - prev <= 20, string.format("seed %d, волна %d: +%d", seed, w, n - prev))
+			prev = n
+		end
+	end
+	eq(WaveMath.zombieCount(Tuning, 6, 2, threatOf({ {} }, 7)), WaveMath.zombieCount(Tuning, 6, 2, threatOf({ {} }, 7)), "повтор")
 end)
 
 test("больше игроков — больше зомби", function()
@@ -69,14 +113,44 @@ test("0 игроков считается как 1", function()
 	eq(WaveMath.zombieCount(Tuning, 2, 0), WaveMath.zombieCount(Tuning, 2, 1), "0 игроков")
 end)
 
+test("добавка за оружие: ПП/дробовик 5–10, винтовка/пулемёт 10–20 (соло, волна 1)", function()
+	for seed = 1, 30 do
+		for class, def in ClassDefs do
+			local n = WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { class } }, seed)) - 20
+			check(n >= def.bonusMin and n <= def.bonusMax, string.format("%s seed %d: +%d", class, seed, n))
+		end
+	end
+end)
+
+test("класс считается один раз, сколько бы стволов ни было", function()
+	eq(WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { "SMG", "SMG", "SMG" } }, 5)), WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { "SMG" } }, 5)), "три ПП = один")
+end)
+
+test("уровень угрозы: без оружия 1-й, с винтовкой 3-й, у всех всё — 4-й", function()
+	eq(threatOf({ {} }).tier.hp, 1.0, "нет оружия")
+	eq(threatOf({ { "SMG" } }).tier.hp, 1.1, "ПП")
+	eq(threatOf({ { "Rifle" } }).tier.hp, 1.2, "винтовка")
+	eq(threatOf({ { "SMG", "Shotgun", "Rifle", "MG" } }).tier.hp, 1.35, "всё")
+	eq(threatOf({ { "Rifle" }, {} }).tier.hp, 1.1, "у одного из двух: среднее 7,5")
+end)
+
+test("HP и скорость: рост по волне, скорость не выше потолка", function()
+	check(WaveMath.hpMultiplier(Tuning, 5, threatOf({ { "Rifle" } })) > WaveMath.hpMultiplier(Tuning, 5), "оружие повышает HP")
+	for w = 1, 40 do
+		check(WaveMath.speedOf(Tuning, 14, w) <= 18, "ходок на волне " .. w)
+		check(WaveMath.speedOf(Tuning, 14, w) >= 14, "не медленнее базы")
+	end
+	eq(WaveMath.speedOf(Tuning, 19, 30), 19, "бегун быстрее потолка не замедляется")
+end)
+
 test("множитель HP: волна 1 = 1, растёт", function()
 	eq(WaveMath.hpMultiplier(Tuning, 1), 1, "волна 1")
 	check(WaveMath.hpMultiplier(Tuning, 10) > WaveMath.hpMultiplier(Tuning, 9), "рост")
 end)
 
 test("бегунов нет до RunnersFromWave, доля не выше максимума", function()
-	eq(WaveMath.runnerShare(Tuning, 2), 0, "волна 2")
-	check(WaveMath.runnerShare(Tuning, 3) > 0, "волна 3")
+	eq(WaveMath.runnerShare(Tuning, 1), 0, "волна 1")
+	check(WaveMath.runnerShare(Tuning, 2) > 0, "волна 2")
 	for w = 1, 50 do
 		check(WaveMath.runnerShare(Tuning, w) <= Tuning.RunnerShareMax + 1e-9, "максимум на волне " .. w)
 	end
@@ -93,8 +167,9 @@ end)
 test("состав в сумме равен числу зомби", function()
 	for w = 1, 40 do
 		for p = 1, 6 do
-			local c = WaveMath.composition(Tuning, w, p)
-			eq(WaveMath.total(c), WaveMath.zombieCount(Tuning, w, p), string.format("волна %d, игроков %d", w, p))
+			local threat = threatOf({ { "SMG", "Rifle" } }, w * 3 + p)
+			local c = WaveMath.composition(Tuning, w, p, threat)
+			eq(WaveMath.total(c), WaveMath.zombieCount(Tuning, w, p, threat), string.format("волна %d, игроков %d", w, p))
 			for id, n in c do
 				check(n > 0, "неположительное число " .. id)
 			end

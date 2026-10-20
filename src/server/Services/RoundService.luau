@@ -21,6 +21,7 @@ local MapBuilder = require(script.Parent:WaitForChild("MapBuilder"))
 local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 local BuildingService = require(script.Parent:WaitForChild("BuildingService"))
 local EquipmentService = require(script.Parent:WaitForChild("EquipmentService"))
+local RatingService = require(script.Parent:WaitForChild("RatingService"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 
 local RoundService = {}
@@ -32,6 +33,7 @@ local locationIndex = 1 -- init.server строит первую локацию 
 local gameOver = false
 local fellAtNight = false
 local rng = Random.new()
+local roundSeed = 1 -- семя бросков прогрессии (WaveMath.roll): одно на раунд, чтобы рост по волнам был воспроизводим
 local dayVotes: { [Player]: boolean } = {} -- голоса «завершить день»
 
 -- Голоса: считаем среди игроков, которые сейчас в игре; атрибуты для HUD (DayVotes / DayVoteNeed)
@@ -221,6 +223,8 @@ local function startRound()
 	EquipmentService.clearAll()
 	EconomyService.resetRound(players)
 	ScoreService.resetRound(players)
+	RatingService.resetRound(players)
+	roundSeed = rng:NextInteger(1, 1000000)
 	WeaponService.resetRound(players)
 	for _, p in players do
 		p:SetAttribute("Revives", 0)
@@ -275,6 +279,30 @@ local function day(first: boolean)
 	ReplicatedStorage:SetAttribute("DayVotes", 0)
 end
 
+-- Классы оружия у каждого игрока на начало ночи (рюкзак + в руках) — для уровня угрозы
+local function loadouts(): { { string } }
+	local list: { { string } } = {}
+	for _, p in Players:GetPlayers() do
+		local classes: { string } = {}
+		local containers: { Instance? } = { p:FindFirstChildOfClass("Backpack"), p.Character }
+		for _, container in containers do
+			if container then
+				for _, tool in container:GetChildren() do
+					if tool:IsA("Tool") then
+						local id = tool:GetAttribute("WeaponId")
+						local class = if typeof(id) == "string" then Config.WeaponThreat[id] else nil
+						if class then
+							table.insert(classes, class)
+						end
+					end
+				end
+			end
+		end
+		table.insert(list, classes)
+	end
+	return list
+end
+
 local function night()
 	wave += 1
 	ReplicatedStorage:SetAttribute("Wave", wave)
@@ -286,10 +314,14 @@ local function night()
 	local bossIds = WaveMath.bossTypes(Config.Waves, wave)
 	setNight(true, #bossIds > 0)
 	setPhase("Night", nil)
-	local nightEndsAt = os.clock() + Config.Round.NightMaxTime
+	local nightLength = math.min(Config.Round.NightMaxTime, Config.Round.NightMinTime + Config.Round.NightPerWave * (wave - 1))
+	local nightStart = os.clock()
+	local nightEndsAt = nightStart + nightLength
 	local players = #Players:GetPlayers()
-	local comp = WaveMath.composition(Config.Waves, wave, players)
-	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave))
+	local threat = WaveMath.makeThreat(Config.ThreatClasses, Config.Threat.Tiers, loadouts(), roundSeed)
+	local comp = WaveMath.composition(Config.Waves, wave, players, threat)
+	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave, threat), wave)
+	print(string.format("[RoundService] ночь %d: игроков %d, зомби %d, угроза %.1f (уровень x%.2f HP), оружие: %s", wave, players, WaveMath.total(comp), threat.score, threat.tier.hp, table.concat(threat.classes, ",")))
 	local bossName: string? = nil
 	for _, bossId in WaveMath.bossTypes(Config.Waves, wave) do
 		bossName = Config.Zombies[bossId].name
@@ -302,6 +334,9 @@ local function night()
 			break
 		end
 		task.wait(0.25)
+	end
+	if not gameOver then
+		RatingService.onNightEnd(wave, ZombieService.remaining() == 0, (os.clock() - nightStart) / nightLength)
 	end
 end
 
@@ -323,6 +358,7 @@ local function finishRound()
 			)
 		end)
 	end
+	RatingService.finishRound(Players:GetPlayers())
 	for _, p in Players:GetPlayers() do
 		DataService.recordRound(
 			p,
@@ -365,11 +401,15 @@ function RoundService.onZombieKilled(player: Player?, zombie: any)
 		end
 		EconomyService.add(player, zombie.def.reward + bonusCoins)
 		ScoreService.recordKill(player, zombie.def.points + bonusPoints)
+		RatingService.onKill(player, zombie)
 	end
 end
 
 function RoundService.start(map: Types.MapInfo)
 	currentMap = map
+	BuildingService.setUnlockHandler(function(player: Player, _id: string)
+		RatingService.onBuildingOpened(player)
+	end)
 	Remotes.get("VoteDay").OnServerEvent:Connect(function(player: Player)
 		if ReplicatedStorage:GetAttribute("Phase") ~= "Day" or not RateLimit.allow(player, "VoteDay", 0.4) then
 			return

@@ -2,6 +2,7 @@
 -- Зомби: очередь спавна, пул моделей, единый цикл ИИ для всех (без скрипта в каждом зомби),
 -- урон по зомби только через ZombieService.damage на сервере.
 
+local Players = game:GetService("Players")
 local PhysicsService = game:GetService("PhysicsService")
 local PathfindingService = game:GetService("PathfindingService")
 local Debris = game:GetService("Debris")
@@ -10,6 +11,7 @@ local AssetService = game:GetService("AssetService")
 local ServerStorage = game:GetService("ServerStorage")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local WaveMath = require(Shared:WaitForChild("WaveMath"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 local BarricadeService = require(script.Parent:WaitForChild("BarricadeService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
@@ -26,6 +28,7 @@ type Zombie = {
 	def: Config.ZombieDef,
 	hp: number,
 	maxHp: number,
+	speed: number, -- скорость этой волны (def.speed с ростом по волнам, WaveMath.speedOf)
 	state: State,
 	window: Types.Window?,
 	lastAttack: number,
@@ -67,6 +70,7 @@ local active: { [Model]: Zombie } = {}
 local pool: { [string]: { Zombie } } = {}
 local queue: { string } = {}
 local hpMultiplier = 1
+local waveNumber = 1
 local storage: Folder
 local container: Folder
 local onKilled: ((player: Player?, zombie: Zombie) -> ())? = nil
@@ -507,6 +511,7 @@ local function acquire(typeId: string): Zombie
 		armRaise = if isRig then 100 elseif isMesh then 140 else 75,
 		armStrike = if isRig then 35 elseif isMesh then 50 else -25,
 		rig = isRig,
+		speed = def.speed,
 		tracks = {}, -- анимации грузим при первом выходе в мир (Animator должен быть в Workspace)
 		animName = "",
 		animSpeed = if isRig then Config.ZombieRigs[def.id].animSpeed else 1,
@@ -814,7 +819,7 @@ local function flinch(z: Zombie, kind: string, hitName: string, flat: Vector3, p
 		local hip = CFrame.new(z.pivots[partName])
 		jerk(z, partName, hip * CFrame.Angles(math.rad(50) * power, 0, 0) * hip:Inverse(), 0.06, 0.4)
 		z.slowUntil = now + 1.6 -- подстреленная нога: хромает
-		z.humanoid.WalkSpeed = z.def.speed * 0.5
+		z.humanoid.WalkSpeed = z.speed * 0.5
 		local pivot = CFrame.new(z.hipPivot)
 		local names = if z.rig then { "Torso" } else { "Torso", "Head", "LeftArm", "RightArm" }
 		for _, name in names do
@@ -860,7 +865,8 @@ local function spawnOne(typeId: string)
 	z.stuckTime = 0
 	z.lastPos = spawnPos
 	z.alive = true
-	z.humanoid.WalkSpeed = z.def.speed
+	z.speed = if WaveMath.isBossType(z.def.id) then z.def.speed else WaveMath.speedOf(Config.Waves, z.def.speed, waveNumber)
+	z.humanoid.WalkSpeed = z.speed
 	z.model:SetAttribute("Hp", z.hp)
 	z.model:SetAttribute("MaxHp", z.maxHp)
 	z.model:PivotTo(CFrame.new(spawnPos))
@@ -945,7 +951,7 @@ local function think(z: Zombie, now: number, dt: number)
 	-- хромота после попадания в ногу проходит
 	if z.slowUntil > 0 and now >= z.slowUntil then
 		z.slowUntil = 0
-		z.humanoid.WalkSpeed = z.def.speed
+		z.humanoid.WalkSpeed = z.speed
 	end
 
 	-- после попадания зомби на миг замирает (чувствуется удар); замах при этом срывается
@@ -1319,8 +1325,9 @@ function ZombieService.partKind(part: BasePart): string
 	return partKind(part)
 end
 
-function ZombieService.enqueue(types: { string }, hpMult: number)
+function ZombieService.enqueue(types: { string }, hpMult: number, wave: number?)
 	hpMultiplier = hpMult
+	waveNumber = wave or 1
 	for _, t in types do
 		table.insert(queue, t)
 	end
@@ -1384,8 +1391,10 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 			for _ in active do
 				alive += 1
 			end
+			-- одновременно живых: 40 на игрока, остальные ждут в очереди
+			local aliveCap = math.max(Config.Round.ZombiesAliveMin, Config.Round.ZombiesAlivePerPlayer * #Players:GetPlayers())
 			local n = 0
-			while #queue > 0 and n < Config.Round.SpawnsPerTick and alive < Config.Round.MaxZombiesAlive do
+			while #queue > 0 and n < Config.Round.SpawnsPerTick and alive < aliveCap do
 				spawnOne(table.remove(queue, 1) :: string)
 				n += 1
 				alive += 1

@@ -200,6 +200,41 @@ function MovementController.start()
 		tryDodge(nil)
 	end)
 
+	-- Спиной вперёд идём медленнее (P.BackwardSpeedFactor): скорость пересчитывается каждый кадр от базовой (ходьба/спринт),
+	-- подкат, кувырок, падение и сиденье в машине не трогаем. Сервер пишет базовую скорость сам — мы переписываем её только когда
+	-- она равна базовой или нашему прошлому значению.
+	local lastWritten = 0
+	RunService.Heartbeat:Connect(function()
+		local char = player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		local camera = workspace.CurrentCamera
+		if not hum or not camera or hum.Health <= 0 or hum.SeatPart then
+			return
+		end
+		if player:GetAttribute("Downed") == true or player:GetAttribute("Dodge") ~= nil then
+			return
+		end
+		local base = if player:GetAttribute("Sprinting") == true then P.SprintSpeed else P.WalkSpeed
+		local factor = 1
+		local move = hum.MoveDirection
+		if move.Magnitude > 0.1 then
+			local look = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
+			if look.Magnitude > 0.01 then
+				local dot = move.Unit:Dot(look.Unit)
+				if dot < -0.3 then
+					local t = math.clamp((-dot - 0.3) / 0.7, 0, 1)
+					factor = 1 - (1 - P.BackwardSpeedFactor) * t
+				end
+			end
+		end
+		local want = base * factor
+		local cur = hum.WalkSpeed
+		if math.abs(cur - want) > 0.01 and (math.abs(cur - base) < 0.01 or math.abs(cur - lastWritten) < 0.01) then
+			hum.WalkSpeed = want
+			lastWritten = want
+		end
+	end)
+
 	-- сальто камеры при кувырке. Стандартная камера берёт за основу CFrame прошлого кадра, поэтому прибавлять
 	-- поворот к её кадру нельзя (наклон копился, камера уезжала вверх). На 0,5 с камеру целиком задаём сами:
 	-- направление взгляда до кувырка + сальто, а в последнем кадре возвращаем ровно исходное направление.
