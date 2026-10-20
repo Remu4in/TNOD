@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local ViewModel = require(script.Parent:WaitForChild("ViewModelController"))
 
 local ArmsController = {}
 
@@ -63,10 +64,20 @@ function ArmsController.start()
 		if not char then
 			return
 		end
+		-- пока работает viewmodel (руки и оружие в кадре), настоящие руки и Tool себе прячем
+		local vm = ViewModel.active()
 		for _, name in ARM_PARTS do
 			local part = char:FindFirstChild(name)
 			if part and part:IsA("BasePart") then
-				part.LocalTransparencyModifier = 0
+				part.LocalTransparencyModifier = if vm then 1 else 0
+			end
+		end
+		local held = char:FindFirstChildOfClass("Tool")
+		if held then
+			for _, d in held:GetChildren() do
+				if d:IsA("BasePart") then
+					d.LocalTransparencyModifier = if vm then 1 else 0
+				end
 			end
 		end
 		-- RifleAim — не обычная анимация, а «шкала наклона» (как в Weapons Kit): время кадра = угол взгляда
@@ -109,6 +120,7 @@ function ArmsController.start()
 		if not track or not def then
 			return
 		end
+		ViewModel.reload(def.reloadTime)
 		track:Play(0.1)
 		local length = track.Length
 		if length > 0 then

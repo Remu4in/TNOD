@@ -1089,7 +1089,9 @@ end
 local MAX_CORPSES = 10
 local corpses: { Model } = {}
 
-local function spawnCorpse(z: Zombie, dir: Vector3)
+-- Разные смерти: выстрел в голову — голова отлетает; тяжёлый удар (дробь, кувалда) — отрывает конечности и швыряет тело;
+-- выстрел в ногу — оседает почти на месте; обычная — отлёт от стрелка
+local function spawnCorpse(z: Zombie, dir: Vector3, kind: string, heavy: boolean)
 	local folder = workspace:FindFirstChild("Corpses")
 	if not folder then
 		folder = Instance.new("Folder")
@@ -1104,6 +1106,7 @@ local function spawnCorpse(z: Zombie, dir: Vector3)
 	end
 	local c = z.model:Clone()
 	c.Name = "Corpse"
+	local joints: { [BasePart]: Instance } = {}
 	local hum = c:FindFirstChildOfClass("Humanoid")
 	if hum then
 		hum:Destroy()
@@ -1127,7 +1130,20 @@ local function spawnCorpse(z: Zombie, dir: Vector3)
 				ball.TwistLowerAngle = -35
 				ball.TwistUpperAngle = 35
 				ball.Parent = m.Part0
+				joints[m.Part1] = ball
 				m:Destroy()
+			end
+		end
+	end
+	if not z.rig then
+		-- блочная модель: части сидят на сварке/суставах — запоминаем, чтобы при тяжёлой смерти отрывать
+		for _, j in c:GetDescendants() do
+			if j:IsA("JointInstance") and j.Part0 and j.Part1 then
+				for _, end_ in { j.Part0, j.Part1 } do
+					if end_.Name ~= "HumanoidRootPart" and end_.Name ~= "Handle" and end_.Name ~= "Torso" then
+						joints[end_] = j
+					end
+				end
 			end
 		end
 	end
@@ -1160,8 +1176,32 @@ local function spawnCorpse(z: Zombie, dir: Vector3)
 			p.Anchored = false
 		end
 		local mass = root.AssemblyMass
-		root:ApplyImpulse((dir * 34 + Vector3.new(0, 20, 0)) * mass)
-		root.AssemblyAngularVelocity = Vector3.new(math.random(-8, 8), math.random(-4, 4), math.random(-8, 8))
+		local push = if kind == "Leg" then 0.35 elseif heavy then 1.9 else 1
+		root:ApplyImpulse((dir * 34 * push + Vector3.new(0, (if heavy then 30 else 20) * (if kind == "Leg" then 0.4 else 1), 0)) * mass)
+		root.AssemblyAngularVelocity = Vector3.new(math.random(-8, 8), math.random(-4, 4), math.random(-8, 8)) * (if heavy then 2 else 1)
+		-- что отрывается: голова (выстрел в голову) или 1–2 конечности (тяжёлый удар)
+		for part, joint in joints do
+			local n = part.Name
+			local tear = (kind == "Head" and string.find(n, "Head") ~= nil)
+				or (heavy and (string.find(n, "Arm") ~= nil or string.find(n, "Leg") ~= nil) and math.random() < 0.45)
+			if tear then
+				joint:Destroy()
+				part.CanCollide = true
+				local e = Instance.new("ParticleEmitter")
+				e.Rate = 0
+				e.Lifetime = NumberRange.new(0.3, 0.6)
+				e.Speed = NumberRange.new(8, 20)
+				e.SpreadAngle = Vector2.new(60, 60)
+				e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(1, 0) })
+				e.Color = ColorSequence.new(Color3.fromRGB(150, 8, 8))
+				e.Acceleration = Vector3.new(0, -50, 0)
+				e.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+				e.Parent = part
+				e:Emit(14)
+				part:ApplyImpulse((dir * 22 + Vector3.new((math.random() - 0.5) * 18, 26, (math.random() - 0.5) * 18)) * part.AssemblyMass)
+				part.AssemblyAngularVelocity = Vector3.new(math.random(-20, 20), math.random(-20, 20), math.random(-20, 20))
+			end
+		end
 	end)
 	task.delay(2.4, function()
 		for _, p in parts do
@@ -1178,7 +1218,8 @@ export type Impact = {
 	push: number?, -- отбрасывание, студов/с
 	stagger: number?, -- на сколько секунд зомби замирает
 	part: BasePart?, -- часть тела, в которую попали (для реакции: голова, корпус, рука, нога)
-	power: number?, -- сила удара для анимации реакции (1 — обычная)
+	heavy: boolean?, -- тяжёлый удар (дробь, кувалда, топор): смерть с оторванными конечностями
+	power: number? , -- сила удара для анимации реакции (1 — обычная)
 }
 
 -- Урон по зомби (только сервер). Возвращает: нанесён ли урон, убит ли.
@@ -1217,7 +1258,7 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 	end
 	if z.hp <= 0 then
 		z.headKill = kind == "Head"
-		spawnCorpse(z, flat)
+		spawnCorpse(z, flat, kind, impact ~= nil and impact.heavy == true)
 		release(z)
 		if onKilled then
 			(onKilled :: (Player?, Zombie) -> ())(attacker, z)

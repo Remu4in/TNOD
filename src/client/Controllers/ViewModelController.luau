@@ -1,0 +1,358 @@
+--!strict
+-- Руки и оружие от первого лица (viewmodel): вместо рук персонажа в кадре — предплечья и кисти (рукав и кожа), оружие в руках.
+-- Работает для огнестрела; холодное оружие пока держится стандартным способом (FxController / MeleeAnim).
+-- Движения (всё считается кодом): достать оружие, покачивание при ходьбе, «запаздывание» за мышью, отдача при выстреле,
+-- прицеливание (оружие к центру), бег (оружие опущено), перезарядка по этапам (магазин вынимается и вставляется левой рукой).
+-- Реальные руки и Tool у персонажа скрываются только для самого игрока (LocalTransparencyModifier), другие видят их как обычно.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+
+local ViewModel = {}
+
+local player = Players.LocalPlayer
+
+local SLEEVE = Color3.fromRGB(62, 74, 52) -- рукав: оливковый
+local SKIN_FALLBACK = Color3.fromRGB(226, 182, 148)
+local HIP = Vector3.new(0.55, -0.55, -1.6) -- где рукоять оружия относительно камеры от бедра
+local DRAW_TIME = 0.4
+
+type GunPart = { part: BasePart, rel: CFrame, isMag: boolean }
+
+type Rig = {
+	tool: Tool,
+	weaponId: string,
+	model: Model,
+	parts: { GunPart },
+	rForearm: Part,
+	rHand: Part,
+	lForearm: Part,
+	lHand: Part,
+	leftHold: Vector3, -- где левая рука держит оружие (система рукояти)
+	magPos: Vector3, -- где магазин (система рукояти)
+	muzzle: Vector3, -- дуло (система рукояти)
+	aimY: number, -- высота линии прицеливания над рукоятью
+	pistol: boolean,
+	drawStart: number,
+}
+
+local rig: Rig? = nil
+local container: Model? = nil
+
+-- пружины (положение и поворот оружия относительно «стойки»)
+local pos, posVel = Vector3.zero, Vector3.zero
+local rot, rotVel = Vector3.zero, Vector3.zero
+local bobPhase = 0
+local reload: { started: number, duration: number }? = nil
+local lastMouse = Vector2.zero
+
+local function smooth(k: number): number
+	k = math.clamp(k, 0, 1)
+	return k * k * (3 - 2 * k)
+end
+
+local function segment(u: number, a: number, b: number): number
+	return smooth((u - a) / (b - a))
+end
+
+local function springStep(cur: Vector3, vel: Vector3, target: Vector3, dt: number, k: number, c: number): (Vector3, Vector3)
+	vel += ((target - cur) * k - vel * c) * dt
+	return cur + vel * dt, vel
+end
+
+local function makePart(name: string, size: Vector3, color: Color3, parent: Instance): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.Color = color
+	p.Material = Enum.Material.SmoothPlastic
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Parent = parent
+	return p
+end
+
+local function skinColor(): Color3
+	local char = player.Character
+	local bc = char and char:FindFirstChildOfClass("BodyColors")
+	return if bc then bc.RightArmColor3 else SKIN_FALLBACK
+end
+
+local function destroyRig()
+	if rig then
+		rig.model:Destroy()
+		rig = nil
+	end
+	reload = nil
+end
+
+-- Собираем копию деталей оружия из Tool: положение каждой детали относительно рукояти берём из её Weld (C0)
+local function buildRig(tool: Tool, weaponId: string): Rig?
+	local handle = tool:FindFirstChild("Handle") :: BasePart?
+	local camera = workspace.CurrentCamera
+	if not handle or not camera then
+		return nil
+	end
+	local model = Instance.new("Model")
+	model.Name = "ViewModel"
+	model.Parent = camera
+	local parts: { GunPart } = {}
+	local minZ, maxZ, minY, maxY = math.huge, -math.huge, math.huge, -math.huge
+	local magSum, magN = Vector3.zero, 0
+	for _, d in tool:GetChildren() do
+		if d:IsA("BasePart") and d ~= handle then
+			local weld = d:FindFirstChildOfClass("Weld")
+			if weld and weld.Part0 == handle then
+				local clone = d:Clone()
+				for _, c in clone:GetChildren() do
+					if not c:IsA("SurfaceAppearance") then
+						c:Destroy()
+					end
+				end
+				clone.Anchored = true
+				clone.CanCollide = false
+				clone.CanQuery = false
+				clone.CanTouch = false
+				clone.CastShadow = false
+				clone.Massless = true
+				clone.Parent = model
+				local rel = weld.C0
+				local isMag = d:GetAttribute("Group") == "Mag"
+				table.insert(parts, { part = clone, rel = rel, isMag = isMag })
+				-- габариты по углам детали
+				local half = d.Size / 2
+				for _, sx in { -1, 1 } do
+					for _, sy in { -1, 1 } do
+						for _, sz in { -1, 1 } do
+							local c = rel:PointToWorldSpace(Vector3.new(sx * half.X, sy * half.Y, sz * half.Z))
+							minZ, maxZ = math.min(minZ, c.Z), math.max(maxZ, c.Z)
+							minY, maxY = math.min(minY, c.Y), math.max(maxY, c.Y)
+						end
+					end
+				end
+				if isMag then
+					magSum += rel.Position
+					magN += 1
+				end
+			end
+		end
+	end
+	if #parts == 0 then
+		model:Destroy()
+		return nil
+	end
+	local length = maxZ - minZ
+	local pistol = length < 2.0
+	local skin = skinColor()
+	local rig_: Rig = {
+		tool = tool, weaponId = weaponId, model = model, parts = parts,
+		rForearm = makePart("RForearm", Vector3.new(0.4, 0.4, 3), SLEEVE, model),
+		rHand = makePart("RHand", Vector3.new(0.38, 0.34, 0.55), skin, model),
+		lForearm = makePart("LForearm", Vector3.new(0.4, 0.4, 3), SLEEVE, model),
+		lHand = makePart("LHand", Vector3.new(0.38, 0.34, 0.55), skin, model),
+		leftHold = if pistol then Vector3.new(-0.22, -0.28, 0.12) else Vector3.new(-0.02, minY + 0.12, minZ + length * 0.32),
+		magPos = if magN > 0 then magSum / magN else Vector3.new(0, -0.7, -0.1),
+		muzzle = Vector3.new(0, (minY + maxY) / 2 + 0.05, minZ - 0.05),
+		aimY = maxY,
+		pistol = pistol,
+		drawStart = os.clock(),
+	}
+	return rig_
+end
+
+-- Что сейчас в руках: огнестрел с WeaponId и от первого лица
+local function heldFirearm(): (Tool?, string?)
+	local char = player.Character
+	local tool = char and char:FindFirstChildOfClass("Tool")
+	if not tool or tool:GetAttribute("Melee") == true then
+		return nil, nil
+	end
+	local id = tool:GetAttribute("WeaponId")
+	if typeof(id) ~= "string" or not Config.Weapons[id] or Config.Weapons[id].melee then
+		return nil, nil
+	end
+	return tool, id
+end
+
+local function firstPerson(): boolean
+	local camera = workspace.CurrentCamera
+	return camera ~= nil and (camera.Focus.Position - camera.CFrame.Position).Magnitude < 1.6
+end
+
+function ViewModel.active(): boolean
+	return rig ~= nil
+end
+
+-- Дуло в мире (для вспышки, гильз, трассеров): из deck-а viewmodel, а не из скрытого оружия в руках персонажа
+function ViewModel.handleCFrame(tool: Tool): CFrame?
+	local r = rig
+	if r and r.tool == tool and r.parts[1] then
+		-- рукоять — начало системы координат: восстанавливаем её CFrame из первой детали
+		return r.parts[1].part.CFrame * r.parts[1].rel:Inverse()
+	end
+	return nil
+end
+
+function ViewModel.muzzleWorld(tool: Tool): Vector3?
+	local cf = ViewModel.handleCFrame(tool)
+	return if cf then cf:PointToWorldSpace(ViewModel.rigMuzzle()) else nil
+end
+
+function ViewModel.rigMuzzle(): Vector3
+	return if rig then rig.muzzle else Vector3.zero
+end
+
+-- Выстрел: толчок оружия назад и вверх
+function ViewModel.kick(weaponId: string)
+	local fx = Config.WeaponFx[weaponId]
+	if not fx or not rig then
+		return
+	end
+	posVel += Vector3.new((math.random() - 0.5) * 0.6, fx.kickBack * 7, fx.kickBack * 22)
+	rotVel += Vector3.new(math.rad(fx.kickRot) * 9, (math.random() - 0.5) * 0.8, (math.random() - 0.5) * 1.2)
+end
+
+-- Перезарядка на duration секунд (длительность задаёт сервер: Config.Weapons[...].reloadTime)
+function ViewModel.reload(duration: number)
+	if rig then
+		reload = { started = os.clock(), duration = math.max(duration, 0.6) }
+	end
+end
+
+-- Анимация перезарядки: смещение оружия, положение левой руки и сдвиг магазина (система рукояти), прозрачность магазина
+local function reloadPose(r: Rig, u: number): (CFrame, Vector3, Vector3, number)
+	local tilt = segment(u, 0, 0.18) - segment(u, 0.82, 1)
+	local weaponCf = CFrame.new(-0.16 * tilt, -0.3 * tilt, 0.12 * tilt) * CFrame.Angles(math.rad(-14) * tilt, math.rad(8) * tilt, math.rad(-28) * tilt)
+	-- левая рука: к магазину → вниз с ним → за новым → вверх → к цевью
+	local toMag = segment(u, 0.05, 0.2)
+	local pull = segment(u, 0.2, 0.4)
+	local away = segment(u, 0.4, 0.5)
+	local fresh = segment(u, 0.55, 0.72)
+	local seat = segment(u, 0.72, 0.86)
+	local back = segment(u, 0.86, 1)
+	local magHome = r.magPos
+	local hand = r.leftHold:Lerp(magHome, toMag)
+	local magOffset = Vector3.zero
+	local magAlpha = 0
+	if u < 0.5 then
+		magOffset = Vector3.new(0, -1.7 * pull, 0)
+		hand = hand + Vector3.new(0, -1.7 * pull, 0)
+		magAlpha = 1 - away -- магазин исчезает, когда рука его бросила
+		hand = hand + Vector3.new(-0.5 * away, -1.2 * away, 0.3 * away)
+	elseif u < 0.86 then
+		local outHand = magHome + Vector3.new(-0.5, -2.9, 0.3)
+		hand = outHand:Lerp(magHome + Vector3.new(0, -1.7, 0), fresh):Lerp(magHome, seat)
+		magOffset = Vector3.new(0, -1.7 * (1 - seat), 0)
+		magAlpha = fresh -- новый магазин появляется у руки
+	else
+		hand = magHome:Lerp(r.leftHold, back)
+		magAlpha = 1
+	end
+	return weaponCf, hand, magOffset, magAlpha
+end
+
+-- Руки: предплечье тянется от «локтя» (внизу у края кадра) к кисти
+local function placeArm(forearm: Part, hand: Part, elbow: CFrame, handCf: CFrame)
+	local from = elbow.Position
+	local to = handCf.Position
+	local dist = (to - from).Magnitude
+	forearm.Size = Vector3.new(0.4, 0.4, math.max(dist, 0.3))
+	forearm.CFrame = CFrame.lookAt((from + to) / 2, to)
+	hand.CFrame = handCf
+end
+
+local function update(dt: number)
+	local camera = workspace.CurrentCamera
+	local tool, id = heldFirearm()
+	if not camera or not tool or not id or not firstPerson() or player:GetAttribute("Downed") == true then
+		if rig then
+			destroyRig()
+		end
+		return
+	end
+	if not rig or rig.tool ~= tool then
+		destroyRig()
+		rig = buildRig(tool, id)
+		pos, posVel, rot, rotVel = Vector3.zero, Vector3.zero, Vector3.zero, Vector3.zero
+		if not rig then
+			return
+		end
+	end
+	local r = rig :: Rig
+	local now = os.clock()
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local speed = if root then Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude else 0
+	local ads = player:GetAttribute("ADS") == true
+	local sprint = player:GetAttribute("Sprinting") == true
+
+	-- «запаздывание» оружия за поворотом камеры
+	local md = UserInputService:GetMouseDelta()
+	local swayX = math.clamp(-md.X * 0.0016, -0.1, 0.1)
+	local swayY = math.clamp(md.Y * 0.0016, -0.1, 0.1)
+	-- покачивание шага
+	bobPhase += dt * speed * 0.5
+	local moveK = math.clamp(speed / 16, 0, 1) * (if ads then 0.25 else 1)
+	local bob = Vector3.new(math.sin(bobPhase) * 0.04 * moveK, -math.abs(math.cos(bobPhase)) * 0.035 * moveK, 0)
+
+	-- базовая стойка: от бедра, в прицеле — по центру; на бегу ниже и набок; при доставании — снизу
+	local stance = HIP
+	local stanceRot = Vector3.zero
+	if ads then
+		stance = Vector3.new(0, -r.aimY - 0.1, -1.0)
+	elseif sprint then
+		stance = HIP + Vector3.new(-0.18, -0.32, 0.12)
+		stanceRot = Vector3.new(math.rad(-22), math.rad(14), math.rad(-12))
+	end
+	local draw = smooth((now - r.drawStart) / DRAW_TIME)
+	stance += Vector3.new(0, -1.0 * (1 - draw), 0.35 * (1 - draw))
+	stanceRot += Vector3.new(math.rad(-38) * (1 - draw), 0, math.rad(12) * (1 - draw))
+	local stiffness = if ads then 260 else 150
+	pos, posVel = springStep(pos, posVel, Vector3.new(swayX, swayY, 0) + bob, dt, stiffness, 20)
+	rot, rotVel = springStep(rot, rotVel, Vector3.new(swayY * 0.8, swayX * 1.4, swayX * 1.2) + stanceRot, dt, stiffness, 20)
+
+	local rl = reload
+	local reloadCf, leftTarget, magOffset, magAlpha = CFrame.identity, r.leftHold, Vector3.zero, 0
+	local magHidden = false
+	if rl then
+		local u = (now - rl.started) / rl.duration
+		if u >= 1 then
+			reload = nil
+		else
+			reloadCf, leftTarget, magOffset, magAlpha = reloadPose(r, u)
+			magHidden = true
+		end
+	end
+
+	local weaponCf = camera.CFrame * CFrame.new(stance + pos) * CFrame.Angles(rot.X, rot.Y, rot.Z) * reloadCf
+	for _, gp in r.parts do
+		if gp.isMag and magHidden then
+			-- магазин: вынутый уезжает вниз и исчезает, новый приезжает снизу
+			gp.part.CFrame = weaponCf * CFrame.new(magOffset) * gp.rel
+			gp.part.Transparency = if magAlpha > 0.5 then 0 else 1
+		else
+			gp.part.CFrame = weaponCf * gp.rel
+			gp.part.Transparency = 0
+		end
+	end
+
+	-- кисти: правая на рукояти, левая на цевье (или магазине во время перезарядки)
+	local tiltDown = CFrame.Angles(math.rad(-18), 0, 0)
+	local rightHandCf = weaponCf * CFrame.new(0.02, -0.17, 0.12) * tiltDown
+	local leftHandCf = weaponCf * CFrame.new(leftTarget) * CFrame.Angles(math.rad(-10), math.rad(r.pistol and 18 or 0), math.rad(8))
+	placeArm(r.rForearm, r.rHand, camera.CFrame * CFrame.new(1.5, -3.0, 1.2), rightHandCf)
+	placeArm(r.lForearm, r.lHand, camera.CFrame * CFrame.new(-1.5, -3.0, 1.2), leftHandCf)
+end
+
+function ViewModel.start()
+	RunService:BindToRenderStep("NotdViewModel", Enum.RenderPriority.Camera.Value + 6, update)
+	player.CharacterAdded:Connect(destroyRig)
+end
+
+return ViewModel

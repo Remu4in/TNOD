@@ -350,6 +350,7 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 					stagger = if aim then aim.stagger else 0.1,
 					part = hitPart,
 					power = if def.pellets > 1 then 0.6 else 1,
+					heavy = def.pellets > 1,
 				})
 				if applied then
 					totalDamage += dmg
@@ -457,6 +458,7 @@ local function onMelee(player: Player, direction: unknown)
 				dir = away,
 				push = def.knockback,
 				stagger = 0.35,
+				heavy = def.knockback >= 40,
 			})
 			if applied then
 				totalDamage += def.damage

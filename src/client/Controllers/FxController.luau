@@ -12,6 +12,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local WeaponSfx = require(Shared:WaitForChild("WeaponSfx"))
 local MeleeAnim = require(Shared:WaitForChild("MeleeAnim"))
+local ViewModel = require(script.Parent:WaitForChild("ViewModelController"))
 
 local FxController = {}
 
@@ -79,6 +80,10 @@ local function muzzleOffset(tool: Tool): Vector3
 end
 
 local function muzzleWorld(tool: Tool): Vector3?
+	local vm = ViewModel.muzzleWorld(tool)
+	if vm then
+		return vm
+	end
 	local handle = handleOf(tool)
 	return if handle then handle.CFrame:PointToWorldSpace(muzzleOffset(tool)) else nil
 end
@@ -121,6 +126,81 @@ local function burst(pos: Vector3, color: Color3, count: number, speedMin: numbe
 	end)
 end
 
+-- Кровь на полу и осколки ----------------------------------------------
+
+local MAX_PUDDLES = 40
+local puddles: { Part } = {}
+local shardCount = 0
+
+-- Лужа или брызги на поверхности под точкой попадания; старые исчезают, когда их больше MAX_PUDDLES
+local function bloodSplat(pos: Vector3, size: number)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local ignore: { Instance } = { folder() }
+	local zf = workspace:FindFirstChild("Zombies")
+	if zf then
+		table.insert(ignore, zf)
+	end
+	if player.Character then
+		table.insert(ignore, player.Character)
+	end
+	params.FilterDescendantsInstances = ignore
+	local hit = workspace:Raycast(pos + Vector3.new(0, 1.5, 0), Vector3.new((math.random() - 0.5) * 3, -14, (math.random() - 0.5) * 3), params)
+	if not hit or hit.Normal.Y < 0.5 then
+		return
+	end
+	if #puddles >= MAX_PUDDLES then
+		local old = table.remove(puddles, 1)
+		if old then
+			old:Destroy()
+		end
+	end
+	local p = Instance.new("Part")
+	p.Shape = Enum.PartType.Cylinder
+	p.Size = Vector3.new(0.04, size, size * (0.7 + math.random() * 0.5))
+	p.Color = Color3.fromRGB(70 + math.random(0, 25), 4, 4)
+	p.Material = Enum.Material.SmoothPlastic
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.CFrame = CFrame.lookAt(hit.Position + hit.Normal * 0.03, hit.Position + hit.Normal) * CFrame.Angles(0, math.rad(90), 0) * CFrame.Angles(0, 0, math.rad(math.random(0, 359)))
+	p.Parent = folder()
+	table.insert(puddles, p)
+	task.delay(30, function()
+		if p.Parent then
+			TweenService:Create(p, TweenInfo.new(6), { Transparency = 1 }):Play()
+			Debris:AddItem(p, 6.5)
+		end
+	end)
+end
+
+-- Осколки: мелкие обломки разлетаются от точки попадания и пропадают
+local function shards(pos: Vector3, normalUp: Vector3?, count: number, color: Color3)
+	for _ = 1, count do
+		if shardCount >= 36 then
+			return
+		end
+		shardCount += 1
+		local c = Instance.new("Part")
+		c.Size = Vector3.new(0.08 + math.random() * 0.12, 0.05 + math.random() * 0.08, 0.1 + math.random() * 0.15)
+		c.Color = color
+		c.Material = Enum.Material.Concrete
+		c.CanQuery = false
+		c.CanTouch = false
+		c.CFrame = CFrame.new(pos) * CFrame.Angles(math.random() * 6, math.random() * 6, math.random() * 6)
+		local dir = Vector3.new(math.random() - 0.5, math.random() * 0.8 + 0.2, math.random() - 0.5).Unit
+		c.AssemblyLinearVelocity = dir * (8 + math.random() * 12) + (normalUp or Vector3.zero) * 6
+		c.AssemblyAngularVelocity = Vector3.new(math.random(-20, 20), math.random(-20, 20), math.random(-20, 20))
+		c.Parent = folder()
+		Debris:AddItem(c, 1.6)
+		task.delay(1.6, function()
+			shardCount -= 1
+		end)
+	end
+end
+
 -- Выстрел --------------------------------------------------------------
 
 local function muzzleFlash(tool: Tool, size: number)
@@ -155,7 +235,8 @@ local shellCount = 0
 
 local function ejectShell(tool: Tool)
 	local handle = handleOf(tool)
-	if not handle or shellCount >= 24 then
+	local handleCf = ViewModel.handleCFrame(tool) or (handle and handle.CFrame)
+	if not handle or not handleCf or shellCount >= 24 then
 		return
 	end
 	shellCount += 1
@@ -165,7 +246,7 @@ local function ejectShell(tool: Tool)
 	shell.Material = Enum.Material.Metal
 	shell.CanQuery = false
 	shell.CanTouch = false
-	local cf = handle.CFrame * CFrame.new(0.1, 0.25, -0.2)
+	local cf = handleCf * CFrame.new(0.1, 0.25, -0.2)
 	shell.CFrame = cf * CFrame.Angles(math.random() * 3, math.random() * 3, 0)
 	shell.AssemblyLinearVelocity = cf.RightVector * (7 + math.random() * 5) + cf.UpVector * (6 + math.random() * 4) + cf.LookVector * (math.random() * 3)
 	shell.AssemblyAngularVelocity = Vector3.new(math.random(-30, 30), math.random(-30, 30), math.random(-30, 30))
@@ -209,6 +290,7 @@ end
 -- Попадание в мир: искры и «пинг»
 function FxController.impact(pos: Vector3)
 	burst(pos, Color3.fromRGB(255, 215, 130), 5, 10, 24, 0.18, 0.22, true)
+	shards(pos, nil, 3, Color3.fromRGB(120, 118, 112))
 	WeaponSfx.ping(pos)
 end
 
@@ -258,6 +340,7 @@ function FxController.onLocalShot(tool: Tool, weaponId: string)
 	end
 	kick.back = math.min(kick.back + fx.kickBack, 0.8)
 	kick.rot = math.min(kick.rot + math.rad(fx.kickRot), math.rad(22))
+	ViewModel.kick(weaponId)
 	-- подъём и увод прицела делает WeaponController по предсказуемой закономерности (Ballistics.recoilStep),
 	-- здесь — только лёгкая «дрожь» кадра, не влияющая на прицел
 	kickCamera(0, 0, 0.3)
@@ -287,6 +370,12 @@ function FxController.onHit(pos: Vector3, damage: number, killed: boolean, heads
 		burst(pos, Color3.fromRGB(255, 220, 90), 8, 10, 26, 0.18, 0.3, false)
 	end
 	flashZombie(pos)
+	bloodSplat(pos, if killed then 3.2 + math.random() * 1.5 else 0.8 + math.random() * 0.8)
+	if killed then
+		for _ = 1, 3 do
+			bloodSplat(pos + Vector3.new((math.random() - 0.5) * 4, 0, (math.random() - 0.5) * 4), 0.5 + math.random() * 0.7)
+		end
+	end
 	local tool = toolOf(player.Character)
 	if tool and tool:GetAttribute("Melee") == true then
 		local fx = Config.MeleeFx[tostring(tool:GetAttribute("WeaponId"))]
