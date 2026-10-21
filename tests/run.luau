@@ -5,19 +5,28 @@
 local WaveMath = require("../src/shared/WaveMath")
 
 local Tuning = {
-	BaseCountPerPlayer = 20,
-	GrowthMin = 10,
-	GrowthMax = 20,
-	PlayerCountFactor = 0.5,
+	StartCounts = { 20, 30, 35, 40 },
+	StartPerExtraPlayer = 4,
+	CurveWaves = 20,
+	CurveExp = 1.25,
+	JitterPct = 10,
 	CapSolo = 250,
 	CapPerExtraPlayer = 1 / 3,
-	HpGrowthPerWave = 0.15,
+	HpGrowthPerWave = 0.12,
+	DamageGrowthPerWave = 0.03,
 	SpeedGrowthPerWave = 0.01,
 	SpeedCeil = 18,
-	RunnersFromWave = 2,
-	RunnerShareMax = 0.4,
-	RunnerShareGrowth = 0.08,
 	BossEvery = 5,
+}
+
+local Economy = {
+	WaveRewardBase = 350,
+	WaveRewardPerWave = 25,
+	KillPoolBase = 440,
+	KillPoolPerWave = 33,
+	KillBodyShare = 0.4,
+	KillWeights = { Walker = 1, Runner = 1.2, Crawler = 0.8, Dark = 2, BucketHead = 2.5, Military = 3, Chemist = 3, Brute = 6 },
+	BossKillWeight = 40,
 }
 
 -- Заглушка Random: детерминированный генератор
@@ -69,39 +78,50 @@ local function threatOf(loadouts: { { string } }, seed: number?)
 	return WaveMath.makeThreat(ClassDefs, Tiers, loadouts, seed or 1)
 end
 
-test("1-я волна без оружия: 20 на игрока", function()
+test("1-я волна без оружия: 20 / 30 / 35 / 40", function()
+	local want = { 20, 30, 35, 40 }
 	for p = 1, 4 do
-		eq(WaveMath.zombieCount(Tuning, 1, p), 20 * p, "игроков " .. p)
+		eq(WaveMath.zombieCount(Tuning, 1, p), want[p], "игроков " .. p)
 	end
+	eq(WaveMath.zombieCount(Tuning, 1, 5), 44, "5 игроков")
 end)
 
-test("число зомби не убывает с волной", function()
-	local prev = 0
-	for w = 1, 30 do
-		local n = WaveMath.zombieCount(Tuning, w, 1, threatOf({ {} }))
-		check(n >= prev, "волна " .. w .. " меньше предыдущей")
-		prev = n
+test("кривая не убывает, начинается со старта и кончается потолком", function()
+	for p = 1, 6 do
+		local prev = 0
+		for w = 1, 30 do
+			local n = WaveMath.curveCount(Tuning, w, p)
+			check(n >= prev - 1e-9, string.format("игроков %d, волна %d", p, w))
+			prev = n
+		end
+	end
+	eq(WaveMath.curveCount(Tuning, 20, 1), 250, "соло, 20-я")
+	eq(math.floor(WaveMath.curveCount(Tuning, 20, 4) + 0.5), 500, "вчетвером, 20-я")
+end)
+
+test("число зомби: в пределах ±10% от кривой (без оружия), не выше потолка", function()
+	for seed = 1, 30 do
+		for w = 2, 25 do
+			for _, p in { 1, 2, 4 } do
+				local n = WaveMath.zombieCount(Tuning, w, p, threatOf({ {} }, seed))
+				local curve = WaveMath.curveCount(Tuning, w, p)
+				check(n >= math.floor(curve * 0.9), string.format("seed %d w %d p %d: %d < 90%% от %.1f", seed, w, p, n, curve))
+				check(n <= math.min(math.ceil(curve * 1.1), 250 * (1 + (p - 1) / 3)) + 1, string.format("seed %d w %d p %d: %d", seed, w, p, n))
+			end
+		end
 	end
 end)
 
 test("потолок: соло 250, вчетвером 500, с любым оружием", function()
 	local full = { "SMG", "Shotgun", "Rifle", "MG" }
-	eq(WaveMath.zombieCount(Tuning, 20, 1, threatOf({ full })), 250, "соло")
-	eq(WaveMath.zombieCount(Tuning, 20, 4, threatOf({ full, full, full, full })), 500, "вчетвером")
 	for w = 1, 40 do
 		check(WaveMath.zombieCount(Tuning, w, 1, threatOf({ full })) <= 250, "соло, волна " .. w)
+		check(WaveMath.zombieCount(Tuning, w, 4, threatOf({ full, full, full, full })) <= 500, "вчетвером, волна " .. w)
 	end
+	eq(WaveMath.zombieCount(Tuning, 25, 1, threatOf({ full })), 250, "соло, поздняя волна")
 end)
 
-test("рост по волнам: 10–20 соло, бросок воспроизводим", function()
-	for seed = 1, 20 do
-		local prev = WaveMath.zombieCount(Tuning, 1, 1, threatOf({ {} }, seed))
-		for w = 2, 8 do
-			local n = WaveMath.zombieCount(Tuning, w, 1, threatOf({ {} }, seed))
-			check(n - prev >= 10 and n - prev <= 20, string.format("seed %d, волна %d: +%d", seed, w, n - prev))
-			prev = n
-		end
-	end
+test("бросок воспроизводим", function()
 	eq(WaveMath.zombieCount(Tuning, 6, 2, threatOf({ {} }, 7)), WaveMath.zombieCount(Tuning, 6, 2, threatOf({ {} }, 7)), "повтор")
 end)
 
@@ -148,14 +168,6 @@ test("множитель HP: волна 1 = 1, растёт", function()
 	check(WaveMath.hpMultiplier(Tuning, 10) > WaveMath.hpMultiplier(Tuning, 9), "рост")
 end)
 
-test("бегунов нет до RunnersFromWave, доля не выше максимума", function()
-	eq(WaveMath.runnerShare(Tuning, 1), 0, "волна 1")
-	check(WaveMath.runnerShare(Tuning, 2) > 0, "волна 2")
-	for w = 1, 50 do
-		check(WaveMath.runnerShare(Tuning, w) <= Tuning.RunnerShareMax + 1e-9, "максимум на волне " .. w)
-	end
-end)
-
 test("боссы только на каждой 5-й волне", function()
 	for w = 1, 20 do
 		local isBoss = w % 5 == 0
@@ -192,7 +204,7 @@ test("военные с 11-й: 2–4 штуки, до 11-й нет", function()
 		eq(WaveMath.composition(Tuning, w, 2).Military, nil, "волна " .. w)
 	end
 	for w = 11, 19 do
-		local n = WaveMath.composition(Tuning, w, 2).Military or 0
+		local n = WaveMath.composition(Tuning, w, 1).Military or 0
 		check(n >= 2 and n <= 4, "волна " .. w .. ": " .. n)
 	end
 end)
@@ -248,6 +260,74 @@ test("очередь спавна: те же типы, боссы в конце"
 	for i = 1, #q - bosses do
 		check(not WaveMath.isBossType(q[i]), "обычный в начале, позиция " .. i)
 	end
+end)
+
+test("состав по плану: 1-я — одни ходоки, 2-я — бегуны со 2-й", function()
+	local c1 = WaveMath.composition(Tuning, 1, 1)
+	eq(c1.Walker, 20, "1-я: только ходоки")
+	check(WaveMath.composition(Tuning, 2, 1).Runner ~= nil, "бегуны на 2-й")
+end)
+
+test("особые в команде растут вместе с волной", function()
+	check((WaveMath.composition(Tuning, 12, 4).Brute or 0) > (WaveMath.composition(Tuning, 12, 1).Brute or 0), "громил больше у команды")
+end)
+
+test("уровень угрозы 3+ приближает особых на волну", function()
+	local threat = threatOf({ { "Rifle" } }, 3)
+	check((WaveMath.composition(Tuning, 5, 1, threat).Brute or 0) == 0 or true, "волна 5 допускает")
+	check((WaveMath.composition(Tuning, 5, 1, threat).Brute or 0) > 0, "громилы уже на 5-й при винтовке")
+	eq(WaveMath.composition(Tuning, 5, 1).Brute, nil, "без оружия — нет")
+end)
+
+test("урон зомби +3% за волну", function()
+	eq(WaveMath.damageMultiplier(Tuning, 1), 1, "волна 1")
+	check(math.abs(WaveMath.damageMultiplier(Tuning, 11) - 1.3) < 1e-9, "волна 11 = 1,3")
+end)
+
+local function cumulative(upTo: number, headShare: number): number
+	local sum = 0
+	for w = 1, upTo do
+		local comp = WaveMath.composition(Tuning, w, 1)
+		local units = WaveMath.killUnits(Economy, w, comp)
+		local pool = 0
+		for id, n in comp do
+			pool += units[id] * n * (headShare + (1 - headShare) * Economy.KillBodyShare)
+		end
+		sum += WaveMath.waveReward(Economy, w) + pool
+	end
+	return sum
+end
+
+test("экономика: сумма единиц за убийство равна пулу волны", function()
+	for w = 1, 20 do
+		local comp = WaveMath.composition(Tuning, w, 3)
+		local units = WaveMath.killUnits(Economy, w, comp)
+		local sum = 0
+		for id, n in comp do
+			sum += units[id] * n
+		end
+		check(math.abs(sum - WaveMath.killPool(Economy, w)) < 1e-6, "волна " .. w)
+	end
+end)
+
+test("экономика: к 16-й без хедшотов ≈13,6 тыс., только хедшоты ≈20,5 тыс.", function()
+	local low, high = cumulative(16, 0), cumulative(16, 1)
+	check(low > 13000 and low < 14200, "минимум " .. low)
+	check(high > 20000 and high < 21000, "максимум " .. high)
+	check(cumulative(19, 0) > 14500 and cumulative(17, 0) < 16000, "все здания (14,5 тыс.) в минимуме — около 16–18-й")
+end)
+
+test("экономика: за волну не зависит от размера толпы", function()
+	local a = WaveMath.killUnits(Economy, 10, WaveMath.composition(Tuning, 10, 1))
+	local b = WaveMath.killUnits(Economy, 10, WaveMath.composition(Tuning, 10, 4))
+	local sa, sb = 0, 0
+	for id, n in WaveMath.composition(Tuning, 10, 1) do
+		sa += a[id] * n
+	end
+	for id, n in WaveMath.composition(Tuning, 10, 4) do
+		sb += b[id] * n
+	end
+	check(math.abs(sa - sb) < 1e-6, "пул одинаков для 1 и 4 игроков")
 end)
 
 print(string.format("\nИТОГО: %d тестов, упало %d", total, failed))

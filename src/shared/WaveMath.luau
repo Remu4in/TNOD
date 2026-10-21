@@ -1,22 +1,22 @@
 --!strict
 -- Чистые формулы волн: без сервисов Roblox, поэтому тестируются вне Studio.
--- Состав волны = Walker/Runner (по долям) + особые по расписанию (WaveMath.Schedule) + боссы (цикл WaveMath.BossCycle).
+-- Состав волны = обычные по долям и особые по таблице WaveMath.Plan + боссы (цикл WaveMath.BossCycle).
+-- Количество — кривая от старта до потолка (zombieCount); монеты — общий бюджет команды (Config.Economy).
 
 local WaveMath = {}
 
 export type WaveTuning = {
-	BaseCountPerPlayer: number,
-	GrowthMin: number,
-	GrowthMax: number,
-	PlayerCountFactor: number,
+	StartCounts: { number }, -- зомби на 1-й волне для 1, 2, 3… игроков; дальше + StartPerExtraPlayer на игрока
+	StartPerExtraPlayer: number,
+	CurveWaves: number, -- на этой волне достигается потолок
+	CurveExp: number, -- форма кривой: >1 — рост медленно, потом быстрее
+	JitterPct: number, -- случайное отклонение числа зомби по волне, ±%
 	CapSolo: number,
 	CapPerExtraPlayer: number,
 	HpGrowthPerWave: number,
+	DamageGrowthPerWave: number,
 	SpeedGrowthPerWave: number,
 	SpeedCeil: number,
-	RunnersFromWave: number,
-	RunnerShareMax: number,
-	RunnerShareGrowth: number,
 	BossEvery: number,
 }
 
@@ -28,26 +28,37 @@ export type Threat = { classes: { string }, defs: { [string]: ClassDef }, tier: 
 -- Состав: тип зомби → сколько. Типы боссов начинаются с «Boss».
 export type Composition = { [string]: number }
 
--- Правило появления особого зомби. kind = "count": штук = min(cap, floor(value + grow·(волна − from)));
--- kind = "share": доля обычных зомби волны = min(cap, value + grow·(волна − from)).
-export type Rule = { id: string, kind: string, from: number, to: number?, value: number, grow: number?, cap: number? }
+-- План состава по волнам: shares — доли обычных зомби (нормируются), counts — особые в штуках (в команде растут вместе с общим
+-- числом зомби), fractions — доля от всех зомби волны, only — все обычные одного типа. Волны дальше последней берут последнюю запись.
+export type PlanRow = { shares: { [string]: number }, counts: { [string]: number }?, fractions: { [string]: number }?, only: string? }
+WaveMath.Plan = {
+	[1] = { shares = { Walker = 100 } },
+	[2] = { shares = { Walker = 88, Runner = 12 } },
+	[3] = { shares = { Walker = 80, Runner = 20 } },
+	[4] = { shares = { Walker = 72, Runner = 28 } },
+	[5] = { shares = { Walker = 66, Runner = 28 } },
+	[6] = { shares = { Walker = 58, Runner = 25, Crawler = 8 }, counts = { Brute = 2 } },
+	[7] = { shares = { Walker = 52, Runner = 25, Crawler = 10 }, counts = { Brute = 2, Chemist = 2 } },
+	[8] = { shares = { Walker = 48, Runner = 26, Crawler = 10 }, counts = { Brute = 3, Chemist = 3 } },
+	[9] = { shares = { Walker = 44, Runner = 28, Crawler = 12 }, counts = { Brute = 4, Chemist = 4 } },
+	[10] = { shares = { BucketHead = 100 }, only = "BucketHead" },
+	[11] = { shares = { Walker = 45, Crawler = 10, Dark = 35 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
+	[12] = { shares = { Walker = 45, Crawler = 10, Dark = 35 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
+	[13] = { shares = { Walker = 45, Crawler = 10, Dark = 35 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
+	[14] = { shares = { Walker = 45, Crawler = 10, Dark = 35 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
+	[15] = { shares = { Walker = 40, Crawler = 10, Dark = 40 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
+	[16] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 5, Chemist = 5, Military = 3 } },
+	[17] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 5, Chemist = 5, Military = 3 } },
+	[18] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 6, Chemist = 5, Military = 4 } },
+	[19] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 6, Chemist = 5, Military = 4 } },
+	[20] = { shares = { Walker = 25, Runner = 10, Crawler = 5 }, counts = { Brute = 6, Chemist = 5 }, fractions = { Military = 0.5 } },
+} :: { [number]: PlanRow }
 
--- Расписание (2026-10-19). Числа черновые — баланс после плейтеста.
-WaveMath.Schedule = {
-	{ id = "Crawler", kind = "share", from = 6, value = 0.06, grow = 0.01, cap = 0.15 }, -- ползуны подмешиваются с 6-й
-	{ id = "Brute", kind = "count", from = 6, value = 1, grow = 0.25, cap = 6 }, -- Громилы с 6-й
-	{ id = "Chemist", kind = "count", from = 7, value = 1, grow = 0.34, cap = 5 }, -- химики с 7-й
-	{ id = "Military", kind = "count", from = 11, to = 19, value = 2, grow = 0.25, cap = 4 }, -- военные с 11-й: 2–4 штуки
-	{ id = "Military", kind = "share", from = 20, value = 0.5 }, -- 20-я: заражение базы, военные — основная группа
-} :: { Rule }
+local LAST_PLAN = 20
 
--- Волны, где ВСЕ обычные зомби — один тип (10-я: бронированные, PvZ)
-WaveMath.AllSame = { [10] = "BucketHead" } :: { [number]: string }
-
--- Замена типа на диапазоне волн: «тёмные» вместо быстрых на 11–15 (тёмные собаки заменят их, когда будет риг собаки)
-WaveMath.Replace = {
-	{ from = 11, to = 15, old = "Runner", new = "Dark" },
-} :: { { from: number, to: number, old: string, new: string } }
+local function planAt(wave: number): PlanRow
+	return WaveMath.Plan[math.clamp(wave, 1, LAST_PLAN)]
+end
 
 -- Боссы по порядку: 5-я — Качок, 10-я — Гаргантюа (PvZ), 15-я — Повелитель тёмных, дальше по кругу
 WaveMath.BossCycle = { "BossBuff", "BossGarg", "BossStrong" } :: { string }
@@ -92,32 +103,54 @@ function WaveMath.makeThreat(classesCfg: { [string]: ClassDef }, tiers: { Tier }
 	return { classes = classes, defs = classesCfg, tier = tier, score = score, seed = seed }
 end
 
-local function playerFactor(t: WaveTuning, players: number): number
-	return 1 + t.PlayerCountFactor * (math.max(1, players) - 1)
+local function playerFactor(players: number): number
+	return 1 + 0.5 * (math.max(1, players) - 1)
 end
 
--- Сколько зомби в волне: база на игрока + рост по волнам + добавка за классы оружия команды, не больше потолка
-function WaveMath.zombieCount(t: WaveTuning, wave: number, players: number, threat: Threat?): number
+local function startCount(t: WaveTuning, players: number): number
 	local p = math.max(1, players)
-	local seed = if threat then threat.seed else 0
-	local growth = 0
-	for w = 2, wave do
-		growth += WaveMath.roll(seed, w, t.GrowthMin, t.GrowthMax)
+	local list = t.StartCounts
+	if p <= #list then
+		return list[p]
 	end
-	local pf = playerFactor(t, p)
-	local total = t.BaseCountPerPlayer * p + growth * pf
+	return list[#list] + (p - #list) * t.StartPerExtraPlayer
+end
+
+local function capFor(t: WaveTuning, players: number): number
+	return t.CapSolo * (1 + t.CapPerExtraPlayer * (math.max(1, players) - 1))
+end
+
+-- Целевое число зомби по кривой (без отклонения и добавок): старт → потолок за CurveWaves волн
+function WaveMath.curveCount(t: WaveTuning, wave: number, players: number): number
+	local start, cap = startCount(t, players), capFor(t, players)
+	local k = math.clamp((wave - 1) / (t.CurveWaves - 1), 0, 1) ^ t.CurveExp
+	return start + (cap - start) * k
+end
+
+-- Сколько зомби в волне: кривая ±отклонение + добавка за классы оружия команды (в пределах потолка)
+function WaveMath.zombieCount(t: WaveTuning, wave: number, players: number, threat: Threat?): number
+	local seed = if threat then threat.seed else 0
+	local total = WaveMath.curveCount(t, wave, players)
+	if wave > 1 then
+		total *= 1 + WaveMath.roll(seed, wave, -t.JitterPct, t.JitterPct) / 100
+	end
 	if threat then
+		local pf = playerFactor(players)
 		for i, class in threat.classes do
 			local def = threat.defs[class]
 			total += WaveMath.roll(seed, wave * 100 + i, def.bonusMin, def.bonusMax) * pf
 		end
 	end
-	local cap = t.CapSolo * (1 + t.CapPerExtraPlayer * (p - 1))
-	return math.floor(math.min(total, cap) + 0.5)
+	return math.floor(math.min(total, capFor(t, players)) + 0.5)
 end
 
 function WaveMath.hpMultiplier(t: WaveTuning, wave: number, threat: Threat?): number
 	return (1 + t.HpGrowthPerWave * (wave - 1)) * (if threat then threat.tier.hp else 1)
+end
+
+-- Урон зомби растёт с волной
+function WaveMath.damageMultiplier(t: WaveTuning, wave: number): number
+	return 1 + t.DamageGrowthPerWave * (wave - 1)
 end
 
 -- Множитель скорости обычных зомби по волне; итоговая скорость ограничена SpeedCeil (спринт игрока быстрее)
@@ -127,14 +160,6 @@ end
 
 function WaveMath.speedOf(t: WaveTuning, base: number, wave: number): number
 	return math.max(base, math.min(base * WaveMath.speedMultiplier(t, wave), t.SpeedCeil))
-end
-
-function WaveMath.runnerShare(t: WaveTuning, wave: number, extra: number?): number
-	if wave < t.RunnersFromWave then
-		return 0
-	end
-	local add = extra or 0
-	return math.min(t.RunnerShareMax + add, t.RunnerShareGrowth * (wave - t.RunnersFromWave + 1) + add)
 end
 
 function WaveMath.isBossWave(t: WaveTuning, wave: number): boolean
@@ -159,16 +184,38 @@ function WaveMath.bossTypes(t: WaveTuning, wave: number): { string }
 	return list
 end
 
-local function ruleActive(rule: Rule, wave: number): boolean
-	return wave >= rule.from and (rule.to == nil or wave <= rule.to)
-end
-
-local function ruleValue(rule: Rule, wave: number): number
-	local v = rule.value + (rule.grow or 0) * (wave - rule.from)
-	if rule.cap then
-		v = math.min(v, rule.cap)
+-- Распределяем n штук по долям (метод наибольших остатков, сумма точная)
+local function split(n: number, shares: { [string]: number }): { [string]: number }
+	local ids: { string } = {}
+	local sum = 0
+	for id, v in shares do
+		table.insert(ids, id)
+		sum += v
 	end
-	return v
+	table.sort(ids)
+	local out: { [string]: number } = {}
+	local rem: { { id: string, frac: number } } = {}
+	local used = 0
+	for _, id in ids do
+		local exact = n * shares[id] / sum
+		local whole = math.floor(exact)
+		out[id] = whole
+		used += whole
+		table.insert(rem, { id = id, frac = exact - whole })
+	end
+	table.sort(rem, function(a, b)
+		if a.frac ~= b.frac then
+			return a.frac > b.frac
+		end
+		return a.id < b.id
+	end)
+	local i = 1
+	while used < n and #rem > 0 do
+		out[rem[i].id] += 1
+		used += 1
+		i = i % #rem + 1
+	end
+	return out
 end
 
 function WaveMath.composition(t: WaveTuning, wave: number, players: number, threat: Threat?): Composition
@@ -180,40 +227,45 @@ function WaveMath.composition(t: WaveTuning, wave: number, players: number, thre
 		comp[b] = (comp[b] or 0) + 1
 	end
 	local rest = math.max(0, total - #bosses)
-
-	-- 10-я и подобные: все обычные — один тип
-	local same = WaveMath.AllSame[wave]
-	if same then
-		comp[same] = (comp[same] or 0) + rest
+	local row = planAt(wave)
+	if row.only then
+		comp[row.only] = (comp[row.only] or 0) + rest
 		return comp
 	end
-
-	-- особые по расписанию (не больше, чем осталось мест)
+	-- особые приходят на волну раньше при высоком уровне угрозы (кроме волн «только один тип»)
+	local specialRow = planAt(wave + tier.early)
+	if specialRow.only then
+		specialRow = row
+	end
 	local free = rest
-	for _, rule in WaveMath.Schedule do
-		if ruleActive(rule, wave + tier.early) and free > 0 then
-			local n = if rule.kind == "count" then math.floor(ruleValue(rule, wave + tier.early)) else math.floor(rest * ruleValue(rule, wave + tier.early) + 0.5)
-			n = math.min(n, free)
-			if n > 0 then
-				comp[rule.id] = (comp[rule.id] or 0) + n
-				free -= n
-			end
+	-- доли от всей волны (военные на 20-й)
+	for id, fraction in specialRow.fractions or {} do
+		local n = math.min(free, math.floor(rest * fraction + 0.5))
+		if n > 0 then
+			comp[id] = (comp[id] or 0) + n
+			free -= n
 		end
 	end
-
-	-- остальное — ходоки и бегуны
-	local runners = math.floor(free * WaveMath.runnerShare(t, wave, tier.runners) + 0.5)
-	if free - runners > 0 then
-		comp.Walker = free - runners
+	-- штуки растут вместе с размером волны: во сколько раз она больше, чем у одиночки без оружия
+	local scale = math.max(1, total / math.max(1, WaveMath.curveCount(t, wave, 1)))
+	local counts: { [string]: number } = specialRow.counts or {}
+	local ids: { string } = {}
+	for id in counts do
+		table.insert(ids, id)
 	end
-	if runners > 0 then
-		comp.Runner = runners
+	table.sort(ids)
+	for _, id in ids do
+		local n = math.min(free, math.floor(counts[id] * scale + 0.5))
+		if n > 0 then
+			comp[id] = (comp[id] or 0) + n
+			free -= n
+		end
 	end
-
-	for _, r in WaveMath.Replace do
-		if wave >= r.from and wave <= r.to and comp[r.old] then
-			comp[r.new] = (comp[r.new] or 0) + comp[r.old]
-			comp[r.old] = nil
+	if free > 0 then
+		for id, n in split(free, row.shares) do
+			if n > 0 then
+				comp[id] = (comp[id] or 0) + n
+			end
 		end
 	end
 	return comp
@@ -253,6 +305,47 @@ function WaveMath.spawnQueue(comp: Composition, rng: Random): { string }
 		table.insert(queue, id)
 	end
 	return queue
+end
+
+-- Экономика команды ------------------------------------------------------------------------------------
+-- Касса общая. За волну: награда за прохождение (waveReward) + пул за убийства (killPool): убийство в голову платит полную долю,
+-- в тело — KillBodyShare от неё. Доля зависит от веса типа и не от размера толпы, поэтому доход за волну не растёт с числом зомби.
+export type EconomyTuning = {
+	WaveRewardBase: number,
+	WaveRewardPerWave: number,
+	KillPoolBase: number,
+	KillPoolPerWave: number,
+	KillBodyShare: number,
+	KillWeights: { [string]: number },
+	BossKillWeight: number,
+}
+
+function WaveMath.waveReward(e: EconomyTuning, wave: number): number
+	return e.WaveRewardBase + e.WaveRewardPerWave * wave
+end
+
+function WaveMath.killPool(e: EconomyTuning, wave: number): number
+	return e.KillPoolBase + e.KillPoolPerWave * wave
+end
+
+-- Монеты за убийство в голову по типам (в тело — умножить на KillBodyShare); сумма по всей волне = killPool
+function WaveMath.killUnits(e: EconomyTuning, wave: number, comp: Composition): { [string]: number }
+	local function weight(id: string): number
+		return e.KillWeights[id] or (if WaveMath.isBossType(id) then e.BossKillWeight else 1)
+	end
+	local sum = 0
+	for id, n in comp do
+		sum += weight(id) * n
+	end
+	local units: { [string]: number } = {}
+	if sum <= 0 then
+		return units
+	end
+	local pool = WaveMath.killPool(e, wave)
+	for id in comp do
+		units[id] = pool * weight(id) / sum
+	end
+	return units
 end
 
 return WaveMath

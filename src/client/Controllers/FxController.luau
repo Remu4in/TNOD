@@ -370,6 +370,8 @@ function FxController.onHit(pos: Vector3, damage: number, killed: boolean, heads
 	burst(pos, Color3.fromRGB(165, 12, 12), count, 8, if killed or headshot then 34 else 22, 0.34, 0.55, false)
 	if headshot then
 		burst(pos, Color3.fromRGB(255, 220, 90), 8, 10, 26, 0.18, 0.3, false)
+		-- приземлённо: плотный красный выброс и крупные капли, без экранных надписей (обзор не закрываем)
+		burst(pos, Color3.fromRGB(120, 6, 6), if killed then 22 else 12, 14, 38, 0.5, 0.45, false)
 	end
 	flashZombie(pos)
 	bloodSplat(pos, if killed then 3.2 + math.random() * 1.5 else 0.8 + math.random() * 0.8)

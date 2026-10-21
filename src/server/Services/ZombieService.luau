@@ -71,6 +71,7 @@ local pool: { [string]: { Zombie } } = {}
 local queue: { string } = {}
 local hpMultiplier = 1
 local waveNumber = 1
+local damageMultiplier = 1
 local storage: Folder
 local container: Folder
 local onKilled: ((player: Player?, zombie: Zombie) -> ())? = nil
@@ -648,7 +649,7 @@ local function flaskBurst(def: Config.ZombieDef, landing: Vector3)
 			end
 		end
 	end
-	strike(fl.damage)
+	strike(fl.damage * damageMultiplier)
 	task.spawn(function()
 		for _ = 1, 6 do
 			task.wait(0.5)
@@ -745,7 +746,7 @@ local function finishStrike(z: Zombie, now: number)
 		local r = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 		local reach = (3.5 * z.def.scale + 1.5) * 1.25
 		if r and (r.Position - z.root.Position).Magnitude <= reach then
-			PlayerService.damage(target, z.def.damage)
+			PlayerService.damage(target, z.def.damage * damageMultiplier)
 		end
 	end
 end
@@ -846,10 +847,96 @@ local function release(z: Zombie)
 	table.insert(list, z)
 end
 
+-- Выбор точки появления: зомби идут на игроков со всех сторон, а не гуськом. Берём точки на расстоянии SPAWN_MIN..SPAWN_MAX от
+-- ближайшего живого игрока, делим окружение выбранного игрока на 8 секторов и берём сектор, откуда зомби появлялись реже всего;
+-- в самой точке — случайный сдвиг, чтобы не слипались (не ближе SPAWN_GAP к другому зомби).
+local SPAWN_MIN, SPAWN_MAX, SPAWN_GAP, SECTORS = 60, 340, 3.5, 8
+local sectorUse: { number } = {}
+for i = 1, SECTORS do
+	sectorUse[i] = 0
+end
+local spawnCount = 0
+
+local function pickSpawnPosition(): Vector3
+	local spawns = map.zombieSpawns
+	local up = PlayerService.upPlayers()
+	local roots: { Vector3 } = {}
+	for _, p in up do
+		local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if r then
+			table.insert(roots, r.Position)
+		end
+	end
+	local base: Vector3
+	if #roots == 0 then
+		base = spawns[math.random(1, #spawns)]
+	else
+		local focus = roots[math.random(1, #roots)]
+		local eligible: { { pos: Vector3, sector: number } } = {}
+		local near: { { pos: Vector3, sector: number } } = {}
+		for _, sp in spawns do
+			local minDist = math.huge
+			for _, r in roots do
+				minDist = math.min(minDist, (Vector3.new(sp.X, 0, sp.Z) - Vector3.new(r.X, 0, r.Z)).Magnitude)
+			end
+			local d = sp - focus
+			local sector = math.floor(((math.atan2(d.Z, d.X) + math.pi) / (2 * math.pi)) * SECTORS) % SECTORS + 1
+			local entry = { pos = sp, sector = sector }
+			if minDist >= SPAWN_MIN and minDist <= SPAWN_MAX then
+				table.insert(eligible, entry)
+			elseif minDist >= 40 then
+				table.insert(near, entry)
+			end
+		end
+		local pool = if #eligible > 0 then eligible else near
+		if #pool == 0 then
+			base = spawns[math.random(1, #spawns)]
+		else
+			local bestUse = math.huge
+			for _, e in pool do
+				bestUse = math.min(bestUse, sectorUse[e.sector])
+			end
+			local choices: { { pos: Vector3, sector: number } } = {}
+			for _, e in pool do
+				if sectorUse[e.sector] == bestUse then
+					table.insert(choices, e)
+				end
+			end
+			local pick = choices[math.random(1, #choices)]
+			base = pick.pos
+			sectorUse[pick.sector] += 1
+		end
+	end
+	spawnCount += 1
+	if spawnCount % 24 == 0 then
+		for i = 1, SECTORS do
+			sectorUse[i] = math.floor(sectorUse[i] / 2)
+		end
+	end
+	-- сдвиг внутри точки без наложения на уже стоящих зомби
+	local result = base
+	for _ = 1, 8 do
+		local angle, radius = math.random() * math.pi * 2, 2 + math.random() * 9
+		local candidate = base + Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+		local free = true
+		for _, z in active do
+			local d = z.root.Position - candidate
+			if d.X * d.X + d.Z * d.Z < SPAWN_GAP * SPAWN_GAP then
+				free = false
+				break
+			end
+		end
+		result = candidate
+		if free then
+			break
+		end
+	end
+	return result
+end
+
 local function spawnOne(typeId: string)
 	local z = acquire(typeId)
-	local spawnPos = map.zombieSpawns[math.random(1, #map.zombieSpawns)]
-		+ Vector3.new(math.random(-5, 5), 0, math.random(-5, 5))
+	local spawnPos = pickSpawnPosition()
 	z.maxHp = math.floor(z.def.hp * hpMultiplier + 0.5)
 	z.hp = z.maxHp
 	-- сразу охотимся на игрока; к баррикадам идём, только если они закрывают путь к нему (см. Hunt)
@@ -1315,7 +1402,8 @@ end
 function ZombieService.isZombiePart(part: BasePart): (Model?, boolean)
 	local model = part:FindFirstAncestorOfClass("Model")
 	if model and active[model] then
-		return model, part.Name == "Head" or part.Name == "HitHead"
+		-- голова = сама голова, хитбокс меша и всё, что на ней надето (волосы, шапки, очки — аксессуары считаются частью головы)
+		return model, partKind(part) == "Head"
 	end
 	return nil, false
 end
@@ -1328,6 +1416,7 @@ end
 function ZombieService.enqueue(types: { string }, hpMult: number, wave: number?)
 	hpMultiplier = hpMult
 	waveNumber = wave or 1
+	damageMultiplier = WaveMath.damageMultiplier(Config.Waves, waveNumber)
 	for _, t in types do
 		table.insert(queue, t)
 	end

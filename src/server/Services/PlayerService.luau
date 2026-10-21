@@ -41,6 +41,14 @@ function PlayerService.anyoneUp(): boolean
 	return #PlayerService.upPlayers() > 0
 end
 
+local lostPlayers = 0 -- потерь за текущую волну: упал и не был поднят (истёк кровью)
+
+function PlayerService.takeLosses(): number
+	local n = lostPlayers
+	lostPlayers = 0
+	return n
+end
+
 local function clearDowned(player: Player)
 	player:SetAttribute("Downed", false)
 	local char = player.Character
@@ -96,6 +104,7 @@ local function down(player: Player, h: Humanoid)
 	task.delay(Config.Player.BleedOutTime, function()
 		if bleedToken[player] == token and player:GetAttribute("Downed") then
 			clearDowned(player)
+			lostPlayers += 1
 			h.Health = 0
 		end
 	end)

@@ -33,6 +33,7 @@ local locationIndex = 1 -- init.server строит первую локацию 
 local gameOver = false
 local fellAtNight = false
 local rng = Random.new()
+local killUnits: { [string]: number } = {} -- монеты за убийство в голову по типам на текущую ночь (WaveMath.killUnits)
 local roundSeed = 1 -- семя бросков прогрессии (WaveMath.roll): одно на раунд, чтобы рост по волнам был воспроизводим
 local dayVotes: { [Player]: boolean } = {} -- голоса «завершить день»
 
@@ -320,6 +321,9 @@ local function night()
 	local players = #Players:GetPlayers()
 	local threat = WaveMath.makeThreat(Config.ThreatClasses, Config.Threat.Tiers, loadouts(), roundSeed)
 	local comp = WaveMath.composition(Config.Waves, wave, players, threat)
+	killUnits = WaveMath.killUnits(Config.Economy, wave, comp)
+	EconomyService.newWave()
+	PlayerService.takeLosses()
 	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave, threat), wave)
 	print(string.format("[RoundService] ночь %d: игроков %d, зомби %d, угроза %.1f (уровень x%.2f HP), оружие: %s", wave, players, WaveMath.total(comp), threat.score, threat.tier.hp, table.concat(threat.classes, ",")))
 	local bossName: string? = nil
@@ -336,7 +340,32 @@ local function night()
 		task.wait(0.25)
 	end
 	if not gameOver then
-		RatingService.onNightEnd(wave, ZombieService.remaining() == 0, (os.clock() - nightStart) / nightLength)
+		local cleared = ZombieService.remaining() == 0
+		RatingService.onNightEnd(wave, cleared, (os.clock() - nightStart) / nightLength)
+		-- награда за волну в общую кассу: целиком, если все на ногах и зачищено; штраф за каждую потерю — доля заработанного за волну
+		local E = Config.Economy
+		local up, all = 0, 0
+		for _, p in Players:GetPlayers() do
+			all += 1
+			if PlayerService.isUp(p) then
+				up += 1
+			end
+		end
+		local reward = WaveMath.waveReward(E, wave)
+		if all > 0 then
+			reward *= 1 - (1 - E.DownedRewardFactor) * (all - up) / all
+		end
+		if not cleared then
+			reward *= E.UnclearedRewardFactor
+		end
+		EconomyService.add(nil, reward)
+		local losses = PlayerService.takeLosses()
+		local fine = if losses > 0 then EconomyService.penalize(E.LossPenalty * losses) else 0
+		local text = string.format("Волна %d пройдена: +%d монет в общую кассу", wave, math.floor(reward + 0.5))
+		if fine > 0 then
+			text ..= string.format(", штраф за потери −%d", fine)
+		end
+		notifyAll(text, 5)
 	end
 end
 
@@ -394,12 +423,13 @@ function RoundService.onZombieKilled(player: Player?, zombie: any)
 	if player then
 		-- убийство выстрелом в голову: больше монет и очков
 		local head = zombie.headKill == true
-		local bonusCoins = if head then math.floor(zombie.def.reward * Config.Economy.HeadshotKillCoinsBonus + 0.5) else 0
+		local unit = killUnits[zombie.def.id] or 0
+		local coins = unit * (if head then 1 else Config.Economy.KillBodyShare)
 		local bonusPoints = if head then math.floor(zombie.def.points * Config.Economy.HeadshotKillPointsBonus + 0.5) else 0
 		if head then
 			player:SetAttribute("Headshots", ((player:GetAttribute("Headshots") :: number?) or 0) + 1)
 		end
-		EconomyService.add(player, zombie.def.reward + bonusCoins)
+		EconomyService.add(player, coins)
 		ScoreService.recordKill(player, zombie.def.points + bonusPoints)
 		RatingService.onKill(player, zombie)
 	end

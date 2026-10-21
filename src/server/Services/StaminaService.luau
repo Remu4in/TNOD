@@ -3,7 +3,8 @@
 -- ограничения считает сервер. Атрибуты игрока для HUD: Energy (0..EnergyMax), Sprinting (bool).
 
 local Players = game:GetService("Players")
-local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
@@ -28,6 +29,31 @@ local function publish(player: Player)
 	if player:GetAttribute("Energy") ~= value then
 		player:SetAttribute("Energy", value)
 	end
+end
+
+-- Энергетик: бесконечная энергия до конца ночи, которая наступит следующей (если выпит ночью — до конца этой)
+local infinite: { [Player]: { target: number, seenNight: boolean } } = {}
+
+function StaminaService.grantInfinite(player: Player, waves: number)
+	local current = (ReplicatedStorage:GetAttribute("Wave") :: number?) or 0
+	local nightNow = ReplicatedStorage:GetAttribute("Phase") == "Night"
+	infinite[player] = { target = (if nightNow then current else current + 1) + (waves - 1), seenNight = nightNow }
+end
+
+local function isInfinite(player: Player): boolean
+	local state = infinite[player]
+	if not state then
+		return false
+	end
+	local current = (ReplicatedStorage:GetAttribute("Wave") :: number?) or 0
+	local night = ReplicatedStorage:GetAttribute("Phase") == "Night"
+	if current == state.target and night then
+		state.seenNight = true
+	elseif current > state.target or (current == state.target and state.seenNight) then
+		infinite[player] = nil
+		return false
+	end
+	return true
 end
 
 local function humanoidOf(player: Player): Humanoid?
@@ -80,6 +106,7 @@ function StaminaService.init()
 	Players.PlayerAdded:Connect(track)
 	Players.PlayerRemoving:Connect(function(player)
 		energy[player] = nil
+		infinite[player] = nil
 		wanted[player] = nil
 		sprinting[player] = nil
 		lastSprintAt[player] = nil
@@ -142,7 +169,14 @@ function StaminaService.init()
 					local h = humanoidOf(player)
 					local moving = h ~= nil and h.MoveDirection.Magnitude > 0.1
 					local active = (wanted[player] or false) and moving and e > 0 and PlayerService.isUp(player)
-					if active then
+					local free = isInfinite(player)
+					player:SetAttribute("InfiniteEnergy", free)
+					if free then
+						e = P.EnergyMax
+						if active then
+							lastSprintAt[player] = now
+						end
+					elseif active then
 						e = math.max(0, e - DRAIN_PER_SEC * TICK)
 						lastSprintAt[player] = now
 						if e <= 0 then

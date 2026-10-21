@@ -193,7 +193,7 @@ Config.VehicleRam = {
 Config.Player = {
 	MaxHealth = 100,
 	RegenDelay = 5,
-	RegenPerSecond = 8,
+	RegenPerSecond = 0, -- здоровье само не восстанавливается: только аптечка (Items.Medkit) и поднятие командой
 	-- Движение: зомби быстрее ходьбы (Ходок 14 > 13), но спринт за энергию их обгоняет
 	WalkSpeed = 13,
 	SprintSpeed = 21,
@@ -255,7 +255,7 @@ export type ItemDef = {
 
 local Items: { [string]: ItemDef } = {
 	Medkit = { name = "Аптечка", heal = 60, color = Color3.fromRGB(235, 235, 235) },
-	EnergyDrink = { name = "Энергетик", energy = 70, color = Color3.fromRGB(60, 190, 255) },
+	EnergyDrink = { name = "Энергетик", infiniteWaves = 1, color = Color3.fromRGB(60, 190, 255) },
 }
 Config.Items = Items
 
@@ -266,9 +266,23 @@ Config.Score = {
 }
 
 Config.Economy = {
-	CoinsPerHit = 10,
+	CoinsPerHit = 0, -- монеты за попадания убраны: доход — награда за волну и пул за убийства (WaveMath.waveReward / killPool)
 	CoinsPerPlankRepair = 10,
-	MaxRepairCoinsPerDay = 200,
+	MaxRepairCoinsPerDay = 100, -- на всю команду
+	-- Общая касса команды. За волну: R = WaveRewardBase + WaveRewardPerWave·волна (выжившим целиком; лежащим на конец ночи — половина,
+	-- не зачищена до таймера — тоже половина) + пул за убийства K = KillPoolBase + KillPoolPerWave·волна: в голову полная доля, в тело — KillBodyShare.
+	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту волну.
+	-- Цель к 16-й волне: без хедшотов ≈ 13,6 тыс., только хедшоты ≈ 20,5 тыс. (все здания = 14,5 тыс., остальное — оружие и расходники).
+	WaveRewardBase = 350,
+	WaveRewardPerWave = 25,
+	KillPoolBase = 440,
+	KillPoolPerWave = 33,
+	KillBodyShare = 0.4,
+	KillWeights = { Walker = 1, Runner = 1.2, Crawler = 0.8, Dark = 2, BucketHead = 2.5, Military = 3, Chemist = 3, Brute = 6 },
+	BossKillWeight = 40,
+	DownedRewardFactor = 0.5,
+	UnclearedRewardFactor = 0.5,
+	LossPenalty = 0.2,
 	HeadshotMultiplier = 2, -- урон по голове (было 1,5)
 	LimbMultiplier = 0.75, -- урон по рукам и ногам: целиться в корпус и голову выгоднее
 	HeadshotKillPointsBonus = 0.5, -- добавка к очкам за убийство выстрелом в голову (доля от очков типа)
@@ -879,23 +893,22 @@ Config.Props = {
 	workbench = { id = "workbench", mesh = "rbxassetid://88300467054470", texture = "rbxassetid://70826351294526", size = Vector3.new(7.453, 3.400, 4.289) },
 } :: { [string]: MeshProp }
 
--- Прогрессия волн (WaveMath). Количество: 20 на игрока на 1-й волне, дальше каждую волну +GrowthMin..GrowthMax (бросок один на волну),
--- всё это умножается на 1 + PlayerCountFactor·(игроков − 1); добавка за оружие команды — ThreatClasses[класс].bonus (один раз за класс);
--- потолок на волну: CapSolo, для команды × (1 + CapPerExtraPlayer·(игроков − 1)) — 250 соло, 500 вчетвером.
+-- Прогрессия волн (WaveMath). Количество: кривая от StartCounts до потолка на CurveWaves-й волне (±JitterPct%), плюс добавка за оружие команды
+-- (ThreatClasses, один раз за класс); потолок: CapSolo, для команды × (1 + CapPerExtraPlayer·(игроков − 1)) — 250 соло, 500 вчетвером.
+-- Состав по волнам — WaveMath.Plan.
 -- Качество: HP растёт каждую волну и ещё зависит от «уровня угрозы» (Config.Threat.Tiers — вооружённость команды), скорость чуть растёт, но не выше SpeedCeil (спринт игрока — 21).
 Config.Waves = {
-	BaseCountPerPlayer = 20,
-	GrowthMin = 10,
-	GrowthMax = 20,
-	PlayerCountFactor = 0.5,
+	StartCounts = { 20, 30, 35, 40 }, -- на 1-й волне для 1, 2, 3, 4 игроков; дальше + StartPerExtraPlayer
+	StartPerExtraPlayer = 4,
+	CurveWaves = 20, -- на этой волне число зомби достигает потолка
+	CurveExp = 1.25,
+	JitterPct = 10,
 	CapSolo = 250,
 	CapPerExtraPlayer = 1 / 3,
-	HpGrowthPerWave = 0.15,
+	HpGrowthPerWave = 0.12,
+	DamageGrowthPerWave = 0.03,
 	SpeedGrowthPerWave = 0.01,
 	SpeedCeil = 18,
-	RunnersFromWave = 2,
-	RunnerShareMax = 0.4,
-	RunnerShareGrowth = 0.08,
 	BossEvery = 5,
 }
 
@@ -947,7 +960,7 @@ Config.Vendors = {
 		name = "Аптекарь", greeting = "Мутанты боятся солнца — а мы боимся ночи. Берите, пока светло.",
 		items = {
 			{ id = "Medkit", name = "Аптечка", desc = "+60 здоровья", price = 150, kind = "item" },
-			{ id = "EnergyDrink", name = "Энергетик", desc = "+70 энергии спринта", price = 100, kind = "item" },
+			{ id = "EnergyDrink", name = "Энергетик", desc = "бесконечная энергия спринта на 1 волну", price = 100, kind = "item" },
 		},
 	},
 	Armory = {

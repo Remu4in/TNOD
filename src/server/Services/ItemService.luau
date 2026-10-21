@@ -45,6 +45,10 @@ local function use(tool: Tool)
 		end
 		StaminaService.addEnergy(player, def.energy)
 	end
+	if def.infiniteWaves then
+		StaminaService.grantInfinite(player, def.infiniteWaves)
+		notify(player, "Бесконечная энергия — до конца ближайшей ночи", 3)
+	end
 	tool:SetAttribute("Used", true)
 	tool:Destroy()
 end
