@@ -753,22 +753,107 @@ end
 
 -- Реакция на попадание: часть тела, в которую попали, дёргается (корпус откидывается от выстрела, голова запрокидывается,
 -- рука отлетает, нога подгибается). kind: "Head" | "Torso" | "Arm" | "Leg"; power — сила удара (0,5..2).
-local function partKind(part: BasePart): string
-	local name = string.gsub(part.Name, "^Hit", "") -- хитбоксы мешей называются Hit<Часть>; у рига R6 — Head/Torso/Left Arm…
-	if name == "Handle" then -- аксессуар: считаем попаданием в ту часть, к которой он приварен
-		local weld = part:FindFirstChildWhichIsA("JointInstance")
-		if weld and weld.Part0 then
-			name = weld.Part0.Name
-		end
-	end
+-- Вид части тела по имени: хитбоксы мешей называются Hit<Часть>; у рига R6 — Head/Torso/Left Arm…
+local function kindByName(raw: string): string?
+	local name = string.gsub(raw, "^Hit", "")
 	if name == "Head" then
 		return "Head"
-	elseif string.find(name, "Arm") or string.find(name, "Hand") then
+	elseif string.find(name, "Arm") or string.find(name, "Hand$") then
 		return "Arm"
 	elseif string.find(name, "Leg") or string.find(name, "Foot") then
 		return "Leg"
+	elseif name == "Torso" or name == "UpperTorso" or name == "LowerTorso" or name == "HumanoidRootPart" then
+		return "Torso"
 	end
-	return "Torso"
+	return nil
+end
+
+local kindCache: { [BasePart]: string } = setmetatable({}, { __mode = "k" }) :: any
+
+-- Аксессуары, шлемы, волосы и прочие детали, приваренные к телу (Weld, Motor6D, WeldConstraint, AccessoryWeld), считаются той частью тела,
+-- к которой они приварены (идём по сварке до 4 шагов): иначе выстрел в волосы или шлем не засчитывался как выстрел в голову.
+local function partKind(part: BasePart): string
+	local cached = kindCache[part]
+	if cached then
+		return cached
+	end
+	local result = kindByName(part.Name)
+	if not result then
+		-- у части моделей (военные, химик) шлемы, жилеты и руки лежат во вложенных Model (Top, Helmet, Chest…): сварку ищем во всей модели зомби
+		local model = part:FindFirstAncestorOfClass("Model")
+		while model and model.Parent and model.Parent:IsA("Model") do
+			model = model.Parent
+		end
+		if model then
+			local joints: { { a: BasePart, b: BasePart } } = {}
+			for _, d in model:GetDescendants() do
+				if d:IsA("JointInstance") and d.Part0 and d.Part1 then
+					table.insert(joints, { a = d.Part0, b = d.Part1 })
+				elseif d:IsA("WeldConstraint") and d.Part0 and d.Part1 then
+					table.insert(joints, { a = d.Part0, b = d.Part1 })
+				end
+			end
+			local seen: { [BasePart]: boolean } = { [part] = true }
+			local frontier: { BasePart } = { part }
+			for _ = 1, 4 do
+				local nextFrontier: { BasePart } = {}
+				for _, p in frontier do
+					for _, j in joints do
+						local other = if j.a == p then j.b elseif j.b == p then j.a else nil
+						if other and not seen[other] then
+							seen[other] = true
+							local kind = kindByName(other.Name)
+							if kind and kind ~= "Torso" or (kind == "Torso" and other.Name ~= "HumanoidRootPart") then
+								result = kind
+								break
+							end
+							table.insert(nextFrontier, other)
+						end
+					end
+					if result then
+						break
+					end
+				end
+				if result or #nextFrontier == 0 then
+					break
+				end
+				frontier = nextFrontier
+			end
+		end
+	end
+	if not result then
+		-- деталь лежит внутри части тела (Handle внутри Head) или не приварена вовсе (ведро, шапка): берём ближайшую часть тела модели
+		local parent = part.Parent
+		if parent and parent:IsA("BasePart") then
+			result = kindByName(parent.Name)
+		end
+		if not result then
+			local model = part:FindFirstAncestorOfClass("Model")
+			while model and model.Parent and model.Parent:IsA("Model") do
+				model = model.Parent
+			end
+			if model then
+				local bestDist = math.huge
+				for _, d in model:GetDescendants() do
+					if d:IsA("BasePart") and d ~= part and d.Name ~= "HumanoidRootPart" then
+						local kind = kindByName(d.Name)
+						if kind then
+							local local_ = d.CFrame:PointToObjectSpace(part.Position)
+							local half = d.Size / 2
+							local out = Vector3.new(math.max(math.abs(local_.X) - half.X, 0), math.max(math.abs(local_.Y) - half.Y, 0), math.max(math.abs(local_.Z) - half.Z, 0))
+							if out.Magnitude < bestDist then
+								bestDist = out.Magnitude
+								result = kind
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	result = result or "Torso"
+	kindCache[part] = result
+	return result
 end
 
 local function jerk(z: Zombie, name: string, offset: CFrame, tIn: number, tOut: number)
@@ -1400,7 +1485,11 @@ function ZombieService.defOf(model: Model): Config.ZombieDef?
 end
 
 function ZombieService.isZombiePart(part: BasePart): (Model?, boolean)
-	local model = part:FindFirstAncestorOfClass("Model")
+	-- модель зомби — ближайший предок из активных: деталь может лежать во вложенной Model (Top, Helmet, Chest у военных)
+	local model: Model? = part:FindFirstAncestorOfClass("Model")
+	while model and not active[model] do
+		model = model.Parent and model.Parent:FindFirstAncestorOfClass("Model") or nil
+	end
 	if model and active[model] then
 		-- голова = сама голова, хитбокс меша и всё, что на ней надето (волосы, шапки, очки — аксессуары считаются частью головы)
 		return model, partKind(part) == "Head"
@@ -1487,6 +1576,55 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 				spawnOne(table.remove(queue, 1) :: string)
 				n += 1
 				alive += 1
+			end
+		end
+	end)
+
+	-- потерявшиеся зомби: когда их осталось немного, а кто-то 25 с не приближается к игрокам (застрял, не нашёл путь) — переносим
+	-- на новую точку появления и сбрасываем путь
+	task.spawn(function()
+		local progress: { [Zombie]: { best: number, at: number } } = {}
+		while true do
+			task.wait(3)
+			local count = 0
+			for _ in active do
+				count += 1
+			end
+			if #queue == 0 and count > 0 and count <= 12 then
+				local now = os.clock()
+				local roots: { Vector3 } = {}
+				for _, p in PlayerService.upPlayers() do
+					local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+					if r then
+						table.insert(roots, r.Position)
+					end
+				end
+				if #roots > 0 then
+					for _, z in active do
+						if z.alive and z.state ~= "Breaking" then
+							local dist = math.huge
+							for _, r in roots do
+								dist = math.min(dist, (z.root.Position - r).Magnitude)
+							end
+							local pr = progress[z]
+							if not pr or dist < pr.best - 4 then
+								progress[z] = { best = dist, at = now }
+							elseif now - pr.at > 25 and dist > 30 then
+								local pos = pickSpawnPosition()
+								z.model:PivotTo(CFrame.new(pos))
+								z.gen += 1
+								z.waypoints = nil
+								z.pathBusy = false
+								z.pathFailed = false
+								z.stuckTime = 0
+								z.lastPos = pos
+								progress[z] = { best = math.huge, at = now }
+							end
+						end
+					end
+				end
+			else
+				table.clear(progress)
 			end
 		end
 	end)
