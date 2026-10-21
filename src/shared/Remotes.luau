@@ -26,6 +26,10 @@ local NAMES = {
 	"TurretAim", -- клиент → сервер: (direction: Vector3) — куда стрелок наводит пулемёт машины (направление камеры)
 	"TurretFire", -- клиент → сервер: () — очередь пулемёта (пока зажата кнопка; темп и патроны считает сервер)
 	"TurretReload", -- клиент → сервер: () — перезарядка пулемёта машины
+	"PerkOffer", -- сервер → игроку: (offerId: number, options: { { id, name, desc, stacks, max } }, seconds: number) — выбрать перк команды
+	"PerkChoose", -- клиент → сервер: (offerId: number, index: number) — выбранный перк из предложенных (1–3)
+	"PerkOffer", -- сервер → игроку: (offerId: number, options: { { id, name, desc, stacks, max } }, seconds: number) — выбрать перк команды
+	"PerkChoose", -- клиент → сервер: (offerId: number, index: number) — выбранный перк из предложенных (1–3)
 	"Notify", -- сервер → клиенту/всем: (text: string, seconds: number)
 }
 

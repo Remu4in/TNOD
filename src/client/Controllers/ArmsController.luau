@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local Perks = require(Shared:WaitForChild("Perks"))
 local ViewModel = require(script.Parent:WaitForChild("ViewModelController"))
 
 local ArmsController = {}
@@ -120,11 +121,12 @@ function ArmsController.start()
 		if not track or not def then
 			return
 		end
-		ViewModel.reload(def.reloadTime)
+		local reloadSeconds = def.reloadTime * (1 - math.min(0.7, Perks.total("reload")))
+		ViewModel.reload(reloadSeconds)
 		track:Play(0.1)
 		local length = track.Length
 		if length > 0 then
-			track:AdjustSpeed(length / def.reloadTime)
+			track:AdjustSpeed(length / reloadSeconds)
 		end
 	end)
 end

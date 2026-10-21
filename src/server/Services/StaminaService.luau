@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Perks = require(Shared:WaitForChild("Perks"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
@@ -67,7 +68,7 @@ local function setSprinting(player: Player, on: boolean)
 	local h = humanoidOf(player)
 	-- упавшим скорость задаёт PlayerService
 	if h and not player:GetAttribute("Downed") then
-		h.WalkSpeed = if on then P.SprintSpeed else P.WalkSpeed
+		h.WalkSpeed = if on then Perks.sprintSpeed() else Perks.walkSpeed()
 	end
 end
 
@@ -177,7 +178,7 @@ function StaminaService.init()
 							lastSprintAt[player] = now
 						end
 					elseif active then
-						e = math.max(0, e - DRAIN_PER_SEC * TICK)
+						e = math.max(0, e - DRAIN_PER_SEC / Perks.mult("stamina") * TICK)
 						lastSprintAt[player] = now
 						if e <= 0 then
 							wanted[player] = false -- выдохлись: чтобы снова бежать, нужно отпустить и нажать заново

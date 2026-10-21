@@ -10,6 +10,7 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local Perks = require(Shared:WaitForChild("Perks"))
 
 local MovementController = {}
 
@@ -214,7 +215,7 @@ function MovementController.start()
 		if player:GetAttribute("Downed") == true or player:GetAttribute("Dodge") ~= nil then
 			return
 		end
-		local base = if player:GetAttribute("Sprinting") == true then P.SprintSpeed else P.WalkSpeed
+		local base = if player:GetAttribute("Sprinting") == true then Perks.sprintSpeed() else Perks.walkSpeed()
 		local factor = 1
 		local move = hum.MoveDirection
 		if move.Magnitude > 0.1 then

@@ -931,6 +931,38 @@ Config.Threat = {
 	},
 }
 
+-- Перки команды (Shared/Perks, PerkService): после каждого босса каждый игрок выбирает 1 из 3 случайных своих перков, выбранные действуют на всю
+-- команду до конца раунда. kind: health (+HP), stamina (+доля времени спринта), mag (+доля магазина), speed (+доля скорости ходьбы и бега),
+-- power (+доля урона), reload (−доля времени перезарядки), ammo (+доля запаса патронов), revive (−доля времени подъёма), coins (+доля монет).
+-- per — прирост за один стак, max — сколько раз можно взять.
+Config.Perks = {
+	{ id = "Vigor", name = "Закалка", desc = "+50 к здоровью", kind = "health", per = 50, max = 3, color = Color3.fromRGB(230, 90, 90) },
+	{ id = "Endurance", name = "Выносливость", desc = "+10 к энергии спринта", kind = "stamina", per = 0.10, max = 5, color = Color3.fromRGB(90, 190, 255) },
+	{ id = "Mag", name = "Расширенный магазин", desc = "+30% к магазину оружия", kind = "mag", per = 0.30, max = 2, color = Color3.fromRGB(240, 200, 80) },
+	{ id = "Swift", name = "Лёгкая поступь", desc = "+5% к скорости", kind = "speed", per = 0.05, max = 3, color = Color3.fromRGB(120, 230, 150) },
+	{ id = "Power", name = "Убойная сила", desc = "+10% к урону", kind = "power", per = 0.10, max = 3, color = Color3.fromRGB(255, 140, 60) },
+	{ id = "Reload", name = "Быстрые руки", desc = "Перезарядка на 15% быстрее", kind = "reload", per = 0.15, max = 3, color = Color3.fromRGB(200, 160, 255) },
+	{ id = "Ammo", name = "Запас патронов", desc = "+25% к запасу патронов", kind = "ammo", per = 0.25, max = 3, color = Color3.fromRGB(220, 200, 140) },
+	{ id = "Medic", name = "Полевой медик", desc = "Поднимаете на 30% быстрее", kind = "revive", per = 0.30, max = 2, color = Color3.fromRGB(240, 240, 240) },
+	{ id = "Greed", name = "Мародёр", desc = "+10% монет", kind = "coins", per = 0.10, max = 3, color = Color3.fromRGB(255, 215, 0) },
+}
+
+-- Перки команды (Shared/Perks, PerkService): после каждого босса каждый игрок выбирает 1 из 3 случайных своих перков, выбранные действуют на всю
+-- команду до конца раунда. kind: health (+HP), stamina (+доля времени спринта), mag (+доля магазина), speed (+доля скорости ходьбы и бега),
+-- power (+доля урона), reload (−доля времени перезарядки), ammo (+доля запаса патронов), revive (−доля времени подъёма), coins (+доля монет).
+-- per — прирост за один стак, max — сколько раз можно взять.
+Config.Perks = {
+	{ id = "Vigor", name = "Закалка", desc = "+50 к здоровью", kind = "health", per = 50, max = 3, color = Color3.fromRGB(230, 90, 90) },
+	{ id = "Endurance", name = "Выносливость", desc = "+10 к энергии спринта", kind = "stamina", per = 0.10, max = 5, color = Color3.fromRGB(90, 190, 255) },
+	{ id = "Mag", name = "Расширенный магазин", desc = "+30% к магазину оружия", kind = "mag", per = 0.30, max = 2, color = Color3.fromRGB(240, 200, 80) },
+	{ id = "Swift", name = "Лёгкая поступь", desc = "+5% к скорости", kind = "speed", per = 0.05, max = 3, color = Color3.fromRGB(120, 230, 150) },
+	{ id = "Power", name = "Убойная сила", desc = "+10% к урону", kind = "power", per = 0.10, max = 3, color = Color3.fromRGB(255, 140, 60) },
+	{ id = "Reload", name = "Быстрые руки", desc = "Перезарядка на 15% быстрее", kind = "reload", per = 0.15, max = 3, color = Color3.fromRGB(200, 160, 255) },
+	{ id = "Ammo", name = "Запас патронов", desc = "+25% к запасу патронов", kind = "ammo", per = 0.25, max = 3, color = Color3.fromRGB(220, 200, 140) },
+	{ id = "Medic", name = "Полевой медик", desc = "Поднимаете на 30% быстрее", kind = "revive", per = 0.30, max = 2, color = Color3.fromRGB(240, 240, 240) },
+	{ id = "Greed", name = "Мародёр", desc = "+10% монет", kind = "coins", per = 0.10, max = 3, color = Color3.fromRGB(255, 215, 0) },
+}
+
 -- Рейтинговые очки (не монеты): копятся за раунд, идут в профиль и в глобальный лидерборд (RatingService)
 Config.Rating = {
 	Kill = 5,
@@ -943,7 +975,7 @@ Config.Rating = {
 
 -- НПС-продавцы в зданиях (VendorService): появляются только днём в открытом за монеты здании.
 -- kind: "item" — расходник (ItemService), "weapon" — оружие из Config.Weapons, "equip" — оборудование (EquipmentService), "life" — жизнь команды.
-export type VendorItem = { id: string, name: string, desc: string, price: number, kind: string }
+export type VendorItem = { id: string, name: string, desc: string, price: number, kind: string, robux: number? } -- robux: цена за донат (позже), пока не используется
 export type VendorDef = { name: string, greeting: string, items: { VendorItem } }
 local function weaponItems(ids: { string }): { VendorItem }
 	local list: { VendorItem } = {}
@@ -956,6 +988,16 @@ local function weaponItems(ids: { string }): { VendorItem }
 	return list
 end
 Config.Vendors = {
+	-- Вендинговые автоматы (маркеры Vending_<n>: кафе, военная база, палатки): работают днём и ночью, не зависят от зданий.
+	-- kind "ammo" — патроны к оружию в руках. Монеты общие, как везде; донатные цены (robux) добавим вместе с магазином за робуксы.
+	Vending = {
+		name = "Автомат", greeting = "Работает от резервного питания. Сдачи нет.",
+		items = {
+			{ id = "Medkit", name = "Аптечка", desc = "+60 здоровья", price = 150, kind = "item", robux = 25 },
+			{ id = "EnergyDrink", name = "Энергетик", desc = "бесконечная энергия на 1 волну", price = 100, kind = "item", robux = 20 },
+			{ id = "Ammo", name = "Патроны", desc = "полный запас к оружию в руках", price = 150, kind = "ammo", robux = 15 },
+		},
+	},
 	Pharmacy = {
 		name = "Аптекарь", greeting = "Мутанты боятся солнца — а мы боимся ночи. Берите, пока светло.",
 		items = {

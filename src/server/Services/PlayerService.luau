@@ -3,6 +3,7 @@
 -- Урон игрокам наносится только через PlayerService.damage на сервере.
 
 local Players = game:GetService("Players")
+local Perks = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Perks"))
 local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Config"))
 local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 
@@ -78,7 +79,7 @@ local function down(player: Player, h: Humanoid)
 		prompt.Name = "RevivePrompt"
 		prompt.ActionText = "Поднять"
 		prompt.ObjectText = player.DisplayName
-		prompt.HoldDuration = Config.Player.ReviveHoldTime
+		prompt.HoldDuration = Config.Player.ReviveHoldTime * (1 - math.min(0.8, Perks.total("revive")))
 		prompt.MaxActivationDistance = 7
 		prompt.RequiresLineOfSight = false
 		prompt.Parent = root
@@ -91,7 +92,7 @@ local function down(player: Player, h: Humanoid)
 			end
 			clearDowned(player)
 			h.Health = Config.Player.ReviveHealth
-			h.WalkSpeed = Config.Player.WalkSpeed
+			h.WalkSpeed = Perks.walkSpeed()
 			h.JumpPower = 50
 			bleedToken[player] = (bleedToken[player] or 0) + 1
 			helper:SetAttribute("Revives", ((helper:GetAttribute("Revives") :: number?) or 0) + 1)
@@ -157,7 +158,7 @@ function PlayerService.respawnDead()
 			-- упавших в конце волны поднимаем автоматически
 			clearDowned(p)
 			h.Health = Config.Player.ReviveHealth
-			h.WalkSpeed = Config.Player.WalkSpeed
+			h.WalkSpeed = Perks.walkSpeed()
 			h.JumpPower = 50
 		end
 	end
@@ -173,7 +174,7 @@ function PlayerService.reviveAll()
 			clearDowned(p)
 			bleedToken[p] = (bleedToken[p] or 0) + 1
 			h.Health = Config.Player.ReviveHealth
-			h.WalkSpeed = Config.Player.WalkSpeed
+			h.WalkSpeed = Perks.walkSpeed()
 			h.JumpPower = 50
 		end
 	end
@@ -196,9 +197,10 @@ function PlayerService.init(spawnAt: Vector3, allDownCallback: () -> ())
 
 	local function onCharacter(player: Player, char: Model)
 		local h = char:WaitForChild("Humanoid") :: Humanoid
-		h.MaxHealth = Config.Player.MaxHealth
-		h.Health = Config.Player.MaxHealth
-		h.WalkSpeed = Config.Player.WalkSpeed
+		local maxHealth = Config.Player.MaxHealth + Perks.total("health")
+		h.MaxHealth = maxHealth
+		h.Health = maxHealth
+		h.WalkSpeed = Perks.walkSpeed()
 		h.BreakJointsOnDeath = false
 		char:PivotTo(CFrame.new(spawnPoint + Vector3.new(math.random(-6, 6), 0, math.random(-4, 4))))
 		-- встроенный реген отключаем: свой, с задержкой после урона

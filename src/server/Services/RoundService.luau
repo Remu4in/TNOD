@@ -21,6 +21,8 @@ local MapBuilder = require(script.Parent:WaitForChild("MapBuilder"))
 local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 local BuildingService = require(script.Parent:WaitForChild("BuildingService"))
 local EquipmentService = require(script.Parent:WaitForChild("EquipmentService"))
+local PerkService = require(script.Parent:WaitForChild("PerkService"))
+local Perks = require(Shared:WaitForChild("Perks"))
 local RatingService = require(script.Parent:WaitForChild("RatingService"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 
@@ -224,6 +226,7 @@ local function startRound()
 	EquipmentService.clearAll()
 	EconomyService.resetRound(players)
 	ScoreService.resetRound(players)
+	PerkService.reset()
 	RatingService.resetRound(players)
 	roundSeed = rng:NextInteger(1, 1000000)
 	WeaponService.resetRound(players)
@@ -358,7 +361,7 @@ local function night()
 		if not cleared then
 			reward *= E.UnclearedRewardFactor
 		end
-		EconomyService.add(nil, reward)
+		EconomyService.add(nil, reward * Perks.mult("coins"))
 		local losses = PlayerService.takeLosses()
 		local fine = if losses > 0 then EconomyService.penalize(E.LossPenalty * losses) else 0
 		local text = string.format("Волна %d пройдена: +%d монет в общую кассу", wave, math.floor(reward + 0.5))
@@ -366,6 +369,9 @@ local function night()
 			text ..= string.format(", штраф за потери −%d", fine)
 		end
 		notifyAll(text, 5)
+		if WaveMath.isBossWave(Config.Waves, wave) and cleared then
+			PerkService.openOffers()
+		end
 	end
 end
 
@@ -424,7 +430,7 @@ function RoundService.onZombieKilled(player: Player?, zombie: any)
 		-- убийство выстрелом в голову: больше монет и очков
 		local head = zombie.headKill == true
 		local unit = killUnits[zombie.def.id] or 0
-		local coins = unit * (if head then 1 else Config.Economy.KillBodyShare)
+		local coins = unit * (if head then 1 else Config.Economy.KillBodyShare) * Perks.mult("coins")
 		local bonusPoints = if head then math.floor(zombie.def.points * Config.Economy.HeadshotKillPointsBonus + 0.5) else 0
 		if head then
 			player:SetAttribute("Headshots", ((player:GetAttribute("Headshots") :: number?) or 0) + 1)

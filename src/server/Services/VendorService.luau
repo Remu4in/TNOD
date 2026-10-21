@@ -19,7 +19,7 @@ local EquipmentService = require(script.Parent:WaitForChild("EquipmentService"))
 
 local VendorService = {}
 
-type Vendor = { id: string, model: Model, root: BasePart, track: AnimationTrack?, shown: boolean }
+type Vendor = { id: string, model: Model, root: BasePart, track: AnimationTrack?, shown: boolean, always: boolean? }
 
 local vendors: { [string]: Vendor } = {}
 local stash: Folder
@@ -33,6 +33,9 @@ local function isDay(): boolean
 end
 
 local function open(v: Vendor): boolean
+	if v.always then
+		return true
+	end
 	return isDay() and BuildingService.isUnlocked(v.id)
 end
 
@@ -107,6 +110,9 @@ end
 
 local function refresh()
 	for _, v in vendors do
+		if v.always then
+			continue
+		end
 		local want = open(v)
 		if want and not v.shown then
 			v.model.Parent = live
@@ -128,7 +134,7 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 		return
 	end
 	local v = vendors[vendorId]
-	local def = Config.Vendors[vendorId]
+	local def = Config.Vendors[if string.sub(vendorId, 1, 8) == "Vending_" then "Vending" else vendorId]
 	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not v or not def or not root or not PlayerService.isUp(player) or not open(v) then
 		return
@@ -163,12 +169,21 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 			end
 		end
 	end
+	if item.kind == "ammo" then
+		local can, why = WeaponService.canRefillHeld(player)
+		if not can then
+			notify:FireClient(player, why or "Нельзя", 2)
+			return
+		end
+	end
 	if not EconomyService.trySpend(player, item.price) then
 		notify:FireClient(player, "Не хватает монет", 1.5)
 		return
 	end
 	local ok = true
-	if item.kind == "item" then
+	if item.kind == "ammo" then
+		ok = WeaponService.refillHeld(player)
+	elseif item.kind == "item" then
 		ItemService.give(player, item.id)
 	elseif item.kind == "weapon" then
 		WeaponService.give(player, item.id)
@@ -187,6 +202,55 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 	end
 end
 
+-- Вендинговые автоматы по маркерам Workspace.Markers.Vending_<n>: модель из Assets.Props.Vending, лицом по LookVector маркера
+local function buildVending(marker: BasePart)
+	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("Props")
+	local template = lib and lib:FindFirstChild("Vending")
+	local def = Config.Vendors.Vending
+	if not template or not def then
+		warn("[VendorService] нет модели Assets.Props.Vending")
+		return
+	end
+	local model = template:Clone() :: Model
+	model.Name = marker.Name
+	local look = Vector3.new(marker.CFrame.LookVector.X, 0, marker.CFrame.LookVector.Z)
+	local ground = Vector3.new(marker.Position.X, marker.Position.Y - marker.Size.Y / 2, marker.Position.Z)
+	model:PivotTo(CFrame.lookAt(ground, ground + (if look.Magnitude > 0.01 then look.Unit else Vector3.new(0, 0, 1))))
+	local bbCf, bbSize = model:GetBoundingBox()
+	model:PivotTo(model:GetPivot() + Vector3.new(0, ground.Y - (bbCf.Position.Y - bbSize.Y / 2), 0)) -- низ автомата на землю
+	local biggest: BasePart? = nil
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			if not biggest or d.Size.Magnitude > biggest.Size.Magnitude then
+				biggest = d
+			end
+		elseif d:IsA("SurfaceGui") or d:IsA("Script") or d:IsA("LocalScript") then
+			d:Destroy() -- внутренняя кнопка модели не нужна: торгуем через подсказку
+		end
+	end
+	if not biggest then
+		model:Destroy()
+		return
+	end
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Купить"
+	prompt.ObjectText = def.name
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 9
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = biggest
+	local v: Vendor = { id = marker.Name, model = model, root = biggest, track = nil, shown = true, always = true }
+	prompt.Triggered:Connect(function(player: Player)
+		if not PlayerService.isUp(player) then
+			return
+		end
+		Remotes.get("ShopOpen"):FireClient(player, { vendorId = marker.Name, title = def.name, greeting = def.greeting, items = def.items })
+	end)
+	model.Parent = live
+	vendors[marker.Name] = v
+end
+
 function VendorService.init(map: Types.MapInfo)
 	stash = Instance.new("Folder")
 	stash.Name = "VendorStash"
@@ -198,6 +262,14 @@ function VendorService.init(map: Types.MapInfo)
 		local v = build(m.id, m.position, m.facing, i)
 		if v then
 			vendors[m.id] = v
+		end
+	end
+	local markers = workspace:FindFirstChild("Markers")
+	if markers then
+		for _, m in markers:GetChildren() do
+			if m:IsA("BasePart") and string.sub(m.Name, 1, 8) == "Vending_" then
+				buildVending(m)
+			end
 		end
 	end
 	Remotes.get("VendorBuy").OnServerEvent:Connect(onBuy)

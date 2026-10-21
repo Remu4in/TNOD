@@ -8,6 +8,7 @@ local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Perks = require(Shared:WaitForChild("Perks"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
 local Ballistics = require(Shared:WaitForChild("Ballistics"))
@@ -203,6 +204,19 @@ local function giveTool(player: Player, weaponId: string)
 	syncAmmo(player, weaponId)
 end
 
+-- Перки команды: магазин, запас патронов, перезарядка и урон
+local function magCap(def: Config.WeaponDef): number
+	return math.floor(def.magSize * Perks.mult("mag") + 0.5)
+end
+
+local function reserveCap(def: Config.WeaponDef): number
+	return if def.reserve < 0 then def.reserve else math.floor(def.reserve * Perks.mult("ammo") + 0.5)
+end
+
+local function reloadSeconds(def: Config.WeaponDef): number
+	return def.reloadTime * (1 - math.min(0.7, Perks.total("reload")))
+end
+
 local function grant(player: Player, weaponId: string)
 	local def = Config.Weapons[weaponId]
 	local inv = owned[player]
@@ -210,7 +224,7 @@ local function grant(player: Player, weaponId: string)
 		inv = {}
 		owned[player] = inv
 	end
-	inv[weaponId] = { mag = def.magSize, reserve = def.reserve, lastShot = 0, reloadingUntil = 0, burst = 0 }
+	inv[weaponId] = { mag = magCap(def), reserve = reserveCap(def), lastShot = 0, reloadingUntil = 0, burst = 0 }
 	giveTool(player, weaponId)
 end
 
@@ -230,19 +244,20 @@ end
 local function startReload(player: Player, weaponId: string)
 	local def = Config.Weapons[weaponId]
 	local st = owned[player][weaponId]
-	if st.mag >= def.magSize or st.reserve == 0 or os.clock() < st.reloadingUntil then
+	if st.mag >= magCap(def) or st.reserve == 0 or os.clock() < st.reloadingUntil then
 		return
 	end
-	st.reloadingUntil = os.clock() + def.reloadTime
+	local seconds = reloadSeconds(def)
+	st.reloadingUntil = os.clock() + seconds
 	Remotes.get("ReloadFx"):FireAllClients(player, weaponId)
-	task.delay(def.reloadTime, function()
+	task.delay(seconds, function()
 		local inv = owned[player]
 		if not inv or inv[weaponId] ~= st then
 			return
 		end
-		local need = def.magSize - st.mag
+		local need = magCap(def) - st.mag
 		if st.reserve < 0 then
-			st.mag = def.magSize
+			st.mag = magCap(def)
 		else
 			local take = math.min(need, st.reserve)
 			st.mag += take
@@ -343,7 +358,7 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 			if model then
 				local kind = ZombieService.partKind(hitPart)
 				local mult = if isHead then Config.Economy.HeadshotMultiplier elseif kind == "Arm" or kind == "Leg" then Config.Economy.LimbMultiplier else 1
-				local dmg = def.damage * mult
+				local dmg = def.damage * mult * Perks.mult("power")
 				local applied, killed = ZombieService.damage(model, dmg, player, {
 					dir = dir,
 					push = if aim then aim.push * 1.2 / def.pellets else 5, -- дробь: суммарный толчок по всем дробинкам ≈ aim.push
@@ -454,7 +469,7 @@ local function onMelee(player: Player, direction: unknown)
 		for i = 1, math.min(#candidates, def.maxTargets or 1) do
 			local c = candidates[i]
 			local away = Vector3.new(c.root.Position.X - origin.X, 0, c.root.Position.Z - origin.Z)
-			local applied, killed = ZombieService.damage(c.model, def.damage, player, {
+			local applied, killed = ZombieService.damage(c.model, def.damage * Perks.mult("power"), player, {
 				dir = away,
 				push = def.knockback,
 				stagger = 0.35,
@@ -688,6 +703,34 @@ local function onShopBuy(player: Player, weaponId: unknown)
 end
 
 -- Выдать оружие (покупка, награда, отладка); только из серверного кода
+-- Патроны к оружию в руках (автомат): (можно ли, сообщение) — проверка до списания монет
+function WeaponService.canRefillHeld(player: Player): (boolean, string?)
+	local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
+	local id = if tool then tool:GetAttribute("WeaponId") else nil
+	local def = if typeof(id) == "string" then Config.Weapons[id] else nil
+	if not def or def.melee then
+		return false, "Возьмите в руки огнестрельное оружие"
+	end
+	if def.reserve < 0 then
+		return false, "Этому оружию патроны не нужны"
+	end
+	local st = owned[player] and owned[player][def.id]
+	if st and st.reserve >= reserveCap(def) and st.mag >= magCap(def) then
+		return false, "Патроны полные"
+	end
+	return true, nil
+end
+
+function WeaponService.refillHeld(player: Player): boolean
+	local can = WeaponService.canRefillHeld(player)
+	if not can then
+		return false
+	end
+	local tool = (player.Character :: Model):FindFirstChildOfClass("Tool") :: Tool
+	grant(player, tool:GetAttribute("WeaponId") :: string)
+	return true
+end
+
 function WeaponService.give(player: Player, weaponId: string)
 	if Config.Weapons[weaponId] then
 		grant(player, weaponId)
