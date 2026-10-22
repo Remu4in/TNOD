@@ -966,26 +966,64 @@ Config.Perks = {
 -- Миссии ночей (сюжет: docs/story.md, MissionService). anchor — номер шатра/точки района по удалению от базы (1 — ближайший);
 -- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
 -- (сейчас играется как classic). Не указано — classic.
-export type MissionDef = { type: string, title: string, anchor: number, points: number?, seconds: number?, hint: string?, planned: string? }
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string? }
+-- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
+Config.Convoy = {
+	TruckHp = 1000,
+	TruckSpeed = 14, -- студов в секунду (быстрее ходьбы игрока 13 почти не ехать нельзя: команда должна успевать)
+	SoldierHp = 300,
+	SoldierDps = 50, -- урон по зомби в секунду каждого солдата
+	SoldierShotInterval = 0.25,
+	SoldierRange = 55,
+	AliveCap = 14, -- живых зомби одновременно на миссии конвоя (грузовик 1000 HP не выдержит 40)
+	InstallHold = 6, -- сколько секунд держать «Установить шатёр»
+}
+-- Тексты генерала Нурсултана по типам миссий ({points}, {kills}, {seconds}, {hold} подставляются из Config.Missions и Config.Convoy)
+Config.Briefs = {
+	scout = {
+		"Нужна разведка. Вокруг места будущего шатра отмечены контрольные точки — {points} синих маяков в 50–100 шагах от него.",
+		"Обойдите их все. Мутанты пойдут со всех сторон без остановки: не стойте на месте и держитесь вместе.",
+	},
+	build = {
+		"Здесь встанет наш шатёр. Сначала зачистите зону: убейте {kills} мутантов.",
+		"Затем встаньте на золотую метку и удерживайте E {hold} секунд — шатёр установится. Он даст нам магазин, автомат и плацдарм в районе.",
+	},
+	escort = {
+		"Конвой с припасами. Грузовик выедет с базы, объедет контрольные точки района и остановится на дороге у места шатра.",
+		"С ним идут двое моих бойцов: по 300 здоровья, бьют по мутантам в полную силу. Но мутанты нападают и на них, и на грузовик (1000 прочности) — прикрывайте.",
+		"Потеряем грузовик — задание провалено.",
+	},
+	defend = {
+		"Мутанты идут на шатёр. Держите оборону {seconds} секунд рядом с ним — не уходите далеко, отсчёт идёт, только пока вы рядом.",
+	},
+	clear = {
+		"Зачистите зону: уничтожьте всех мутантов этой ночи. Берегите патроны, поднимайте упавших.",
+	},
+	classic = {
+		"Уничтожьте всех мутантов этой ночи. Магазин на ночь закрыт — берегите патроны, поднимайте упавших.",
+	},
+} :: { [string]: { string } }
+Config.AmbienceVolume = 0.7 -- общая громкость звуков окружения (зомби, машины); по слуху держим тихо
+Config.DebugStartNight = 1 -- для проверок: с какой ночи начинается раунд (в релизе всегда 1)
 Config.MissionMoveTeam = true -- в начале ночи команда выдвигается к точке миссии; с рассветом возвращается в магазин
 Config.Missions = {
 	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
-	[2] = { type = "clear", title = "Зачистка зоны и установка шатра", anchor = 1, planned = "build", hint = "Зачистите зону от мутантов" },
-	[3] = { type = "classic", title = "Сопровождение конвоя с припасами", anchor = 1, planned = "escort" },
+	[2] = { type = "build", title = "Зачистка зоны и установка шатра", anchor = 1, kills = 15, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
+	[3] = { type = "escort", title = "Сопровождение конвоя с припасами", anchor = 1, points = 3, hint = "Не дайте уничтожить грузовик: он объедет контрольные точки и встанет у шатра" },
 	[4] = { type = "scout", title = "Разведка ближайших зданий", anchor = 1, points = 4, hint = "Обойдите контрольные точки" },
 	[5] = { type = "classic", title = "Защита шатра от босса", anchor = 1, planned = "defend-boss", hint = "Убейте босса и волну" },
 	[6] = { type = "scout", title = "Разведка второго района", anchor = 2, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
-	[7] = { type = "clear", title = "Зачистка и установка шатра", anchor = 2, planned = "build" },
-	[8] = { type = "classic", title = "Сопровождение конвоя", anchor = 2, planned = "escort" },
+	[7] = { type = "build", title = "Зачистка и установка шатра", anchor = 2, kills = 20, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
+	[8] = { type = "escort", title = "Сопровождение конвоя", anchor = 2, points = 3, hint = "Не дайте уничтожить грузовик" },
 	[9] = { type = "scout", title = "Разведка территории третьего шатра", anchor = 3, points = 4 },
 	[10] = { type = "classic", title = "Босс: зомби против растений", anchor = 2, planned = "boss", hint = "Убейте босса и волну" },
 	[11] = { type = "scout", title = "Изучение локаций вокруг шатров", anchor = 2, points = 5 },
-	[12] = { type = "classic", title = "Конвой до третьего шатра", anchor = 3, planned = "escort" },
+	[12] = { type = "escort", title = "Конвой до третьего шатра", anchor = 3, points = 3, install = true, hint = "Доведите грузовик и установите шатёр у места" },
 	[13] = { type = "defend", title = "Аномалии и нападения на магазины", anchor = 1, seconds = 150, planned = "anomaly" },
 	[14] = { type = "defend", title = "Нападение на все шатры", anchor = 2, seconds = 200, planned = "multi-defend" },
 	[15] = { type = "classic", title = "Босс нападает на основную базу", anchor = 1, planned = "boss", hint = "Убейте босса и волну" },
 	[16] = { type = "scout", title = "Разведка территории", anchor = 4, points = 4, planned = "daytime" },
-	[17] = { type = "clear", title = "Установка шатра и конвой", anchor = 4, planned = "build+escort" },
+	[17] = { type = "escort", title = "Установка шатра и конвой", anchor = 4, points = 3, install = true, hint = "Доведите грузовик и установите шатёр у места" },
 	[18] = { type = "classic", title = "Катакомбы: зачистка метро", anchor = 4, planned = "metro" },
 	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, planned = "capture" },
 	[20] = { type = "classic", title = "Финал: бункер", anchor = 5, planned = "final" },

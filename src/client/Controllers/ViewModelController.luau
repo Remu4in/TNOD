@@ -19,6 +19,7 @@ local SLEEVE = Color3.fromRGB(62, 74, 52) -- рукав: оливковый
 local SKIN_FALLBACK = Color3.fromRGB(226, 182, 148)
 local HIP = Vector3.new(0.55, -0.55, -1.6) -- где рукоять оружия относительно камеры от бедра
 local DRAW_TIME = 0.4
+local MELEE_HAND = Vector3.new(0.6, -0.7, -1.3) -- где кисть с холодным оружием относительно камеры
 
 type GunPart = { part: BasePart, rel: CFrame, isMag: boolean }
 
@@ -36,6 +37,7 @@ type Rig = {
 	muzzle: Vector3, -- дуло (система рукояти)
 	aimY: number, -- высота линии прицеливания над рукоятью
 	pistol: boolean,
+	melee: boolean, -- холодное оружие: одна рука держит рукоять, положение берём из Tool.Grip (его двигают взмахи и осмотр, FxController)
 	drawStart: number,
 }
 
@@ -93,7 +95,7 @@ local function destroyRig()
 end
 
 -- Собираем копию деталей оружия из Tool: положение каждой детали относительно рукояти берём из её Weld (C0)
-local function buildRig(tool: Tool, weaponId: string): Rig?
+local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 	local handle = tool:FindFirstChild("Handle") :: BasePart?
 	local camera = workspace.CurrentCamera
 	if not handle or not camera then
@@ -161,23 +163,24 @@ local function buildRig(tool: Tool, weaponId: string): Rig?
 		muzzle = Vector3.new(0, (minY + maxY) / 2 + 0.05, minZ - 0.05),
 		aimY = maxY,
 		pistol = pistol,
+		melee = melee,
 		drawStart = os.clock(),
 	}
 	return rig_
 end
 
--- Что сейчас в руках: огнестрел с WeaponId и от первого лица
-local function heldFirearm(): (Tool?, string?)
+-- Что сейчас в руках: оружие с WeaponId (огнестрел или холодное) и от первого лица
+local function heldWeapon(): (Tool?, string?, boolean)
 	local char = player.Character
 	local tool = char and char:FindFirstChildOfClass("Tool")
-	if not tool or tool:GetAttribute("Melee") == true then
-		return nil, nil
+	if not tool then
+		return nil, nil, false
 	end
 	local id = tool:GetAttribute("WeaponId")
-	if typeof(id) ~= "string" or not Config.Weapons[id] or Config.Weapons[id].melee then
-		return nil, nil
+	if typeof(id) ~= "string" or not Config.Weapons[id] then
+		return nil, nil, false
 	end
-	return tool, id
+	return tool, id, Config.Weapons[id].melee == true or tool:GetAttribute("Melee") == true
 end
 
 local function firstPerson(): boolean
@@ -269,7 +272,7 @@ end
 
 local function update(dt: number)
 	local camera = workspace.CurrentCamera
-	local tool, id = heldFirearm()
+	local tool, id, isMelee = heldWeapon()
 	if not camera or not tool or not id or not firstPerson() or player:GetAttribute("Downed") == true then
 		if rig then
 			destroyRig()
@@ -278,7 +281,7 @@ local function update(dt: number)
 	end
 	if not rig or rig.tool ~= tool then
 		destroyRig()
-		rig = buildRig(tool, id)
+		rig = buildRig(tool, id, isMelee)
 		pos, posVel, rot, rotVel = Vector3.zero, Vector3.zero, Vector3.zero, Vector3.zero
 		if not rig then
 			return
@@ -331,6 +334,12 @@ local function update(dt: number)
 	end
 
 	local weaponCf = camera.CFrame * CFrame.new(stance + pos) * CFrame.Angles(rot.X, rot.Y, rot.Z) * reloadCf
+	-- холодное оружие: «кисть» — это рамка, в которой Tool.Grip задаёт положение рукояти (хват, взмах, осмотр двигают Grip)
+	local handFrame = weaponCf
+	if r.melee then
+		handFrame = camera.CFrame * CFrame.new((if sprint then Vector3.new(0.5, -0.9, -1.1) else MELEE_HAND) + pos) * CFrame.Angles(rot.X, rot.Y, rot.Z)
+		weaponCf = handFrame * tool.Grip:Inverse()
+	end
 	for _, gp in r.parts do
 		if gp.isMag and magHidden then
 			-- магазин: вынутый уезжает вниз и исчезает, новый приезжает снизу
@@ -346,6 +355,16 @@ local function update(dt: number)
 	local tiltDown = CFrame.Angles(math.rad(-18), 0, 0)
 	local rightHandCf = weaponCf * CFrame.new(0.02, -0.17, 0.12) * tiltDown
 	local leftHandCf = weaponCf * CFrame.new(leftTarget) * CFrame.Angles(math.rad(-10), math.rad(r.pistol and 18 or 0), math.rad(8))
+	if r.melee then
+		-- кисть в рамке хвата, левая рука убрана (у ножей и клинков она не нужна)
+		rightHandCf = handFrame * CFrame.new(0, 0, 0.1) * CFrame.Angles(math.rad(-12), 0, 0)
+		r.lForearm.Transparency = 1
+		r.lHand.Transparency = 1
+		placeArm(r.rForearm, r.rHand, camera.CFrame * CFrame.new(1.3, -3.0, 1.4), rightHandCf)
+		return
+	end
+	r.lForearm.Transparency = 0
+	r.lHand.Transparency = 0
 	placeArm(r.rForearm, r.rHand, camera.CFrame * CFrame.new(1.5, -3.0, 1.2), rightHandCf)
 	placeArm(r.lForearm, r.lHand, camera.CFrame * CFrame.new(-1.5, -3.0, 1.2), leftHandCf)
 end

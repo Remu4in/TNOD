@@ -47,6 +47,22 @@ function ShopService.pointFor(player: Player): Point?
 end
 
 -- Добавить точку. withPrompt: поставить кнопку «Открыть магазин» (E) в центре (у тестового стенда кнопка своя)
+-- Убрать магазин по центру (шатёр сняли на новый раунд)
+function ShopService.removePointAt(center: Vector3)
+	for i = #points, 1, -1 do
+		if (points[i].center - center).Magnitude < 1 then
+			table.remove(points, i)
+		end
+	end
+	if folder then
+		for _, part in folder:GetChildren() do
+			if part:IsA("BasePart") and (part.Position - (center + Vector3.new(0, 2, 0))).Magnitude < 1 then
+				part:Destroy()
+			end
+		end
+	end
+end
+
 function ShopService.addPoint(name: string, center: Vector3, radius: number, free: boolean, tent: boolean, withPrompt: boolean)
 	local point: Point = { name = name, center = center, radius = radius, free = free, tent = tent }
 	table.insert(points, point)

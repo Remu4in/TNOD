@@ -21,6 +21,7 @@ local MapBuilder = require(script.Parent:WaitForChild("MapBuilder"))
 local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 local BuildingService = require(script.Parent:WaitForChild("BuildingService"))
 local EquipmentService = require(script.Parent:WaitForChild("EquipmentService"))
+local GeneralService = require(script.Parent:WaitForChild("GeneralService"))
 local MissionService = require(script.Parent:WaitForChild("MissionService"))
 local PerkService = require(script.Parent:WaitForChild("PerkService"))
 local Perks = require(Shared:WaitForChild("Perks"))
@@ -217,7 +218,7 @@ end
 local function startRound()
 	gameOver = false
 	fellAtNight = false
-	wave = 0
+	wave = math.max(0, Config.DebugStartNight - 1)
 	local players = Players:GetPlayers()
 	if locationIndex ~= 1 then
 		loadLocation(1)
@@ -228,6 +229,7 @@ local function startRound()
 	EconomyService.resetRound(players)
 	ScoreService.resetRound(players)
 	PerkService.reset()
+	MissionService.resetRound()
 	RatingService.resetRound(players)
 	roundSeed = rng:NextInteger(1, 1000000)
 	WeaponService.resetRound(players)
@@ -268,6 +270,7 @@ local function day(first: boolean)
 	end
 	countVotes()
 	setPhase("Day", t)
+	GeneralService.announceDay()
 	notifyAll(if first then "Закупайтесь в магазине и открывайте здания — вносите монеты у вывесок" else "Рассвет. Мутанты сгорают на солнце — бегите за покупками!", 4)
 	local warn = Config.Round.DayWarnSeconds
 	local early = false
@@ -346,8 +349,11 @@ local function night()
 	while not gameOver do
 		local left = ZombieService.remaining()
 		ReplicatedStorage:SetAttribute("ZombiesLeft", left)
-		if MissionService.update(0.25) == "done" then
+		local missionState = MissionService.update(0.25)
+		if missionState == "done" then
 			missionDone = true
+			break
+		elseif missionState == "fail" then
 			break
 		end
 		if (not infinite and left == 0) or os.clock() > nightEndsAt then
@@ -440,6 +446,7 @@ function RoundService.onAllDown()
 end
 
 function RoundService.onZombieKilled(player: Player?, zombie: any)
+	MissionService.onKill()
 	if player then
 		-- убийство выстрелом в голову: больше монет и очков
 		local head = zombie.headKill == true

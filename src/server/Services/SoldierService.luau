@@ -326,4 +326,6 @@ function SoldierService.init()
 	print("[SoldierService] солдат: " .. #soldiers)
 end
 
+SoldierService.attachLooseParts = attachLooseParts
+
 return SoldierService

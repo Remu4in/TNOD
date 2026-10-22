@@ -713,7 +713,36 @@ local function cancelWindup(z: Zombie)
 	setEyes(z, false)
 end
 
-local function startWindup(z: Zombie, player: Player, now: number)
+-- Дружественные цели-НПС (конвой, солдаты): зомби атакуют их наравне с игроками. damage — функция урона цели.
+type NpcTarget = { root: BasePart, damage: (amount: number) -> () }
+local npcTargets: { [Model]: NpcTarget } = {}
+local npcWindup: { [Zombie]: Model } = {}
+
+function ZombieService.registerTarget(model: Model, root: BasePart, damage: (amount: number) -> ())
+	npcTargets[model] = { root = root, damage = damage }
+end
+
+function ZombieService.unregisterTarget(model: Model)
+	npcTargets[model] = nil
+end
+
+local function nearestNpc(pos: Vector3): (Model?, BasePart?, number)
+	local best: Model? = nil
+	local bestRoot: BasePart? = nil
+	local bestDist = math.huge
+	for model, t in npcTargets do
+		if t.root.Parent then
+			local d = (t.root.Position - pos).Magnitude
+			if d < bestDist then
+				best, bestRoot, bestDist = model, t.root, d
+			end
+		end
+	end
+	return best, bestRoot, bestDist
+end
+
+local function startWindup(z: Zombie, player: Player?, now: number)
+	npcWindup[z] = nil
 	z.windupUntil = now + z.def.windup
 	z.windupTarget = player
 	armPose(z, z.armRaise, z.def.windup * 0.85)
@@ -727,13 +756,24 @@ local function finishStrike(z: Zombie, now: number)
 	z.windupUntil = 0
 	z.windupTarget = nil
 	z.lastAttack = now + math.random() * 0.6 -- небольшой разброс, чтобы стая не била залпом в один такт
+	local npcModel = npcWindup[z]
+	npcWindup[z] = nil
 	armPose(z, z.armStrike, 0.08)
+	z.model:SetAttribute("SwingAt", os.clock()) -- клиент по этому звучит ударом (SfxController)
 	task.delay(0.3, function()
 		if z.alive then
 			armPose(z, 0, 0.25)
 		end
 	end)
 	setEyes(z, false)
+	if npcModel then
+		local t = npcTargets[npcModel]
+		local reachNpc = (3.5 * z.def.scale + 1.5) * 1.25 + 3
+		if t and t.root.Parent and (t.root.Position - z.root.Position).Magnitude <= reachNpc + t.root.Size.Magnitude * 0.25 then
+			t.damage(z.def.damage * damageMultiplier)
+		end
+		return
+	end
 	if throwing then
 		if target and PlayerService.isUp(target) then
 			launchFlask(z, target)
@@ -944,6 +984,7 @@ local spawnCount = 0
 
 -- Точка миссии: зомби появляются кольцом 100–150 студов вокруг неё, сектора чередуются (поток со всех сторон)
 local anchorPos: Vector3? = nil
+local aliveCapOverride: number? = nil
 local anchorUse: { number } = {}
 for i = 1, SECTORS do
 	anchorUse[i] = 0
@@ -1015,6 +1056,16 @@ function ZombieService.setAnchor(pos: Vector3?)
 	for i = 1, SECTORS do
 		anchorUse[i] = 0
 	end
+end
+
+-- Двигать точку потока, не сбрасывая счётчики секторов (конвой едет)
+-- Свой потолок живых зомби на время миссии (конвой: меньше, иначе грузовик не доживёт); nil — обычный
+function ZombieService.setAliveCap(cap: number?)
+	aliveCapOverride = cap
+end
+
+function ZombieService.moveAnchor(pos: Vector3)
+	anchorPos = pos
 end
 
 function ZombieService.queueSize(): number
@@ -1306,6 +1357,17 @@ local function think(z: Zombie, now: number, dt: number)
 		end
 	else -- Hunt
 		local player, targetRoot, dist = nearestUpCharacter(pos)
+		-- ближе игрока может оказаться конвой или солдат: идём бить его
+		local npcModel, npcRoot, npcDist = nearestNpc(pos)
+		if npcModel and npcRoot and (not player or npcDist < dist) then
+			goTo(z, npcRoot.Position, now)
+			local npcReach = reach + 2 + npcRoot.Size.Magnitude * 0.25
+			if npcDist <= npcReach and now - z.lastAttack >= z.def.attackCooldown then
+				startWindup(z, nil, now)
+				npcWindup[z] = npcModel
+			end
+			return
+		end
 		if not player or not targetRoot then
 			return
 		end
@@ -1655,7 +1717,7 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 				alive += 1
 			end
 			-- одновременно живых: 40 на игрока, остальные ждут в очереди
-			local aliveCap = math.max(Config.Round.ZombiesAliveMin, Config.Round.ZombiesAlivePerPlayer * #Players:GetPlayers())
+			local aliveCap = aliveCapOverride or math.max(Config.Round.ZombiesAliveMin, Config.Round.ZombiesAlivePerPlayer * #Players:GetPlayers())
 			local n = 0
 			while #queue > 0 and n < Config.Round.SpawnsPerTick and alive < aliveCap do
 				spawnOne(table.remove(queue, 1) :: string)

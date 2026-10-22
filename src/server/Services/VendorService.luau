@@ -251,6 +251,11 @@ local function buildVending(marker: BasePart)
 	vendors[marker.Name] = v
 end
 
+-- Автомат, установленный по ходу игры (с шатром)
+function VendorService.addVending(marker: BasePart)
+	buildVending(marker)
+end
+
 function VendorService.init(map: Types.MapInfo)
 	stash = Instance.new("Folder")
 	stash.Name = "VendorStash"
