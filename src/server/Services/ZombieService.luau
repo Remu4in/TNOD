@@ -1072,7 +1072,43 @@ function ZombieService.queueSize(): number
 	return #queue
 end
 
+-- Свои точки появления на время миссии (метро): список позиций вместо маркеров карты
+local spawnOverride: { Vector3 }? = nil
+
+function ZombieService.setSpawnPoints(points: { Vector3 }?)
+	spawnOverride = points
+end
+
 local function pickSpawnPosition(): Vector3
+	if spawnOverride and #spawnOverride > 0 then
+		-- не ближе 35 студов к живым игрокам: из нескольких случайных точек берём самую далёкую
+		local roots: { Vector3 } = {}
+		for _, p in PlayerService.upPlayers() do
+			local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if r then
+				table.insert(roots, r.Position)
+			end
+		end
+		-- предпочитаем точки в 50–260 студах от ближайшего живого игрока (поток рядом, но не в лицо); иначе самую далёкую
+		local good: { Vector3 } = {}
+		local best, bestMin = spawnOverride[1], -1
+		for _, candidate in spawnOverride do
+			local minDist = math.huge
+			for _, r in roots do
+				minDist = math.min(minDist, (candidate - r).Magnitude)
+			end
+			if minDist >= 50 and minDist <= 260 then
+				table.insert(good, candidate)
+			end
+			if minDist > bestMin then
+				best, bestMin = candidate, minDist
+			end
+		end
+		if #good > 0 then
+			best = good[math.random(1, #good)]
+		end
+		return best + Vector3.new(math.random(-3, 3), 3, math.random(-3, 3))
+	end
 	if anchorPos then
 		local ring = ringSpawnPosition(anchorPos)
 		if ring then

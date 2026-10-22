@@ -39,7 +39,8 @@ type State = {
 	hpMult: number,
 	lastText: string,
 	kills: number,
-	phase: string, -- escort: "drive" → "install"; build: "kill" → "install"
+	phase: string, -- escort: "drive" → "install"; build: "kill" → "install"; metro: "approach" → "inside"
+	metroKills: number,
 	sitePart: BasePart?,
 	prompt: ProximityPrompt?,
 	installed: boolean,
@@ -94,6 +95,14 @@ end
 
 -- Место шатра района (1–4 — места установки, 5 — шатёр на базе)
 function MissionService.anchorPosition(index: number): Vector3
+	if index == 6 then
+		-- вход в метро (маркер у верхней площадки лестницы)
+		local markers = workspace:FindFirstChild("Markers")
+		local top = markers and markers:FindFirstChild("Metro_EntranceTop") :: BasePart?
+		if top then
+			return top.Position
+		end
+	end
 	local f = siteFolder(index)
 	local pos = f and f:GetAttribute("SitePos")
 	if typeof(pos) == "Vector3" then
@@ -352,14 +361,14 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	objects.Name = "MissionObjects"
 	objects.Parent = workspace
 	local kind = def.type
-	local known = { scout = true, defend = true, clear = true, build = true, escort = true }
+	local known = { scout = true, defend = true, clear = true, build = true, escort = true, metro = true }
 	if not known[kind] then
 		kind = "classic"
 	end
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
-		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, phase = if kind == "build" then "kill" else "drive", sitePart = nil, prompt = nil, installed = false,
+		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
+		kills = 0, metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false,
 	}
 	current = state
 	ZombieService.setAnchor(anchor)
@@ -428,6 +437,59 @@ function MissionService.onKill()
 	local s = current
 	if s then
 		s.kills += 1
+		if s.kind == "metro" and s.phase == "inside" then
+			s.metroKills += 1
+		end
+	end
+end
+
+-- Вход в метро: игрок на лестнице. Только на ночи с миссией «metro»: первого спустившегося переносим на станцию, поток зомби
+-- переключается на точки метро. В остальные ночи вход закрыт.
+local metroDebounce: { [Player]: number } = {}
+
+function MissionService.onEntranceTouched(player: Player)
+	local now = os.clock()
+	if (metroDebounce[player] or 0) > now - 2 then
+		return
+	end
+	metroDebounce[player] = now
+	local s = current
+	if not s or s.kind ~= "metro" then
+		Remotes.get("Notify"):FireClient(player, "Вход в метро закрыт: завалено", 2)
+		return
+	end
+	local metro = workspace:FindFirstChild("Metro")
+	local spawn = metro and metro:FindFirstChild("Markers") and metro.Markers:FindFirstChild("Metro_Spawn") :: BasePart?
+	local char = player.Character
+	if not spawn or not char or not PlayerService.isUp(player) then
+		return
+	end
+	char:PivotTo(CFrame.new(spawn.Position + Vector3.new(math.random(-6, 6), 3, math.random(-3, 3))))
+	if s.phase == "approach" then
+		s.phase = "inside"
+		local points: { Vector3 } = {}
+		for _, m in (metro :: Folder).Markers:GetChildren() do
+			if string.sub(m.Name, 1, 18) == "Metro_ZombieSpawn_" and m:IsA("BasePart") then
+				table.insert(points, m.Position)
+			end
+		end
+		ZombieService.clearAll() -- зомби снаружи больше не нужны (и не должны занимать места в потоке метро)
+		ZombieService.setAnchor(nil)
+		ZombieService.setSpawnPoints(points)
+		notify("Команда спустилась в метро — зачистите станцию", 4)
+	end
+end
+
+function MissionService.init()
+	local markers = workspace:FindFirstChild("Markers")
+	local trigger = markers and markers:FindFirstChild("Metro_EntranceTrigger") :: BasePart?
+	if trigger then
+		trigger.Touched:Connect(function(hit: BasePart)
+			local player = Players:GetPlayerFromCharacter(hit.Parent)
+			if player then
+				MissionService.onEntranceTouched(player)
+			end
+		end)
 	end
 end
 
@@ -523,6 +585,16 @@ function MissionService.update(dt: number): string?
 				result = "done"
 			end
 		end
+	elseif kind == "metro" then
+		local need = math.max(5, math.floor((state.def.kills or 40) * (Config.Waves.CountScale or 1) + 0.5))
+		if state.phase == "approach" then
+			text = "Спуститесь в метро: лестница у входа"
+		else
+			text = string.format("Зачистите станцию: убито %d из %d", math.min(state.metroKills, need), need)
+			if state.metroKills >= need then
+				result = "done"
+			end
+		end
 	elseif kind == "clear" or kind == "classic" then
 		text = string.format("Осталось зомби: %d", (ReplicatedStorage:GetAttribute("ZombiesLeft") :: number?) or 0)
 	end
@@ -541,6 +613,7 @@ function MissionService.finish()
 	end
 	current = nil
 	ZombieService.setAnchor(nil)
+	ZombieService.setSpawnPoints(nil)
 	ZombieService.setAliveCap(nil)
 	setStatus("", "", "")
 end

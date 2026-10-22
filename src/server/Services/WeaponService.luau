@@ -731,6 +731,27 @@ function WeaponService.refillHeld(player: Player): boolean
 	return true
 end
 
+-- Пополнить патроны всего огнестрела игрока (ящики с патронами): true — что-то изменилось
+function WeaponService.refillAll(player: Player): boolean
+	local inv = owned[player]
+	if not inv then
+		return false
+	end
+	local changed = false
+	for id, st in inv do
+		local def = Config.Weapons[id]
+		if def and not def.melee and def.reserve >= 0 then
+			if st.mag < magCap(def) or st.reserve < reserveCap(def) then
+				st.mag = magCap(def)
+				st.reserve = reserveCap(def)
+				changed = true
+				syncAmmo(player, id)
+			end
+		end
+	end
+	return changed
+end
+
 function WeaponService.give(player: Player, weaponId: string)
 	if Config.Weapons[weaponId] then
 		grant(player, weaponId)
