@@ -1718,6 +1718,10 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 			end
 			-- одновременно живых: 40 на игрока, остальные ждут в очереди
 			local aliveCap = aliveCapOverride or math.max(Config.Round.ZombiesAliveMin, Config.Round.ZombiesAlivePerPlayer * #Players:GetPlayers())
+			local testScale = Config.Waves.CountScale
+			if testScale and testScale < 1 then
+				aliveCap = math.max(4, math.floor(aliveCap * testScale + 0.5)) -- тестовое уменьшение числа зомби касается и бесконечного потока
+			end
 			local n = 0
 			while #queue > 0 and n < Config.Round.SpawnsPerTick and alive < aliveCap do
 				spawnOne(table.remove(queue, 1) :: string)

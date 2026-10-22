@@ -18,6 +18,7 @@ export type WaveTuning = {
 	SpeedGrowthPerWave: number,
 	SpeedCeil: number,
 	BossEvery: number,
+	CountScale: number?, -- множитель числа зомби (на время тестов 0,1; в релизе не задаём)
 }
 
 -- Уровень угрозы команды (вооружённость): считается один раз в начале ночи (makeThreat)
@@ -124,7 +125,7 @@ end
 function WaveMath.curveCount(t: WaveTuning, wave: number, players: number): number
 	local start, cap = startCount(t, players), capFor(t, players)
 	local k = math.clamp((wave - 1) / (t.CurveWaves - 1), 0, 1) ^ t.CurveExp
-	return start + (cap - start) * k
+	return (start + (cap - start) * k) * (t.CountScale or 1)
 end
 
 -- Сколько зомби в волне: кривая ±отклонение + добавка за классы оружия команды (в пределах потолка)
@@ -141,7 +142,8 @@ function WaveMath.zombieCount(t: WaveTuning, wave: number, players: number, thre
 			total += WaveMath.roll(seed, wave * 100 + i, def.bonusMin, def.bonusMax) * pf
 		end
 	end
-	return math.floor(math.min(total, capFor(t, players)) + 0.5)
+	local scale = t.CountScale or 1
+	return math.max(if scale < 1 then 3 else 1, math.floor(math.min(total, capFor(t, players) * scale) + 0.5))
 end
 
 function WaveMath.hpMultiplier(t: WaveTuning, wave: number, threat: Threat?): number

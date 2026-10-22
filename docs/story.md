@@ -69,3 +69,7 @@
 
 Все маркеры достижимы по `PathfindingService` от `Metro_Spawn`. Размер станции: 160 × 48, потолок 12 студов, тоннели 14 × 9. Телепорт для осмотра в Studio (Command bar): `workspace.Metro.Markers.Metro_Spawn.Position` — это и есть точка входа (50, 600.6, 14).
 Объекты лежат в файле места (не в репозитории): сохраните место. Код метро (переход, спавн зомби по `Metro_ZombieSpawn_*`, цели) — отдельная задача после согласования миссий.
+
+
+### Обновление метро (2026-10-22, вечер)
+Метро увеличено: главная станция ×2 (320 студов), три линии, тоннели по 480 студов, станция B «за горой» и дорожный тоннель для езды на машине (подробности в `docs/decisions.md`). Генератор — `tools/BuildMetro.luau`; маркеры: `Metro_Spawn`, `Metro_Exit`, `Metro_Boss`, `Metro_Vending`, `Metro_ZombieSpawn_1…14`, `Metro_Objective_1…4`, `Metro_StationB_Spawn/Exit`, `Metro_Car`, `Metro_CarGoal`.
