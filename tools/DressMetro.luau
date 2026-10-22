@@ -60,6 +60,10 @@ end
 local function panel(parent: Instance, text: string, w: number, h: number, x: number, y: number, z: number, faceDir: number, bg: Color3, fg: Color3, tilt: number?)
 	local p = box(parent, "Panel", V(w, h, 0.3), x, y, z, bg, Enum.Material.SmoothPlastic, { CanCollide = false })
 	p.CFrame = CFrame.new(x, OY + y, z) * CFrame.Angles(0, if faceDir > 0 then math.rad(180) else 0, math.rad(tilt or 0))
+	-- надписи не нужны (решение Руслана): панель остаётся пустым щитом, текст не рисуем
+	if true then
+		return p
+	end
 	local gui = Instance.new("SurfaceGui")
 	gui.Face = Enum.NormalId.Front
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
@@ -257,14 +261,14 @@ for _ = 1, 22 do
 		cylinder(Debris, "Barrel", 3, 2.2, x, 1.5, z, Color3.fromRGB(70, 74, 82), false)
 	end
 end
--- кровь и грязь на платформах
-for _ = 1, 40 do
+-- кровь и грязь на платформах: убрана по просьбе Руслана
+for _ = 1, 0 do
 	local d = rng:NextNumber(1.2, 4)
 	local x, z = rng:NextNumber(-150, 150), ({ -33, -12, 12, 33 })[rng:NextInteger(1, 4)] + rng:NextNumber(-3, 3)
 	box(Stains, "Blood", V(0.05, d, d * rng:NextNumber(0.6, 1.2)), x, 0.06, z, Color3.fromRGB(rng:NextInteger(70, 110), 6, 6), Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Cylinder, CanCollide = false, Orientation = V(0, 0, 90) })
 end
--- лужи в руслах путей
-for _ = 1, 28 do
+-- лужи в руслах путей: убраны
+for _ = 1, 0 do
 	local d = rng:NextNumber(2, 5)
 	box(Stains, "Puddle", V(0.04, d, d * rng:NextNumber(1, 2.4)), rng:NextNumber(-150, 150), -2.46, LINES[rng:NextInteger(1, 3)] + rng:NextNumber(-3, 3), Color3.fromRGB(40, 70, 90), Enum.Material.Glass, { Shape = Enum.PartType.Cylinder, CanCollide = false, Transparency = 0.35, Orientation = V(0, 0, 90) })
 end
@@ -324,7 +328,7 @@ local function tunnelSection(x0: number, x1: number, zt: number)
 			rubblePile(TunnelDecor, x + rng:NextNumber(-15, 15), -2.5, zt + side * 5.8, rng:NextInteger(4, 9), 1.4)
 		end
 	end
-	for x = x0 + 45, x1 - 40, 110 do
+	for x = x0 + 45, x1 - 40, 110000 do
 		local d = rng:NextNumber(3, 6)
 		box(TunnelDecor, "Puddle", V(0.04, d, d * 1.8), x, -2.46, zt + rng:NextNumber(-3, 3), Color3.fromRGB(40, 70, 90), Enum.Material.Glass, { Shape = Enum.PartType.Cylinder, CanCollide = false, Transparency = 0.35, Orientation = V(0, 0, 90) })
 	end
@@ -343,9 +347,8 @@ end
 tunnelSection(STATION_HALF + 5, BX0, 0)
 tunnelSection(STATION_HALF + 5, STATION_HALF + TUNNEL, -24)
 tunnelSection(STATION_HALF + 5, STATION_HALF + TUNNEL, 24)
-tunnelSection(BX1 + 5, BX1 + TUNNEL, 0)
 -- лагеря и брошенные вещи в тоннелях
-for _, spec in { { -260, -24 }, { -420, 0 }, { 300, 24 }, { 200, -24 }, { 960, 0 }, { 1120, 0 } } do
+for _, spec in { { -260, -24 }, { -420, 0 }, { 300, 24 }, { 200, -24 } } do
 	local g = Instance.new("Model")
 	g.Name = "TunnelCamp"
 	g.Parent = Camps
@@ -436,6 +439,36 @@ for _, x in { -120, -60, 0, 60, 120 } do
 	e.Transparency = NumberSequence.new(0.94)
 	e.Color = ColorSequence.new(Color3.fromRGB(150, 150, 140))
 	e.Parent = p
+end
+
+------------------------------------------------------------------------------------------------ плитка на полу (материала Tile в Roblox нет: Marble + швы + шахматные вставки)
+local floors = folder("FloorTiles")
+local seamColor = Color3.fromRGB(70, 72, 70)
+local function seamPart(name: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, color: Color3, mat: Enum.Material)
+	box(floors, name, V(sx, sy, sz), x, y, z, color, mat, { CanCollide = false, CanQuery = false })
+end
+for _, p in ROOT.Platform:GetChildren() do
+	if string.find(p.Name, "^Platform%d") and p:IsA("BasePart") then
+		p.Material = Enum.Material.Marble
+		p.Color = Color3.fromRGB(176, 178, 170)
+	end
+end
+for _, pl in { { -38, -29 }, { -19, -5 }, { 5, 19 }, { 29, 38 } } do
+	local zc, w = (pl[1] + pl[2]) / 2, pl[2] - pl[1]
+	for x = -158, 158, 4 do
+		seamPart("Seam", x, 0.03, zc, 0.12, 0.04, w, seamColor, Enum.Material.SmoothPlastic)
+	end
+	for z = pl[1] + 2, pl[2] - 1, 2 do
+		seamPart("Seam", 0, 0.03, z, 316, 0.04, 0.12, seamColor, Enum.Material.SmoothPlastic)
+	end
+end
+for _, pl in { { -19, -5 }, { 5, 19 } } do
+	local zc = (pl[1] + pl[2]) / 2
+	for i = -39, 39 do
+		if i % 2 == 0 then
+			seamPart("DarkTile", i * 4 + 2, 0.04, zc, 4, 0.05, 4, Color3.fromRGB(86, 96, 110), Enum.Material.Marble)
+		end
+	end
 end
 
 local count = 0

@@ -6,7 +6,7 @@
 --   Тоннели: по 480 студов на запад (все три линии, обвал в конце) и на восток; средняя линия идёт на станцию B (x 640…800), двор
 --   «за горой» — открытая площадка (ночь), дальше дорожный тоннель (x 800…1280) для езды на машине.
 -- Маркеры (Workspace.Metro.Markers): Metro_Spawn, Metro_Exit, Metro_Boss, Metro_Vending, Metro_ZombieSpawn_n, Metro_Objective_n,
--- Metro_StationB_Spawn, Metro_StationB_Exit, Metro_Car, Metro_CarGoal.
+-- Metro_StationB_Spawn, Metro_StationB_Exit.
 -- Все размеры — константы в начале; изменить и запустить заново (старая Workspace.Metro удаляется).
 
 local OY = 600
@@ -271,12 +271,8 @@ for i = 1, 6 do
 end
 part(StationB, "YardTruck", V(7, 6, 18), 770, 16, 120, Color3.fromRGB(60, 70, 60), Enum.Material.Metal)
 
--- дорожный тоннель (на машине): x 800…1280, асфальт, обвал в конце
-tube(Tunnels, BX1, BX1 + TUNNEL, 0, Enum.Material.Asphalt)
-for x = BX1 + 20, BX1 + TUNNEL - 20, 24 do
-	part(Tunnels, "RoadLine", V(8, 0.05, 0.4), x, -2.47, 0, Color3.fromRGB(230, 200, 60), Enum.Material.SmoothPlastic, { CanCollide = false })
-end
-rubbleCap(Tunnels, BX1 + TUNNEL + 1, 0, 1)
+-- восточный торец станции B закрыт (дорожного тоннеля нет: по замыслу Руслана машина нужна в другом месте)
+part(StationB, "EndWallSealed", V(2, 11, 14), BX1 + 1, 3, 0, CONCRETE)
 
 ------------------------------------------------------------------------------------------------ свет
 for x = -150, 150, 25 do
@@ -302,9 +298,6 @@ tunnelLights(STATION_HALF + 40, STATION_HALF + TUNNEL - 20, 24)
 for x = BX0 + 20, BX1 - 20, 30 do
 	lamp(x, 12.3, 0, Color3.fromRGB(190, 210, 255), 0.9, 22, (x // 30) % 2 == 0)
 end
-for x = BX1 + 40, BX1 + TUNNEL - 20, 40 do
-	lamp(x, 7.2, 0, Color3.fromRGB(255, 190, 120), 0.8, 20, (x // 40) % 2 == 0)
-end
 
 ------------------------------------------------------------------------------------------------ маркеры
 local function marker(name: string, x: number, y: number, z: number, color: Color3, look: Vector3?)
@@ -321,19 +314,17 @@ local zi = 0
 local spawnsList = {
 	{ -632, -1.5, -24 }, { -632, -1.5, 0 }, { -632, -1.5, 24 }, { 632, -1.5, -24 }, { 632, -1.5, 24 },
 	{ -400, -1.5, 0 }, { 400, -1.5, 0 }, { -250, -1.5, -24 }, { 250, -1.5, 24 }, { -70, 0.6, -34 }, { 70, 0.6, 34 },
-	{ 700, -1.5, 0 }, { 1100, -1.5, 0 }, { 740, 14, 100 },
+	{ 700, -1.5, 0 }, { 740, 14, 100 },
 }
 for _, p in spawnsList do
 	zi += 1
 	marker("Metro_ZombieSpawn_" .. zi, p[1], p[2], p[3], Color3.fromRGB(230, 120, 40))
 end
-for i, p in { { -600, -1.5, 0 }, { 600, -1.5, -24 }, { -100, 0.6, -50 }, { 1200, -1.5, 0 } } do
+for i, p in { { -600, -1.5, 0 }, { 600, -1.5, -24 }, { -100, 0.6, -50 } } do
 	marker("Metro_Objective_" .. i, p[1], p[2], p[3], Color3.fromRGB(200, 80, 220)) -- гнёзда и цели зачистки
 end
 marker("Metro_StationB_Spawn", 700, 0.6, 12, Color3.fromRGB(80, 220, 120), V(1, 0, 0)) -- прибытие на станцию B
 marker("Metro_StationB_Exit", 740, 14, 40, Color3.fromRGB(80, 160, 255)) -- двор (выход «за горой»)
-marker("Metro_Car", 840, -1.5, 0, Color3.fromRGB(255, 220, 60), V(1, 0, 0)) -- здесь ставим машину для езды по дорожному тоннелю
-marker("Metro_CarGoal", 1250, -1.5, 0, Color3.fromRGB(255, 220, 60)) -- конец дорожного тоннеля
 
 local count = 0
 for _, d in ROOT:GetDescendants() do
