@@ -45,3 +45,26 @@
 | 15383663333 | Subway Tunnels V1 | 1252 части (350 мешей), 15 секций, до 76×16×62 (всего ~331), скриптов нет | `Assets.Metro.TunnelPack` | основной кандидат для тоннелей, лучше первого |
 | 9635331128 | Metro Sign Moves! | 5 частей, 5×2×0, скриптов нет | `Assets.Metro.MetroSign` | схема/табло линий |
 | 16276755276 | Subway station (папка) | 1121 часть: Arches, Floors, Benches, Bins, Pillars, Pipes (442), Roof, Rails, Vents, Walls (364), Lights; 7 скриптов (ClickDetector, ItemScript, BloxyCola…); 209×62×159 | геометрия без скриптов, звуков, ClickDetector (`Assets.Metro.StationAsset`, вычищено 13 объектов) | кандидат на замену главной станции; решение — после осмотра Руслана |
+
+
+## 2026-10-22 (вечер) — вторая партия ассетов метро (insert_asset → AssetStaging → скан)
+| ID | Название | Части / скрипты | Решение |
+|---|---|---|---|
+| 9518499699 | Sinus Turnstile | 282 части, **56 скриптов, в т.ч. «Script» внутри 18+ `Weld`**, qPerfectionWeld, 6 звуков | **карантин, не используем** (скрипты в Weld — признак вредоносных семейств) |
+| 77325124 | NYC Subway Turnstiles (6 штук) | 300 частей, 6 одинаковых скриптов по 1224 знака, подозрительного нет | геометрия без скриптов и звуков → `Assets.Metro.TurnstilesNYC`; логику (проход, звук) пишем свою |
+| 1957743767 | Robloxia Airlines Xpress Pay (билетный автомат) | 46 частей, скриптов нет | `Assets.Metro.TicketMachine` |
+| 8565656963 | Sign Board Masuk/Keluar/Dilarang Masuk | 66 частей, скриптов нет | `Assets.Metro.SignBoard` (указатели вход/выход) |
+| 9677855066 | Tram Stop | 84 части, 61×15×80, скриптов нет | `Assets.Metro.TramStop` |
+| 13473210807 | ETC Subway Platform | 2 части, 23×6×144 | `Assets.Metro.PlatformETC` |
+| 2772959533 / 2772870107 | Potato's Subway Side / Island Platform | **5 584 / 5 863 частей**, 426×451, скриптов нет, 48/36 сидений | в `AssetStaging`, **слишком тяжёлые** для вставки целиком; брать детали (колонны, скамьи, своды) |
+| 16239094234 | Končar Escalator | 172 части, 17 скриптов + 2 Remote | геометрия без скриптов/ремоутов → `Assets.Metro.EscalatorKoncar` |
+| 3743977597 | Luxiar Escalator | 281 часть, 87×29×66, 4 скрипта | геометрия → `Assets.Metro.EscalatorLuxiar` |
+| 15080186657 | Stud Bench | 25 частей, скриптов нет | `Assets.Metro.Bench` |
+| 8091742227 | JNR C62 steam locomotive | 55 мешей, 165×17×79 (по габаритам — с тендером), скриптов нет | `Assets.Metro.Locomotive` |
+| 12557087918 | Handcar | 14 мешей, 8×9×13, скриптов нет | `Assets.Metro.Handcar` — основа дрезины; езду по рельсам пишем свою |
+| 4542526738 | 2 stud Handcar | 61 часть, 13 скриптов, «Control» внутри `Sound` | карантин (скрипт в звуке), не используем |
+| 4560327510 | Train System | 550 частей (124 меша), 642×95×305, 16 скриптов (qPerfectionWeld) | в `AssetStaging`, не вставлен; логику поездов пишем свою |
+| 572434010 | Railway Track (нашёл поиском по проекту) | 6 частей, 27×1×131, скриптов нет | кандидат на рельсы, в `AssetStaging` |
+| 3103734903 | Corridor (поиск) | 337 частей, 67×22×23, скриптов нет | кандидат: интерьер/коридор, в `AssetStaging` |
+| 18310180132 | Tunnel-Tube (поиск) | 29 частей, 21×16×28, скриптов нет | кандидат: секция тоннеля, в `AssetStaging` |
+Поиск (`search_asset`) видит только ассеты внутри вселенной проекта, а не весь Creator Store: ID новых ассетов нужно присылать.
