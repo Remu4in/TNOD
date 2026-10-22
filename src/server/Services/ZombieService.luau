@@ -942,7 +942,92 @@ for i = 1, SECTORS do
 end
 local spawnCount = 0
 
+-- Точка миссии: зомби появляются кольцом 100–150 студов вокруг неё, сектора чередуются (поток со всех сторон)
+local anchorPos: Vector3? = nil
+local anchorUse: { number } = {}
+for i = 1, SECTORS do
+	anchorUse[i] = 0
+end
+local RING_MIN, RING_MAX = 100, 150
+
+local function ringSpawnPosition(anchor: Vector3): Vector3?
+	local roots: { Vector3 } = {}
+	for _, p in PlayerService.upPlayers() do
+		local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if r then
+			table.insert(roots, r.Position)
+		end
+	end
+	local order: { number } = {}
+	for i = 1, SECTORS do
+		order[i] = i
+	end
+	table.sort(order, function(a, b)
+		if anchorUse[a] ~= anchorUse[b] then
+			return anchorUse[a] < anchorUse[b]
+		end
+		return a < b
+	end)
+	for attempt = 1, 14 do
+		-- берём наименее использованные сектора по очереди; сектор — 1/8 круга с небольшим случайным углом
+		local sector = order[math.min(#order, 1 + math.floor((attempt - 1) / 3))]
+		if attempt <= 3 then
+			sector = order[1 + math.random(0, 1)]
+		end
+		local angle = ((sector - 1) + math.random()) / SECTORS * math.pi * 2
+		local radius = RING_MIN + math.random() * (RING_MAX - RING_MIN)
+		local x, z = anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius
+		local hit = workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0))
+		if hit and hit.Normal.Y > 0.9 then
+			local ok = false
+			for _, name in { "Roads", "Ground", "Grass" } do
+				local f = workspace:FindFirstChild(name)
+				if f and hit.Instance:IsDescendantOf(f) then
+					ok = true
+					break
+				end
+			end
+			if ok and not workspace:Raycast(hit.Position + Vector3.new(0, 2, 0), Vector3.new(0, 40, 0)) then
+				local far = true
+				for _, r in roots do
+					if Vector3.new(r.X - x, 0, r.Z - z).Magnitude < 45 then
+						far = false
+						break
+					end
+				end
+				if far then
+					anchorUse[sector] += 1
+					if anchorUse[sector] >= 6 then
+						for i = 1, SECTORS do
+							anchorUse[i] = math.floor(anchorUse[i] / 2)
+						end
+					end
+					return hit.Position + Vector3.new(0, 3, 0)
+				end
+			end
+		end
+	end
+	return nil
+end
+
+function ZombieService.setAnchor(pos: Vector3?)
+	anchorPos = pos
+	for i = 1, SECTORS do
+		anchorUse[i] = 0
+	end
+end
+
+function ZombieService.queueSize(): number
+	return #queue
+end
+
 local function pickSpawnPosition(): Vector3
+	if anchorPos then
+		local ring = ringSpawnPosition(anchorPos)
+		if ring then
+			return ring
+		end
+	end
 	local spawns = map.zombieSpawns
 	local up = PlayerService.upPlayers()
 	local roots: { Vector3 } = {}

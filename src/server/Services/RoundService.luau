@@ -21,6 +21,7 @@ local MapBuilder = require(script.Parent:WaitForChild("MapBuilder"))
 local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 local BuildingService = require(script.Parent:WaitForChild("BuildingService"))
 local EquipmentService = require(script.Parent:WaitForChild("EquipmentService"))
+local MissionService = require(script.Parent:WaitForChild("MissionService"))
 local PerkService = require(script.Parent:WaitForChild("PerkService"))
 local Perks = require(Shared:WaitForChild("Perks"))
 local RatingService = require(script.Parent:WaitForChild("RatingService"))
@@ -253,6 +254,9 @@ local function day(first: boolean)
 	BuildingService.openShop()
 	if currentMap then
 		PlayerService.setSpawn(currentMap.playerSpawn)
+		if wave > 0 and Config.MissionMoveTeam then
+			MissionService.returnTeam(currentMap.playerSpawn)
+		end
 	end
 	PlayerService.respawnDead()
 	setNight(false)
@@ -333,17 +337,27 @@ local function night()
 	for _, bossId in WaveMath.bossTypes(Config.Waves, wave) do
 		bossName = Config.Zombies[bossId].name
 	end
-	notifyAll(if bossName then string.format("Ночь %d. Идёт босс: %s!", wave, bossName) else string.format("Ночь %d", wave), 3)
+	if bossName then
+		notifyAll(string.format("Идёт босс: %s!", bossName), 3)
+	end
+	-- миссия ночи (MissionService): точка, задача, поток зомби вокруг точки; classic/clear заканчиваются, когда убита вся волна
+	local infinite = MissionService.begin(wave, comp, WaveMath.hpMultiplier(Config.Waves, wave, threat))
+	local missionDone = false
 	while not gameOver do
 		local left = ZombieService.remaining()
 		ReplicatedStorage:SetAttribute("ZombiesLeft", left)
-		if left == 0 or os.clock() > nightEndsAt then
+		if MissionService.update(0.25) == "done" then
+			missionDone = true
+			break
+		end
+		if (not infinite and left == 0) or os.clock() > nightEndsAt then
 			break
 		end
 		task.wait(0.25)
 	end
+	MissionService.finish()
 	if not gameOver then
-		local cleared = ZombieService.remaining() == 0
+		local cleared = missionDone or ZombieService.remaining() == 0
 		RatingService.onNightEnd(wave, cleared, (os.clock() - nightStart) / nightLength)
 		-- награда за волну в общую кассу: целиком, если все на ногах и зачищено; штраф за каждую потерю — доля заработанного за волну
 		local E = Config.Economy

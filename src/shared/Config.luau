@@ -963,6 +963,34 @@ Config.Perks = {
 	{ id = "Greed", name = "Мародёр", desc = "+10% монет", kind = "coins", per = 0.10, max = 3, color = Color3.fromRGB(255, 215, 0) },
 }
 
+-- Миссии ночей (сюжет: docs/story.md, MissionService). anchor — номер шатра/точки района по удалению от базы (1 — ближайший);
+-- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
+-- (сейчас играется как classic). Не указано — classic.
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, seconds: number?, hint: string?, planned: string? }
+Config.MissionMoveTeam = true -- в начале ночи команда выдвигается к точке миссии; с рассветом возвращается в магазин
+Config.Missions = {
+	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
+	[2] = { type = "clear", title = "Зачистка зоны и установка шатра", anchor = 1, planned = "build", hint = "Зачистите зону от мутантов" },
+	[3] = { type = "classic", title = "Сопровождение конвоя с припасами", anchor = 1, planned = "escort" },
+	[4] = { type = "scout", title = "Разведка ближайших зданий", anchor = 1, points = 4, hint = "Обойдите контрольные точки" },
+	[5] = { type = "classic", title = "Защита шатра от босса", anchor = 1, planned = "defend-boss", hint = "Убейте босса и волну" },
+	[6] = { type = "scout", title = "Разведка второго района", anchor = 2, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
+	[7] = { type = "clear", title = "Зачистка и установка шатра", anchor = 2, planned = "build" },
+	[8] = { type = "classic", title = "Сопровождение конвоя", anchor = 2, planned = "escort" },
+	[9] = { type = "scout", title = "Разведка территории третьего шатра", anchor = 3, points = 4 },
+	[10] = { type = "classic", title = "Босс: зомби против растений", anchor = 2, planned = "boss", hint = "Убейте босса и волну" },
+	[11] = { type = "scout", title = "Изучение локаций вокруг шатров", anchor = 2, points = 5 },
+	[12] = { type = "classic", title = "Конвой до третьего шатра", anchor = 3, planned = "escort" },
+	[13] = { type = "defend", title = "Аномалии и нападения на магазины", anchor = 1, seconds = 150, planned = "anomaly" },
+	[14] = { type = "defend", title = "Нападение на все шатры", anchor = 2, seconds = 200, planned = "multi-defend" },
+	[15] = { type = "classic", title = "Босс нападает на основную базу", anchor = 1, planned = "boss", hint = "Убейте босса и волну" },
+	[16] = { type = "scout", title = "Разведка территории", anchor = 4, points = 4, planned = "daytime" },
+	[17] = { type = "clear", title = "Установка шатра и конвой", anchor = 4, planned = "build+escort" },
+	[18] = { type = "classic", title = "Катакомбы: зачистка метро", anchor = 4, planned = "metro" },
+	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, planned = "capture" },
+	[20] = { type = "classic", title = "Финал: бункер", anchor = 5, planned = "final" },
+} :: { [number]: MissionDef }
+
 -- Рейтинговые очки (не монеты): копятся за раунд, идут в профиль и в глобальный лидерборд (RatingService)
 Config.Rating = {
 	Kill = 5,
