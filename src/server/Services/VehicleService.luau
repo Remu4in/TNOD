@@ -48,6 +48,9 @@ type VehicleState = {
 	maxHp: number,
 	wrecked: boolean,
 	lastSpeed: number,
+	lastPos: Vector3?, -- где был корпус на прошлой проверке (раз в TICK): защита от телепорта клиентом водителя
+	lastAt: number,
+	jumpUntil: number, -- после скачка позиции давки и аварии нет до этого момента
 	lastHit: { [Model]: number },
 	smoke: Smoke?,
 	gun: Gun?,
@@ -55,6 +58,12 @@ type VehicleState = {
 
 local R = Config.VehicleRam
 local TICK = 0.1 -- период проверки давки и аварий, с
+-- Позицией корпуса владеет клиент водителя: за проверку корпус не может уйти дальше maxSpeed × dt × JUMP_FACTOR + JUMP_SLACK
+-- (запас на рывки репликации). Дальше — скачок (телепорт, сбой сети): ни давки, ни аварии в этой проверке и JUMP_PAUSE после неё,
+-- иначе телепорт в толпу засчитывался бы следующей же проверкой.
+local JUMP_FACTOR = 1.5
+local JUMP_SLACK = 2
+local JUMP_PAUSE = 0.5
 
 local container: Folder
 local vehicles: { [Model]: VehicleState } = {}
@@ -297,6 +306,9 @@ function VehicleService.spawn(modelName: string, cf: CFrame): Model?
 		maxHp = tune.hp,
 		wrecked = false,
 		lastSpeed = 0,
+		lastPos = nil,
+		lastAt = 0,
+		jumpUntil = 0,
 		lastHit = {},
 		smoke = nil,
 		gun = nil,
@@ -598,6 +610,23 @@ local function step(state: VehicleState, now: number)
 	local v = root.AssemblyLinearVelocity
 	local planar = Vector3.new(v.X, 0, v.Z)
 	local speed = planar.Magnitude
+
+	-- скачок позиции с прошлой проверки: не давим и не считаем аварию (иначе изменённый клиент «телепортирует» машину в толпу)
+	local pos = root.Position
+	local lastPos = state.lastPos
+	local elapsed = now - state.lastAt
+	state.lastPos = pos
+	state.lastAt = now
+	if lastPos then
+		local moved = Vector3.new(pos.X - lastPos.X, 0, pos.Z - lastPos.Z).Magnitude
+		if moved > state.tune.maxSpeed * elapsed * JUMP_FACTOR + JUMP_SLACK then
+			state.jumpUntil = now + JUMP_PAUSE
+		end
+	end
+	if now < state.jumpUntil then
+		state.lastSpeed = speed
+		return
+	end
 
 	local driver = occupantPlayer(state.seats[1])
 	-- авария: резкая потеря скорости (удар о стену, босса); считаем только с водителем, чтобы не ловить физические артефакты

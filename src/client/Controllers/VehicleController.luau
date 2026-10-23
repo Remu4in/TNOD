@@ -7,6 +7,7 @@ local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Config"))
 local Remotes = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Remotes"))
 
@@ -27,12 +28,14 @@ local function approach(v: number, target: number, step: number): number
 end
 
 -- Панель мест вместо панели оружия: 1 водитель, 2 переднее пассажирское, 3–4 задние, 0 турель (если есть).
--- Клик или клавиша с номером места пересаживает на свободное место (сервер проверяет).
+-- Клик/касание или клавиша с номером места пересаживает на свободное место (сервер проверяет).
+-- Геймпад: крестовина влево/вправо — на предыдущее/следующее свободное место (кнопки оружия и движения не заняты).
 local SEAT_LABELS: { [number]: string } = { [1] = "Водитель", [2] = "Пассажир", [3] = "Сзади слева", [4] = "Сзади справа", [0] = "Турель" }
 local SEAT_ORDER = { 1, 2, 3, 4, 0 }
 local SEAT_KEYS: { [Enum.KeyCode]: number } = {
 	[Enum.KeyCode.One] = 1, [Enum.KeyCode.Two] = 2, [Enum.KeyCode.Three] = 3, [Enum.KeyCode.Four] = 4, [Enum.KeyCode.Zero] = 0,
 }
+local SEAT_STEP: { [Enum.KeyCode]: number } = { [Enum.KeyCode.DPadRight] = 1, [Enum.KeyCode.DPadLeft] = -1 }
 
 local function startSeatPanel(player: Player)
 	local gui = Instance.new("ScreenGui")
@@ -54,7 +57,22 @@ local function startSeatPanel(player: Player)
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.Parent = row
 
+	local padHint = Instance.new("TextLabel")
+	padHint.AnchorPoint = Vector2.new(0.5, 1)
+	padHint.Position = UDim2.new(0.5, 0, 1, -84)
+	padHint.Size = UDim2.fromOffset(240, 22)
+	padHint.BackgroundTransparency = 1
+	padHint.Font = Enum.Font.GothamBold
+	padHint.TextSize = 14
+	padHint.TextColor3 = Color3.new(1, 1, 1)
+	padHint.TextStrokeTransparency = 0.5
+	padHint.Text = "◀ ▶ — пересесть"
+	padHint.Visible = false
+	padHint.Parent = gui
+
 	local buttons: { [number]: TextButton } = {}
+	local seatTaken: { [number]: boolean } = {} -- занятые места (кроме своего), обновляется каждый кадр
+	local mySeat: number? = nil
 	for _, index in SEAT_ORDER do
 		local b = Instance.new("TextButton")
 		b.Size = UDim2.fromOffset(86, 64)
@@ -88,12 +106,25 @@ local function startSeatPanel(player: Player)
 			ContextActionService:BindActionAtPriority("SeatKeys", function(_, state, input)
 				if state == Enum.UserInputState.Begin then
 					local index = SEAT_KEYS[input.KeyCode]
-					if index ~= nil and buttons[index] and buttons[index].Visible then
+					local stepDir = SEAT_STEP[input.KeyCode]
+					if stepDir and mySeat ~= nil then
+						-- крестовина: ближайшее свободное место по кругу в порядке панели
+						local pos = table.find(SEAT_ORDER, mySeat) or 1
+						for k = 1, #SEAT_ORDER - 1 do
+							local cand = SEAT_ORDER[(pos - 1 + stepDir * k) % #SEAT_ORDER + 1]
+							if buttons[cand].Visible and not seatTaken[cand] then
+								index = cand
+								break
+							end
+						end
+					end
+					if index ~= nil and index ~= mySeat and buttons[index] and buttons[index].Visible then
 						Remotes.get("SwitchSeat"):FireServer(index)
 					end
 				end
 				return Enum.ContextActionResult.Sink
-			end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four, Enum.KeyCode.Zero)
+			end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four, Enum.KeyCode.Zero,
+				Enum.KeyCode.DPadLeft, Enum.KeyCode.DPadRight)
 		else
 			ContextActionService:UnbindAction("SeatKeys")
 		end
@@ -108,7 +139,9 @@ local function startSeatPanel(player: Player)
 			return
 		end
 		setActive(true)
+		padHint.Visible = UserInputService.GamepadEnabled
 		local mine = seat:GetAttribute("SeatIndex")
+		mySeat = if typeof(mine) == "number" then mine else nil
 		local present: { [number]: Seat | VehicleSeat } = {}
 		for _, d in model:GetChildren() do
 			local idx = d:GetAttribute("SeatIndex")
@@ -119,6 +152,7 @@ local function startSeatPanel(player: Player)
 		for index, b in buttons do
 			local s = present[index]
 			b.Visible = s ~= nil
+			seatTaken[index] = s ~= nil and s.Occupant ~= nil and index ~= mine
 			if s then
 				local taken = s.Occupant ~= nil
 				b.BackgroundColor3 = if index == mine then Color3.fromRGB(255, 170, 40) elseif taken then Color3.fromRGB(120, 45, 45) else Color3.fromRGB(40, 44, 52)
