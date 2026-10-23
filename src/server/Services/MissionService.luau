@@ -1,7 +1,7 @@
 --!strict
 -- Миссии ночи (сюжет: docs/story.md). Ночь = миссия из Config.Missions[ночь]: точка миссии (место шатра района), задача и «поток» зомби,
 -- который идёт со всех сторон на расстоянии 100–150 студов от точки (ZombieService.setAnchor), пока задача не выполнена.
---   scout   — разведка: обойти контрольные точки вокруг места шатра (радиус — в Config.Missions, по умолчанию 50–100 студов; поток без конца)
+--   scout   — разведка: обойти контрольные точки вокруг места шатра (радиус — radius в Config.Missions, по умолчанию Config.ScoutRadius 50–100 студов; поток без конца)
 --   build   — установка шатра: убить N мутантов, затем удерживать «Установить шатёр» у места (поток без конца)
 --   escort  — конвой: грузовик с двумя солдатами объезжает контрольные точки и встаёт на дороге у места шатра (ConvoyService);
 --             с install = true после приезда ещё надо установить шатёр
@@ -12,6 +12,7 @@
 -- Статус для клиентов — атрибуты ReplicatedStorage: MissionTitle, MissionText, MissionKind.
 
 local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -128,9 +129,21 @@ function MissionService.anchorPosition(index: number): Vector3
 	return playerSpawnPosition()
 end
 
--- Контрольные точки района: одни и те же для разведки и конвоя (детерминированно по номеру района), 50–100 студов от места шатра.
--- grid — для конвоя: точки ставятся на дорогу (ближайшая проходимая клетка в 45 студах), без дороги точка не берётся
-local function districtPoints(anchorIndex: number, count: number, grid: RoadRoute.Grid?): { Vector3 }
+-- Пешком можно дойти от a до b (PathfindingService): точка не должна оказаться за забором или на недоступном пятачке.
+-- Сам сервис недоступен (pcall) — считаем, что дойти можно.
+local function walkable(a: Vector3, b: Vector3): boolean
+	local path = PathfindingService:CreatePath({ AgentRadius = 2, AgentHeight = 5, AgentCanJump = true })
+	local ok = pcall(function()
+		path:ComputeAsync(a + Vector3.new(0, 3, 0), b + Vector3.new(0, 3, 0))
+	end)
+	return not ok or path.Status ~= Enum.PathStatus.NoPath
+end
+
+-- Контрольные точки района: одни и те же для разведки и конвоя (детерминированно по номеру района), радиус radius (по умолчанию
+-- Config.ScoutRadius = 50–100 студов) от места шатра, поровну по кругу: сектор на каждую точку.
+-- grid — для конвоя: точки ставятся на дорогу (ближайшая проходимая клетка в 45 студах), без дороги точка не берётся;
+-- без grid — на землю (Roads / Ground / Grass, ровно, без крыши над головой) и только там, куда можно дойти пешком от места шатра
+local function districtPoints(anchorIndex: number, count: number, grid: RoadRoute.Grid?, radiusRange: { number }?): { Vector3 }
 	local seeded = Random.new(7000 + anchorIndex * 31)
 	local anchor = MissionService.anchorPosition(anchorIndex)
 	local list: { Vector3 } = {}
@@ -139,10 +152,14 @@ local function districtPoints(anchorIndex: number, count: number, grid: RoadRout
 		tries += 1
 		-- на дороге сектор, где её нет, не должен держать поиск: сектора идут по кругу, каждая попытка — следующий
 		local sector = if grid then (tries - 1) % count else #list
-		local angle = (sector / count) * math.pi * 2 + (seeded:NextNumber() - 0.5) * 0.8
-		local radius = 50 + seeded:NextNumber() * 50
+		local angle = (sector / count) * math.pi * 2 + (seeded:NextNumber() - 0.5) * 0.3
+		local rr = radiusRange or Config.ScoutRadius
+		local radius = rr[1] + seeded:NextNumber() * (rr[2] - rr[1])
 		local x, z = anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius
 		local p: Vector3? = if grid then grid.snap(Vector3.new(x, 0, z), 45) else groundAt(x, z)
+		if p and not grid and not walkable(anchor, p) then
+			p = nil
+		end
 		if p then
 			local dup = false
 			for _, q in list do
@@ -401,7 +418,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	-- место миссии отмечено высоким маяком: команда идёт к нему сама (телепорта нет)
 	makeBeacon(anchor, PLACE_LABELS[kind] or PLACE_LABELS.classic, Config.PlaceBeacon.Color, Config.PlaceBeacon.Height)
 	if kind == "scout" then
-		for i, pos in districtPoints(def.anchor, def.points or 3) do
+		for i, pos in districtPoints(def.anchor, def.points or 3, nil, def.radius) do
 			table.insert(state.points, { pos = pos, part = makeBeacon(pos, string.format("Точка %d", i)), done = false })
 		end
 	elseif kind == "build" then
@@ -410,7 +427,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		-- маршрут: контрольные точки района ближайшим соседом от базы, затем дорога у места шатра
 		local start = playerSpawnPosition()
 		local grid = RoadRoute.grid()
-		local pts = districtPoints(def.anchor, def.points or 3, grid)
+		local pts = districtPoints(def.anchor, def.points or 3, grid, def.radius)
 		local route: { Vector3 } = {}
 		local from = start
 		while #pts > 0 do

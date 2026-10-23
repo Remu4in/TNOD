@@ -33,6 +33,9 @@ function GeneralService.brief(night: number): (string, { string })
 		local text = string.gsub(line, "{(%w+)}", function(key: string): string
 			if key == "points" then
 				return tostring(def.points or 3)
+			elseif key == "radius" then
+				local r = def.radius or Config.ScoutRadius
+				return string.format("%d–%d", r[1], r[2])
 			elseif key == "kills" then
 				return tostring(def.kills or 15)
 			elseif key == "seconds" then
