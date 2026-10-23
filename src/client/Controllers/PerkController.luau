@@ -119,6 +119,7 @@ function PerkController.start()
 				return
 			end
 			picked = true
+			endsAt = 0 -- таймер больше не перетирает «Ждём остальных игроков…», окно закроет task.delay ниже
 			Remotes.get("PerkChoose"):FireServer(currentId, index)
 			title.Text = "Выбрано: " .. options[index].name
 			timer.Text = "Ждём остальных игроков…"
@@ -211,6 +212,11 @@ function PerkController.start()
 	end)
 	RunService.Heartbeat:Connect(function()
 		if overlay.Visible and endsAt > 0 then
+			-- сервер сам выбирает перк по таймауту (30 + 1 с) и клиенту не сообщает — закрываем окно сами
+			if os.clock() >= endsAt + 1.5 then
+				close()
+				return
+			end
 			local left = math.max(0, endsAt - os.clock())
 			timer.Text = string.format("Выбор: 1 / 2 / 3 или клик · осталось %d с (иначе случайно)", math.ceil(left))
 		end
