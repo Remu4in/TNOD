@@ -1685,10 +1685,13 @@ function ZombieService.partKind(part: BasePart): string
 	return partKind(part)
 end
 
-function ZombieService.enqueue(types: { string }, hpMult: number, wave: number?)
-	hpMultiplier = hpMult
-	waveNumber = wave or 1
-	damageMultiplier = WaveMath.damageMultiplier(Config.Waves, waveNumber)
+-- hpMult не указан — множители текущей ночи не меняются (добавка зомби без сброса силы волны)
+function ZombieService.enqueue(types: { string }, hpMult: number?, wave: number?)
+	if hpMult then
+		hpMultiplier = hpMult
+		waveNumber = wave or 1
+		damageMultiplier = WaveMath.damageMultiplier(Config.Waves, waveNumber)
+	end
 	for _, t in types do
 		table.insert(queue, t)
 	end
@@ -1760,7 +1763,12 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 			end
 			local n = 0
 			while #queue > 0 and n < Config.Round.SpawnsPerTick and alive < aliveCap do
-				spawnOne(table.remove(queue, 1) :: string)
+				local typeId = table.remove(queue, 1) :: string
+				-- сломанный тип (например, риг без нужного сустава) пропускаем, а не роняем весь цикл спавна
+				local ok, err = pcall(spawnOne, typeId)
+				if not ok then
+					warn(string.format("[ZombieService] не удалось создать зомби %s: %s", typeId, tostring(err)))
+				end
 				n += 1
 				alive += 1
 			end
@@ -1771,8 +1779,7 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 	-- на новую точку появления и сбрасываем путь
 	task.spawn(function()
 		local progress: { [Zombie]: { best: number, at: number } } = {}
-		while true do
-			task.wait(3)
+		local function relocateLost()
 			local count = 0
 			for _ in active do
 				count += 1
@@ -1814,18 +1821,35 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 				table.clear(progress)
 			end
 		end
+		while true do
+			task.wait(3)
+			local ok, err = pcall(relocateLost)
+			if not ok then
+				warn("[ZombieService] перенос потерявшихся: " .. tostring(err))
+			end
+		end
 	end)
 
-	-- единый цикл ИИ
+	-- единый цикл ИИ. Ошибка в одном зомби не должна останавливать всех: такого зомби убираем из мира насовсем
+	-- (не в пул — он может быть сломан) и пишем предупреждение.
+	local function stepZombie(z: Zombie, now: number, dt: number)
+		think(z, now, dt)
+		animate(z)
+	end
 	task.spawn(function()
 		while true do
 			local dt = task.wait(Config.Round.AiTick)
 			local now = os.clock()
 			pathBudget = PATH_BUDGET
-			for _, z in active do
+			for model, z in active do
 				if z.alive then
-					think(z, now, dt)
-					animate(z)
+					local ok, err = pcall(stepZombie, z, now, dt)
+					if not ok then
+						warn(string.format("[ZombieService] ошибка ИИ у %s, зомби убран: %s", z.def.id, tostring(err)))
+						z.alive = false
+						active[model] = nil
+						model:Destroy()
+					end
 				end
 			end
 		end

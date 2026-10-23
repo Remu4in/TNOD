@@ -2,6 +2,7 @@
 -- Точка входа сервера: строим первую локацию, поднимаем сервисы, запускаем цикл раундов.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local Services = script:WaitForChild("Services")
 
@@ -31,7 +32,10 @@ if scs and not scs:FindFirstChild("Health") then
 	stub.Parent = scs
 end
 
--- Тестовые стенды у спавна: оружие бесплатно (меню), вызов волны мутантов, особых, уборка
+-- Тестовые стенды у спавна: оружие бесплатно (меню), вызов волны мутантов, особых, уборка.
+-- Только в Studio: на живом сервере любой игрок отменял бы ночь и брал оружие бесплатно, даже если флаг забыли выключить.
+local testStandsOn = Config.TestStands and RunService:IsStudio()
+
 local function buildTestStands(sp: Vector3)
 	local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
 	local function pad(name: string, offset: Vector3, color: Color3, label: string, action: string, onTrigger: (Player) -> ())
@@ -75,10 +79,10 @@ local function buildTestStands(sp: Vector3)
 		["Особые"] = { "Military", "Military", "Chemist", "Dark", "Dark", "BucketHead", "BucketHead", "Crawler", "Crawler" },
 	}
 	pad("TestWave", Vector3.new(-4, 0, 8), Color3.fromRGB(220, 60, 60), "ВОЛНА ЗОМБИ", "Вызвать волну", function()
-		ZombieService.enqueue(waves["Волна"], 1)
+		ZombieService.enqueue(waves["Волна"]) -- без множителей: сила текущей ночи не сбрасывается
 	end)
 	pad("TestSpecial", Vector3.new(4, 0, 8), Color3.fromRGB(150, 60, 200), "ОСОБЫЕ ЗОМБИ", "Вызвать особых", function()
-		ZombieService.enqueue(waves["Особые"], 1)
+		ZombieService.enqueue(waves["Особые"])
 	end)
 	pad("TestClear", Vector3.new(12, 0, 8), Color3.fromRGB(70, 160, 90), "ОТМЕНИТЬ ВОЛНУ (ДЕНЬ)", "Убрать мутантов, включить день", function()
 		ZombieService.clearAll()
@@ -146,7 +150,7 @@ if Config.Explore then
 		end
 		debugFn.Parent = game:GetService("ServerStorage")
 	end
-	if Config.TestStands then
+	if testStandsOn then
 		buildTestStands(exploreMap.playerSpawn)
 	end
 	print("[NightOfTheDead] режим осмотра: " .. exploreMap.name)
@@ -180,7 +184,7 @@ VehicleService.init()
 for i, cf in map.carSpawns or {} do
 	VehicleService.spawn((map.carNames :: { string })[i], cf)
 end
-if Config.TestStands then
+if testStandsOn then
 	buildTestStands(map.playerSpawn)
 end
 

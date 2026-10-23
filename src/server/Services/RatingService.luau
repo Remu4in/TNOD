@@ -99,10 +99,18 @@ function RatingService.finishRound(players: { Player })
 		local gained = (p:GetAttribute("Rating") :: number?) or 0
 		local total = DataService.addRating(p, gained)
 		local store = board
-		if store and total and gained > 0 then
+		-- в лидерборд пишем только из настоящего профиля (не по умолчанию после сбоя загрузки и не занятого другим сервером)
+		-- и только вверх: устаревшая сумма не должна откатить запись игрока
+		if store and total and gained > 0 and DataService.canSave(p) then
+			local value = math.floor(total)
 			task.spawn(function()
 				local ok, err = pcall(function()
-					(store :: OrderedDataStore):SetAsync(tostring(p.UserId), total)
+					(store :: OrderedDataStore):UpdateAsync(tostring(p.UserId), function(old: any)
+						if typeof(old) == "number" and old >= value then
+							return nil -- запись не меньше нашей: не трогаем
+						end
+						return value
+					end)
 				end)
 				if not ok then
 					warn("[RatingService] лидерборд: " .. tostring(err))

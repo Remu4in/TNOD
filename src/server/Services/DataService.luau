@@ -140,6 +140,11 @@ function DataService.get(player: Player): Profile?
 	return profiles[player]
 end
 
+-- Профиль загружен и записывается (не по умолчанию после сбоя и не занят другим сервером)
+function DataService.canSave(player: Player): boolean
+	return canSave[player] == true
+end
+
 -- Итоги раунда в профиль + обновление атрибутов для HUD/лидерборда
 function DataService.recordRound(player: Player, wave: number, kills: number, revives: number)
 	local p = profiles[player]
@@ -175,8 +180,16 @@ function DataService.init()
 
 	local function onJoin(player: Player)
 		load(player)
+		if not player.Parent then
+			-- игрок вышел, пока профиль грузился: PlayerRemoving уже прошёл и ничего не сохранил,
+			-- а load успел поставить блокировку — снимаем её и не держим запись
+			save(player, true)
+			profiles[player] = nil
+			canSave[player] = nil
+			return
+		end
 		local p = profiles[player]
-		if p and player.Parent then
+		if p then
 			player:SetAttribute("BestWave", p.bestWave)
 			player:SetAttribute("RatingTotal", p.rating)
 		end
