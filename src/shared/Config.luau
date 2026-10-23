@@ -971,7 +971,7 @@ export type MissionDef = { type: string, title: string, anchor: number, points: 
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
 	TruckHp = 1000,
-	TruckSpeed = 3.5, -- студов в секунду (решение Руслана 2026-10-24: в 4 раза медленнее прежних 14; по дорогам колонна на ночах 8 и 12 при 2,5 не успевала; игрок идёт 13)
+	TruckSpeed = 9.5, -- студов в секунду. ТЕСТ (2026-10-24): все конвои за ~3 минуты (самый длинный маршрут, ночь 12, ~1614 студов → ~170 с); в релизе вернуть к ~3,5 или короче маршруты
 	SoldierHp = 300,
 	SoldierDps = 50, -- урон по зомби в секунду каждого солдата
 	SoldierShotInterval = 0.25,
@@ -1016,6 +1016,7 @@ Config.MissionMoveTeam = false -- true: в начале ночи команду 
 -- Минимум убийств игроков на любой ночи для засчёта миссии: линейно от Solo (1 игрок) до Full (FullPlayers игроков, по числу в начале ночи);
 -- с Config.Waves.CountScale масштабируется как убийства метро (не меньше 5)
 Config.MissionMinKills = { Solo = 15, Full = 30, FullPlayers = 6 }
+Config.MissionKillsFloor = 3 -- ТЕСТ: нижняя граница убийств после масштаба CountScale (минимум убийств, зачистка шатра, метро); в релизе удалить (было 5)
 Config.MissionReturnTeam = true -- с рассветом команда возвращается в магазин
 -- Маяк места миссии (MissionService): высокий луч, виден издалека; подпись зависит от типа миссии
 Config.PlaceBeacon = { Height = 160, Color = Color3.fromRGB(255, 200, 60) }

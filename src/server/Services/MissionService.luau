@@ -186,7 +186,7 @@ local function minKillsFor(players: number): number
 	local K = Config.MissionMinKills
 	local k = math.clamp((players - 1) / math.max(1, K.FullPlayers - 1), 0, 1)
 	local base = math.floor(K.Solo + (K.Full - K.Solo) * k + 0.5)
-	return math.max(5, math.floor(base * (Config.Waves.CountScale or 1) + 0.5))
+	return math.max(Config.MissionKillsFloor, math.floor(base * (Config.Waves.CountScale or 1) + 0.5))
 end
 
 local function setStatus(title: string, text: string, kind: string)
@@ -596,7 +596,7 @@ function MissionService.update(dt: number): string?
 			result = "done"
 		end
 	elseif kind == "build" then
-		local need = state.def.kills or 15
+		local need = math.max(Config.MissionKillsFloor, math.floor((state.def.kills or 15) * (Config.Waves.CountScale or 1) + 0.5))
 		if state.phase == "kill" then
 			text = string.format("Зачистите зону: убито %d из %d", math.min(state.kills, need), need)
 			if state.kills >= need then
@@ -653,7 +653,7 @@ function MissionService.update(dt: number): string?
 			end
 		end
 	elseif kind == "metro" then
-		local need = math.max(5, math.floor((state.def.kills or 40) * (Config.Waves.CountScale or 1) + 0.5))
+		local need = math.max(Config.MissionKillsFloor, math.floor((state.def.kills or 40) * (Config.Waves.CountScale or 1) + 0.5))
 		if state.phase == "approach" then
 			text = "Спуститесь в метро: лестница у входа"
 		else
