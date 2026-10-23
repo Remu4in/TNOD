@@ -37,7 +37,7 @@ local function handleOf(tool: Tool): BasePart?
 end
 
 -- Дуло: самая передняя (-Z) точка мешей оружия в системе координат рукояти (считаем один раз на оружие)
-local muzzleCache: { [Tool]: Vector3 } = {}
+local muzzleCache: { [Tool]: Vector3 } = setmetatable({}, { __mode = "k" }) :: any -- слабые ключи: Tool выбрасываются и пересоздаются
 
 local function muzzleOffset(tool: Tool): Vector3
 	local cached = muzzleCache[tool]

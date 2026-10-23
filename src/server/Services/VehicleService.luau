@@ -16,7 +16,9 @@ local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local Remotes = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Remotes"))
 local RateLimit = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("RateLimit"))
+local Validate = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Validate"))
 local EconomyService = require(script.Parent:WaitForChild("EconomyService"))
+local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
 
 local VehicleService = {}
 
@@ -369,7 +371,7 @@ function VehicleService.spawn(modelName: string, cf: CFrame): Model?
 	prompt.Parent = root
 	prompt.Triggered:Connect(function(player: Player)
 		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if not hum or hum.Health <= 0 or state.wrecked or hum.SeatPart then
+		if not hum or hum.Health <= 0 or state.wrecked or hum.SeatPart or not PlayerService.isUp(player) then
 			return
 		end
 		for _, index in { 1, 2, 3, 4, 0 } do
@@ -389,6 +391,9 @@ local rng = Random.new()
 
 -- Машина, в чьём месте стрелка сидит игрок (и у которой есть пулемёт)
 local function gunnerState(player: Player): VehicleState?
+	if not PlayerService.isUp(player) then
+		return nil
+	end
 	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	local seat = hum and hum.SeatPart
 	local model = seat and seat.Parent
@@ -404,7 +409,7 @@ local function onTurretAim(player: Player, dir: unknown)
 		return
 	end
 	local d = dir :: Vector3
-	if d.X ~= d.X or d.Magnitude < 0.5 or d.Magnitude > 1.5 then
+	if not Validate.finiteVector(d) or d.Magnitude < 0.5 or d.Magnitude > 1.5 then
 		return
 	end
 	local st = gunnerState(player)
@@ -536,7 +541,7 @@ local function onSwitchSeat(player: Player, index: unknown)
 	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	local current = hum and hum.SeatPart
 	local state = current and current.Parent and vehicles[current.Parent :: Model]
-	if not hum or not current or not state or state.wrecked then
+	if not hum or not current or not state or state.wrecked or not PlayerService.isUp(player) then
 		return
 	end
 	local target = state.seats[index]

@@ -64,8 +64,9 @@ function SfxController.start()
 	local camera = workspace.CurrentCamera
 
 	-- Зомби: удар (по счётчику SwingAt), голос по очереди у ближайших
-	local nextVoice: { [Model]: number } = {}
-	local swingSeen: { [Model]: number } = {}
+	-- слабые ключи: модели зомби из пула приходят новыми экземплярами, старые не должны копиться
+	local nextVoice: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
+	local swingSeen: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
 	local acc = 0
 	RunService.Heartbeat:Connect(function(dt)
 		acc += dt

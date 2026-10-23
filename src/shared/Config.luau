@@ -106,8 +106,6 @@ Config.Explore = false -- true: режим осмотра без раундов
 Config.TestStands = true -- стенды у спавна: тестовое оружие бесплатно, вызов волн мутантов (выключить перед релизом)
 Config.TentMarkRadius = 250 -- метки на военные палатки каждое утро в этом радиусе, студов (1 стад ≈ 0,28 м)
 Config.ExploreZombies = true -- в режиме осмотра ставить проверочных зомби (Зомби 3.0)
-Config.ExploreAutoZombies = false -- true: проверочные зомби сами пополняются; false: волны вызываются кнопками у спавна
-Config.ExploreZombieTypes = { "Walker", "Runner", "Brute", "Military", "Chemist", "Dark", "BucketHead", "Crawler" } -- что показывать (боссов добавьте сами: BossBuff, BossGarg, BossStrong)
 
 -- Машины (VehicleService / VehicleController): аркадная езда
 Config.Vehicle = {

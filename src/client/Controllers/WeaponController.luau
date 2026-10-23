@@ -214,8 +214,11 @@ function WeaponController.start()
 		end
 	end)
 
+	local hooked: { [Instance]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 	local function hookTool(tool: Instance)
-		if tool:IsA("Tool") and tool:GetAttribute("WeaponId") then
+		-- ChildAdded срабатывает при каждой экипировке: подключаемся к Tool один раз
+		if tool:IsA("Tool") and tool:GetAttribute("WeaponId") and not hooked[tool] then
+			hooked[tool] = true
 			tool.Activated:Connect(function()
 				if UserInputService.TouchEnabled then
 					tryShoot()

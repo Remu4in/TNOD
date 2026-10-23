@@ -70,6 +70,9 @@ end
 
 local function down(player: Player, h: Humanoid)
 	player:SetAttribute("Downed", true)
+	if h.SeatPart then
+		h.Sit = false -- упавший не водит и не стреляет из машины
+	end
 	h.Health = 1
 	h.WalkSpeed = Config.Player.DownedWalkSpeed
 	h.JumpPower = 0

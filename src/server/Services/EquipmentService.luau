@@ -10,6 +10,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
+local Validate = require(Shared:WaitForChild("Validate"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
 
@@ -162,7 +163,7 @@ local function onPlace(player: Player, position: unknown)
 		return
 	end
 	local pos = position :: Vector3
-	if pos.X ~= pos.X or pos.Z ~= pos.Z or math.abs(pos.X) > 1e5 or math.abs(pos.Z) > 1e5 or math.abs(pos.Y) > 1e4 then
+	if not Validate.finiteVector(pos, 1e5) then
 		return
 	end
 	local char = player.Character
@@ -201,7 +202,7 @@ local function onPlace(player: Player, position: unknown)
 	end
 	params.FilterDescendantsInstances = exclude
 	local hit = workspace:Raycast(pos + Vector3.new(0, 6, 0), Vector3.new(0, -14, 0), params)
-	if not hit then
+	if not hit or math.abs(hit.Position.Y - root.Position.Y) > 8 then -- не на крышу над собой
 		return
 	end
 	local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
