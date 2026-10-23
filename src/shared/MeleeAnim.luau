@@ -151,14 +151,19 @@ local function karambit(u: number): InspectFrame
 	return { grip = CF(0.05 * lift, 0.3 * lift, -0.1 * lift) * ANG(spin, 0, 0) * ANG(0, rad(35) * twist, rad(-20) * twist) }
 end
 
--- Бабочка: раскрыть-сложить рукояти вокруг шарнира (две половинки в разные стороны), провернуть и закрыть
+-- Бабочка: классический флип балисонга. Рукояти вращаются вокруг шарнира у основания клинка (две половинки в разные стороны:
+-- верхняя уходит вверх-назад, нижняя вниз-вперёд), на каждом обороте они то складываются вдоль клинка, то раскрываются —
+-- клинок «закрывается и открывается»; всего два полных оборота, нижняя рукоять чуть отстаёт. Нож при этом повёрнут боком к камере,
+-- чтобы поворот рукоятей был виден, и слегка покачивается в кисти.
 local function butterfly(u: number): InspectFrame
 	local lift = bell(u * 1.05)
-	local fan = ease((u - 0.1) / 0.3) - ease((u - 0.45) / 0.3) -- 0 → 1 → 0: рукояти расходятся
-	local flip = ease((u - 0.5) / 0.4) * math.pi * 2
+	local present = ease(u / 0.12) - ease((u - 0.9) / 0.1)
+	local top = ease((u - 0.1) / 0.78) -- 0 → 1: прогресс верхней рукояти
+	local bottom = ease((u - 0.16) / 0.74)
+	local sway = math.sin(u * math.pi * 4) * 0.08
 	return {
-		grip = CF(0.05 * lift, 0.35 * lift, -0.1 * lift) * ANG(flip, 0, rad(-20) * lift),
-		parts = { BiteHandle = ANG(rad(170) * fan, 0, 0), Handle = ANG(rad(-170) * fan, 0, 0) },
+		grip = CF(0.05 * lift, 0.3 * lift, -0.1 * lift) * ANG(rad(-10) * present, rad(55) * present, rad(-15) * present + sway),
+		parts = { Handle = ANG(-math.pi * 4 * top, 0, 0), BiteHandle = ANG(math.pi * 4 * bottom, 0, 0) },
 	}
 end
 
@@ -167,7 +172,7 @@ MeleeAnim.INSPECT = {
 	Knife = { time = 2.2, frame = knife },
 	Katana = { time = 2.6, frame = katana },
 	Karambit = { time = 1.5, frame = karambit },
-	Balisong = { time = 1.8, frame = butterfly },
+	Balisong = { time = 2.8, frame = butterfly },
 } :: { [string]: { time: number, frame: (number) -> InspectFrame } }
 
 return MeleeAnim
