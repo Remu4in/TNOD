@@ -98,9 +98,25 @@ local function build()
 	local hum = model:FindFirstChildOfClass("Humanoid")
 	local look2 = Vector3.new(look.X, 0, look.Z)
 	look2 = if look2.Magnitude > 0.01 then look2.Unit else Vector3.new(0, 0, 1)
-	-- на землю: низ модели на ground
-	local ground = workspace:Raycast(position + Vector3.new(0, 20, 0), Vector3.new(0, -60, 0))
-	local gy = if ground then ground.Position.Y else position.Y
+	-- на землю: низ модели на ground. Маркер уже стоит на земле (position — его низ). Без маркера луч идёт вниз от точки на 3 студа выше
+	-- и только по земле, дорогам и базе: раньше он начинался на 20 студов выше и садил генерала на крышу ворот базы
+	local gy = position.Y
+	if not marker then
+		local include: { Instance } = {}
+		for _, name in { "Ground", "Roads", "Grass", "Base" } do
+			local f = workspace:FindFirstChild(name)
+			if f then
+				table.insert(include, f)
+			end
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = include
+		local ground = workspace:Raycast(position + Vector3.new(0, 3, 0), Vector3.new(0, -30, 0), params)
+		if ground then
+			gy = ground.Position.Y
+		end
+	end
 	model:PivotTo(CFrame.lookAt(Vector3.new(position.X, gy + 3.2, position.Z), Vector3.new(position.X, gy + 3.2, position.Z) + look2))
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") then
