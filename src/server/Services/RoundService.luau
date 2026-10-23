@@ -258,7 +258,7 @@ local function day(first: boolean)
 	BuildingService.openShop()
 	if currentMap then
 		PlayerService.setSpawn(currentMap.playerSpawn)
-		if wave > 0 and Config.MissionMoveTeam then
+		if wave > 0 and Config.MissionReturnTeam then
 			MissionService.returnTeam(currentMap.playerSpawn)
 		end
 	end

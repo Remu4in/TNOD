@@ -1,13 +1,14 @@
 --!strict
 -- Миссии ночи (сюжет: docs/story.md). Ночь = миссия из Config.Missions[ночь]: точка миссии (место шатра района), задача и «поток» зомби,
 -- который идёт со всех сторон на расстоянии 100–150 студов от точки (ZombieService.setAnchor), пока задача не выполнена.
---   scout   — разведка: обойти контрольные точки в 50–100 студах от места шатра (поток без конца)
+--   scout   — разведка: обойти контрольные точки вокруг места шатра (радиус — в Config.Missions, по умолчанию 50–100 студов; поток без конца)
 --   build   — установка шатра: убить N мутантов, затем удерживать «Установить шатёр» у места (поток без конца)
 --   escort  — конвой: грузовик с двумя солдатами объезжает контрольные точки и встаёт на дороге у места шатра (ConvoyService);
 --             с install = true после приезда ещё надо установить шатёр
 --   defend  — защита шатра: продержаться SECONDS секунд рядом (поток без конца)
 --   clear / classic — убить всю волну
 -- Места шатров — ServerStorage.Assets.TentSites.Site_<n> (шатёр + припасы + автомат), шатёр базы (Workspace.Base.Tent) — точка 5.
+-- Игроки идут к месту миссии сами (Config.MissionMoveTeam = false), место отмечено высоким маяком.
 -- Статус для клиентов — атрибуты ReplicatedStorage: MissionTitle, MissionText, MissionKind.
 
 local Players = game:GetService("Players")
@@ -51,6 +52,11 @@ local objects: Folder? = nil
 local rng = Random.new()
 local installedSites: { [number]: { instances: { Instance }, shop: Vector3?, vending: { string } } } = {}
 local suppliedSites: { [number]: { Instance } } = {}
+
+-- Подписи маяка места миссии по типу
+local PLACE_LABELS: { [string]: string } = {
+	scout = "Район разведки", build = "Место шатра", escort = "Место шатра", defend = "Шатёр: оборона", metro = "Вход в метро", classic = "Зона боя", clear = "Зона боя",
+}
 
 local GROUND_FOLDERS = { "Roads", "Ground", "Grass" }
 
@@ -166,20 +172,23 @@ local function notify(text: string, seconds: number)
 	Remotes.get("Notify"):FireAllClients(text, seconds)
 end
 
-local function makeBeacon(pos: Vector3, label: string): BasePart
+-- Маяк: тонкий неоновый луч с подписью. По умолчанию — синий маячок точки (30 студов); для места миссии — высокий золотой (Config.PlaceBeacon),
+-- он виден через весь район, чтобы команда шла к нему сама
+local function makeBeacon(pos: Vector3, label: string, color: Color3?, height: number?): BasePart
+	local h = height or 30
 	local part = Instance.new("Part")
 	part.Name = "ScoutBeacon"
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanQuery = false
 	part.Material = Enum.Material.Neon
-	part.Color = Color3.fromRGB(80, 200, 255)
+	part.Color = color or Color3.fromRGB(80, 200, 255)
 	part.Transparency = 0.35
-	part.Size = Vector3.new(2, 30, 2)
-	part.Position = pos + Vector3.new(0, 15, 0)
+	part.Size = Vector3.new(2, h, 2)
+	part.Position = pos + Vector3.new(0, h / 2, 0)
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(200, 44)
-	gui.StudsOffset = Vector3.new(0, 18, 0)
+	gui.StudsOffset = Vector3.new(0, h / 2 + 3, 0)
 	gui.AlwaysOnTop = true
 	gui.MaxDistance = 1500
 	gui.Parent = part
@@ -188,7 +197,7 @@ local function makeBeacon(pos: Vector3, label: string): BasePart
 	text.BackgroundTransparency = 1
 	text.Font = Enum.Font.GothamBold
 	text.TextScaled = true
-	text.TextColor3 = Color3.fromRGB(120, 220, 255)
+	text.TextColor3 = (color or Color3.fromRGB(120, 220, 255)):Lerp(Color3.new(1, 1, 1), 0.35)
 	text.TextStrokeTransparency = 0.3
 	text.Text = label
 	text.Parent = gui
@@ -379,6 +388,8 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	if Config.MissionMoveTeam and kind ~= "escort" then
 		moveTeam(anchor)
 	end
+	-- место миссии отмечено высоким маяком: команда идёт к нему сама (телепорта нет)
+	makeBeacon(anchor, PLACE_LABELS[kind] or PLACE_LABELS.classic, Config.PlaceBeacon.Color, Config.PlaceBeacon.Height)
 	if kind == "scout" then
 		for i, pos in districtPoints(def.anchor, def.points or 3) do
 			table.insert(state.points, { pos = pos, part = makeBeacon(pos, string.format("Точка %d", i)), done = false })
