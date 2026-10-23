@@ -63,6 +63,9 @@ type Zombie = {
 	throwing: boolean, -- замах — бросок колбы, а не удар -- анимации рига: idle, walk
 	animName: string, -- какая анимация сейчас играет
 	animSpeed: number, -- скорость шага, при которой анимация ходьбы идёт 1:1
+	poseGen: number, -- растёт при сбросе позы (resetAttack, release): отложенные возвраты поз прошлой жизни не срабатывают
+	jointTweens: { [string]: Tween }, -- активный твин каждого сустава (замах, удар, реакция на попадание)
+	vaultTween: Tween?, -- активный твин корня при перелезании забора
 }
 
 local map: Types.MapInfo
@@ -85,6 +88,23 @@ local PATH_BUDGET = 8
 local PATH_REFRESH = 1.5
 local PATH_GOAL_DRIFT = 8
 local pathBudget = 0
+
+-- Лучи по миру без зомби (перелезание, колба): фильтр задаётся в init, когда создана папка зомби
+local worldParams = RaycastParams.new()
+worldParams.FilterType = Enum.RaycastFilterType.Exclude
+-- Лучи без зомби и без персонажа цели (прямая видимость, телепорт тёмного): по одному на персонажа, слабые ключи
+local targetParams: { [Instance]: RaycastParams } = setmetatable({}, { __mode = "k" }) :: any
+
+local function paramsExcluding(char: Instance): RaycastParams
+	local params = targetParams[char]
+	if not params then
+		params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { container, char }
+		targetParams[char] = params
+	end
+	return params
+end
 
 local function weld(a: BasePart, b: BasePart)
 	local w = Instance.new("WeldConstraint")
@@ -526,6 +546,9 @@ local function acquire(typeId: string): Zombie
 		vaultLockUntil = 0,
 		headKill = false,
 		eyes = eyes,
+		poseGen = 0,
+		jointTweens = {},
+		vaultTween = nil,
 	}
 end
 
@@ -597,12 +620,38 @@ end
 local EYE_NORMAL = Color3.fromRGB(255, 60, 40)
 local EYE_ALERT = Color3.fromRGB(255, 240, 160)
 
+-- Один активный твин на сустав: новый отменяет прежний, сброс позы (cancelPose) — все
+local function tweenJoint(z: Zombie, name: string, info: TweenInfo, c0: CFrame)
+	local old = z.jointTweens[name]
+	if old then
+		old:Cancel()
+	end
+	local tween = TweenService:Create(z.welds[name], info, { C0 = c0 })
+	z.jointTweens[name] = tween
+	tween:Play()
+end
+
+-- Сброс позы (смерть, пул, новая жизнь): твины суставов и перелезания не доигрывают на следующем зомби из пула
+local function cancelPose(z: Zombie)
+	z.poseGen += 1
+	for _, tween in z.jointTweens do
+		tween:Cancel()
+	end
+	table.clear(z.jointTweens)
+	local vault = z.vaultTween
+	if vault then
+		z.vaultTween = nil
+		vault:Cancel()
+	end
+	z.root.Anchored = false
+end
+
 -- deg: 0 — руки в покое; иначе поворот рук вокруг плеч на столько градусов (положительный — вперёд и вверх)
 local function armPose(z: Zombie, deg: number, time: number)
 	for _, name in { "LeftArm", "RightArm" } do
 		local pivot = CFrame.new(z.pivots[name])
 		local target = if deg == 0 then z.rest[name] else pivot * CFrame.Angles(math.rad(deg), 0, 0) * pivot:Inverse() * z.rest[name]
-		TweenService:Create(z.welds[name], TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = target }):Play()
+		tweenJoint(z, name, TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), target)
 	end
 end
 
@@ -625,10 +674,7 @@ end
 -- Колба химика: летит по дуге к месту, где стоял игрок; в точке падения — взрыв яда и лужа
 local function flaskBurst(def: Config.ZombieDef, landing: Vector3)
 	local fl = def.flask :: { range: number, minRange: number, cooldown: number, damage: number, tick: number, radius: number }
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { container }
-	local hit = workspace:Raycast(landing + Vector3.new(0, 4, 0), Vector3.new(0, -12, 0), params)
+	local hit = workspace:Raycast(landing + Vector3.new(0, 4, 0), Vector3.new(0, -12, 0), worldParams)
 	local ground = if hit then hit.Position else landing
 	local puddle = Instance.new("Part")
 	puddle.Name = "PoisonPuddle"
@@ -703,13 +749,13 @@ local function resetAttack(z: Zombie)
 	z.nextSpecial = 0
 	z.windupUntil = 0
 	z.windupTarget = nil
+	cancelPose(z)
 	for name, w in z.welds do
 		w.C0 = z.rest[name]
 	end
 	z.slowUntil = 0
 	z.vaultResetAt = 0
 	z.vaultLockUntil = 0
-	z.root.Anchored = false
 	z.headKill = false
 	setEyes(z, false)
 end
@@ -735,15 +781,45 @@ function ZombieService.unregisterTarget(model: Model)
 	npcTargets[model] = nil
 end
 
+-- Цели на такт ИИ: живые игроки и цели-НПС собираются один раз за такт (collectTargets), а не для каждого зомби
+local tickPlayers: { Player } = {}
+local tickPlayerRoots: { BasePart } = {}
+local tickNpcModels: { Model } = {}
+local tickNpcRoots: { BasePart } = {}
+
+local function collectTargets()
+	table.clear(tickPlayers)
+	table.clear(tickPlayerRoots)
+	table.clear(tickNpcModels)
+	table.clear(tickNpcRoots)
+	for _, p in Players:GetPlayers() do
+		if PlayerService.isUp(p) then
+			local char = p.Character
+			local r = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if r then
+				table.insert(tickPlayers, p)
+				table.insert(tickPlayerRoots, r)
+			end
+		end
+	end
+	for model, t in npcTargets do
+		if t.root.Parent then
+			table.insert(tickNpcModels, model)
+			table.insert(tickNpcRoots, t.root)
+		end
+	end
+end
+
 local function nearestNpc(pos: Vector3): (Model?, BasePart?, number)
 	local best: Model? = nil
 	local bestRoot: BasePart? = nil
 	local bestDist = math.huge
-	for model, t in npcTargets do
-		if t.root.Parent then
-			local d = (t.root.Position - pos).Magnitude
+	for i, root in tickNpcRoots do
+		local model = tickNpcModels[i]
+		if npcTargets[model] and root.Parent then
+			local d = (root.Position - pos).Magnitude
 			if d < bestDist then
-				best, bestRoot, bestDist = model, t.root, d
+				best, bestRoot, bestDist = model, root, d
 			end
 		end
 	end
@@ -769,8 +845,9 @@ local function finishStrike(z: Zombie, now: number)
 	npcWindup[z] = nil
 	armPose(z, z.armStrike, 0.08)
 	z.model:SetAttribute("SwingAt", os.clock()) -- клиент по этому звучит ударом (SfxController)
+	local poseGen = z.poseGen
 	task.delay(0.3, function()
-		if z.alive then
+		if z.alive and z.poseGen == poseGen then
 			armPose(z, 0, 0.25)
 		end
 	end)
@@ -906,11 +983,11 @@ local function partKind(part: BasePart): string
 end
 
 local function jerk(z: Zombie, name: string, offset: CFrame, tIn: number, tOut: number)
-	local w = z.welds[name]
-	TweenService:Create(w, TweenInfo.new(tIn, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = offset * z.rest[name] }):Play()
+	tweenJoint(z, name, TweenInfo.new(tIn, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), offset * z.rest[name])
+	local poseGen = z.poseGen
 	task.delay(tIn, function()
-		if z.alive then
-			TweenService:Create(w, TweenInfo.new(tOut, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), { C0 = z.rest[name] }):Play()
+		if z.alive and z.poseGen == poseGen then
+			tweenJoint(z, name, TweenInfo.new(tOut, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), z.rest[name])
 		end
 	end)
 end
@@ -968,6 +1045,7 @@ end
 local function release(z: Zombie)
 	z.alive = false
 	active[z.model] = nil
+	cancelPose(z)
 	for _, track in z.tracks do
 		track:Stop(0)
 	end
@@ -1240,14 +1318,10 @@ local function nearestUpCharacter(pos: Vector3): (Player?, BasePart?, number)
 	local best: Player? = nil
 	local bestRoot: BasePart? = nil
 	local bestDist = math.huge
-	for _, p in PlayerService.upPlayers() do
-		local char = p.Character
-		local r = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if r then
-			local d = (r.Position - pos).Magnitude
-			if d < bestDist then
-				best, bestRoot, bestDist = p, r, d
-			end
+	for i, r in tickPlayerRoots do
+		local d = (r.Position - pos).Magnitude
+		if d < bestDist then
+			best, bestRoot, bestDist = tickPlayers[i], r, d
 		end
 	end
 	return best, bestRoot, bestDist
@@ -1283,10 +1357,7 @@ local function teleportNear(z: Zombie, targetRoot: BasePart, now: number)
 	z.nextSpecial = now + tp.cooldown
 	local angle = math.random() * math.pi * 2
 	local spot = targetRoot.Position + Vector3.new(math.cos(angle), 0, math.sin(angle)) * (tp.distance + math.random() * 4)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { container, targetRoot.Parent :: Instance }
-	local hit = workspace:Raycast(spot + Vector3.new(0, 30, 0), Vector3.new(0, -60, 0), params)
+	local hit = workspace:Raycast(spot + Vector3.new(0, 30, 0), Vector3.new(0, -60, 0), paramsExcluding(targetRoot.Parent :: Instance))
 	if hit then
 		z.model:PivotTo(CFrame.new(hit.Position + Vector3.new(0, 4, 0)))
 		z.waypoints = nil
@@ -1295,11 +1366,8 @@ local function teleportNear(z: Zombie, targetRoot: BasePart, now: number)
 end
 
 local function hasLineOfSight(z: Zombie, targetRoot: BasePart): boolean
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { container, targetRoot.Parent :: Instance }
 	local from = z.head.Position
-	return workspace:Raycast(from, targetRoot.Position - from, params) == nil
+	return workspace:Raycast(from, targetRoot.Position - from, paramsExcluding(targetRoot.Parent :: Instance)) == nil
 end
 
 local function think(z: Zombie, now: number, dt: number)
@@ -1338,11 +1406,8 @@ local function think(z: Zombie, now: number, dt: number)
 		return
 	end
 	if z.stuckTime > 1 and now >= z.vaultResetAt then
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = { container }
 		local look = z.root.CFrame.LookVector
-		local hit = workspace:Raycast(pos + Vector3.new(0, 1, 0), look * 4, params)
+		local hit = workspace:Raycast(pos + Vector3.new(0, 1, 0), look * 4, worldParams)
 		if hit and string.sub(hit.Instance.Name, 1, 5) == "Fence" then
 			local start = z.root.CFrame
 			local base = Vector3.new(hit.Position.X, pos.Y, hit.Position.Z)
@@ -1352,10 +1417,20 @@ local function think(z: Zombie, now: number, dt: number)
 			z.vaultResetAt = now + 2.2 -- пауза до следующего перелезания
 			z.stuckTime = 0
 			z.root.Anchored = true
+			-- твин хранится в z.vaultTween: смерть, пул или перенос отменяют его (cancelPose), отменённый дальше не идёт
 			local up = TweenService:Create(z.root, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = apex })
-			up.Completed:Once(function()
+			z.vaultTween = up
+			up.Completed:Once(function(state: Enum.PlaybackState)
+				if z.vaultTween ~= up or state ~= Enum.PlaybackState.Completed then
+					return
+				end
 				local down = TweenService:Create(z.root, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { CFrame = landing })
-				down.Completed:Once(function()
+				z.vaultTween = down
+				down.Completed:Once(function(downState: Enum.PlaybackState)
+					if z.vaultTween ~= down or downState ~= Enum.PlaybackState.Completed then
+						return
+					end
+					z.vaultTween = nil
 					z.root.Anchored = false
 				end)
 				down:Play()
@@ -1746,6 +1821,7 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 	container = Instance.new("Folder")
 	container.Name = "Zombies"
 	container.Parent = workspace
+	worldParams.FilterDescendantsInstances = { container }
 
 	PhysicsService:RegisterCollisionGroup(COLLISION_GROUP)
 	-- зомби не толкаются друг с другом (толпа не застревает в окнах)
@@ -1833,6 +1909,11 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 								progress[z] = { best = dist, at = now, gen = z.gen }
 							elseif now - pr.at > 25 and dist > 30 then
 								local pos = pickSpawnPosition()
+								if z.vaultTween then
+									-- перелезал забор: твин больше не тянет корень обратно к забору
+									cancelPose(z)
+									z.vaultLockUntil = 0
+								end
 								z.model:PivotTo(CFrame.new(pos))
 								z.gen += 1
 								z.waypoints = nil
@@ -1864,22 +1945,44 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 		think(z, now, dt)
 		animate(z)
 	end
+	-- Бюджет поиска путей раздаётся по кругу: такт начинается с зомби, следующего за последним получившим путь,
+	-- иначе при полном числе зомби пути получали бы всегда одни и те же (первые в обходе хэш-таблицы active).
+	local order: { Zombie } = {}
+	local startAt = 1
 	task.spawn(function()
 		while true do
 			local dt = task.wait(Config.Round.AiTick)
 			local now = os.clock()
 			pathBudget = PATH_BUDGET
-			for model, z in active do
-				if z.alive then
+			collectTargets()
+			table.clear(order)
+			for _, z in active do
+				table.insert(order, z)
+			end
+			local n = #order
+			if startAt > n then
+				startAt = 1
+			end
+			local nextStart = startAt
+			local spent = false
+			for k = 0, n - 1 do
+				local i = (startAt + k - 1) % n + 1
+				local z = order[i]
+				if z.alive and active[z.model] == z then
 					local ok, err = pcall(stepZombie, z, now, dt)
 					if not ok then
 						warn(string.format("[ZombieService] ошибка ИИ у %s, зомби убран: %s", z.def.id, tostring(err)))
 						z.alive = false
-						active[model] = nil
-						model:Destroy()
+						active[z.model] = nil
+						z.model:Destroy()
+					end
+					if not spent and pathBudget <= 0 then
+						spent = true
+						nextStart = i % n + 1
 					end
 				end
 			end
+			startAt = nextStart
 		end
 	end)
 
