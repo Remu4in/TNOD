@@ -277,6 +277,48 @@ local function buildBlockModel(def: Config.ZombieDef): Model
 	return finishModel(model, def, root, 3 * s - 1 * s)
 end
 
+-- Украшения боссов (B_Buff, B_Garg) лежат внутри невидимых деталей тела (Torso.Model.…) и ничем не сварены: у B_Buff они падали на землю и
+-- лежали там, а невидимое тело бегало отдельно; у B_Garg были заякорены и висели на месте. Привариваем каждую несваренную деталь
+-- к ближайшей родительской детали (к конечности) в том виде, как они стоят в шаблоне; на физику, столкновения и пули они не влияют.
+local function weldLooseParts(model: Model)
+	local welded: { [Instance]: boolean } = {}
+	for _, d in model:GetDescendants() do
+		if d:IsA("WeldConstraint") then
+			if d.Part0 then
+				welded[d.Part0] = true
+			end
+			if d.Part1 then
+				welded[d.Part1] = true
+			end
+		elseif d:IsA("JointInstance") then
+			if d.Part0 then
+				welded[d.Part0] = true
+			end
+			if d.Part1 then
+				welded[d.Part1] = true
+			end
+		end
+	end
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") and not welded[d] and d.Name ~= "HumanoidRootPart" then
+			local parent: Instance? = d.Parent
+			while parent and not parent:IsA("BasePart") do
+				parent = parent.Parent
+			end
+			if parent and parent:IsA("BasePart") then
+				local w = Instance.new("WeldConstraint")
+				w.Part0 = parent
+				w.Part1 = d
+				w.Parent = d
+				d.Anchored = false
+				d.Massless = true
+				d.CanCollide = false
+				d.CanQuery = false -- попадания принимают части тела (Head, Torso…), а не украшения
+			end
+		end
+	end
+end
+
 -- Риг R6 из библиотеки ServerStorage.Assets.Zombies (Config.ZombieRigs): случайная модель из пула типа, живой Humanoid, суставы Motor6D.
 -- Попадания принимают сами части тела (Head, Torso, руки, ноги); корень-невидимка попаданий не принимает.
 local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): Model?
@@ -299,6 +341,7 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 	local model = src:Clone()
 	model.Name = "Zombie_" .. def.id
 	model:ScaleTo(if rigDef.absolute then rigDef.scale else rigDef.scale * def.scale)
+	weldLooseParts(model)
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	humanoid.WalkSpeed = def.speed
 	humanoid.JumpHeight = 3
