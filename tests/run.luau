@@ -3,6 +3,8 @@
 -- Код выхода 1 при падениях.
 
 local WaveMath = require("../src/shared/WaveMath")
+local Ballistics = require("../src/shared/Ballistics")
+local RateLimit = require("../src/shared/RateLimit")
 
 local Tuning = {
 	StartCounts = { 20, 30, 35, 40 },
@@ -274,7 +276,6 @@ end)
 
 test("уровень угрозы 3+ приближает особых на волну", function()
 	local threat = threatOf({ { "Rifle" } }, 3)
-	check((WaveMath.composition(Tuning, 5, 1, threat).Brute or 0) == 0 or true, "волна 5 допускает")
 	check((WaveMath.composition(Tuning, 5, 1, threat).Brute or 0) > 0, "громилы уже на 5-й при винтовке")
 	eq(WaveMath.composition(Tuning, 5, 1).Brute, nil, "без оружия — нет")
 end)
@@ -328,6 +329,114 @@ test("экономика: за волну не зависит от размер�
 		sb += b[id] * n
 	end
 	check(math.abs(sa - sb) < 1e-6, "пул одинаков для 1 и 4 игроков")
+end)
+
+-- Ballistics ---------------------------------------------------------------------------------------------------------
+
+local Aim: Ballistics.Aim = {
+	adsFov = 55, adsSpreadMul = 0.4, recoilPitch = 1.2, recoilYaw = 0.5, recoilGrow = 0.5,
+	resetTime = 0.4, bloom = 0.1, bloomMax = 1.5, push = 0, stagger = 0,
+}
+local function stateOf(over: { ads: boolean?, speed: number?, airborne: boolean?, burst: number? }?): Ballistics.State
+	local o = over or {}
+	return { ads = o.ads or false, speed = o.speed or 0, airborne = o.airborne or false, burst = o.burst or 0 }
+end
+
+test("баллистика: первый одиночный выстрел точно в центр", function()
+	local x, y = Ballistics.pelletOffset(1, 0, 1)
+	eq(x, 0, "x")
+	eq(y, 0, "y")
+end)
+
+test("баллистика: одиночные выстрелы 1..50 в круге радиуса 0,85", function()
+	for i = 1, 50 do
+		local x, y = Ballistics.pelletOffset(1, i, 1)
+		check(math.sqrt(x * x + y * y) <= 0.85 + 1e-9, "выстрел " .. i)
+	end
+end)
+
+test("баллистика: у дроби первая дробина в центре, остальные в единичном круге", function()
+	local x, y = Ballistics.pelletOffset(1, 0, 8)
+	eq(x, 0, "x")
+	eq(y, 0, "y")
+	for i = 2, 8 do
+		local px, py = Ballistics.pelletOffset(i, 0, 8)
+		check(math.sqrt(px * px + py * py) <= 1, "дробина " .. i)
+	end
+end)
+
+test("баллистика: две дробины — без деления на 0", function()
+	local x, y = Ballistics.pelletOffset(2, 0, 2)
+	check(x == x and y == y and math.abs(x) < math.huge and math.abs(y) < math.huge, "конечное смещение")
+end)
+
+test("баллистика: смещение воспроизводимо", function()
+	local x1, y1 = Ballistics.pelletOffset(3, 7, 1)
+	local x2, y2 = Ballistics.pelletOffset(3, 7, 1)
+	eq(x1, x2, "x")
+	eq(y1, y2, "y")
+end)
+
+test("разброс: стоя = база; прицел умножает на adsSpreadMul; в воздухе ×2,5", function()
+	local base = 2
+	check(math.abs(Ballistics.spreadDeg(base, Aim, stateOf(), 14) - base) < 1e-9, "стоя")
+	check(math.abs(Ballistics.spreadDeg(base, Aim, stateOf({ ads = true }), 14) - base * Aim.adsSpreadMul) < 1e-9, "ADS")
+	check(math.abs(Ballistics.spreadDeg(base, Aim, stateOf({ airborne = true }), 14) - base * 2.5) < 1e-9, "в воздухе")
+end)
+
+test("разброс: скорость увеличивает, walkSpeed = 0 без деления на 0", function()
+	check(Ballistics.spreadDeg(2, Aim, stateOf({ speed = 14 }), 14) > Ballistics.spreadDeg(2, Aim, stateOf(), 14), "шаг шире стойки")
+	local v = Ballistics.spreadDeg(2, Aim, stateOf({ speed = 14 }), 0)
+	check(v == v and v < math.huge, "walkSpeed = 0")
+end)
+
+test("разброс: раздутие очереди не выше bloomMax", function()
+	local base = 2
+	local capped = Ballistics.spreadDeg(base, Aim, stateOf({ burst = 1000 }), 14)
+	check(math.abs(capped - (base + Aim.bloomMax)) < 1e-9, "потолок раздутия")
+	check(Ballistics.spreadDeg(base, Aim, stateOf({ burst = 3 }), 14) < capped, "ниже потолка")
+end)
+
+test("отдача: в начале очереди нет рыскания, зигзаг воспроизводим", function()
+	local pitch, yaw = Ballistics.recoilStep(Aim, 0)
+	eq(yaw, 0, "рыскание на выстреле 0")
+	check(math.abs(pitch - Aim.recoilPitch) < 1e-9, "подъём в начале = recoilPitch")
+	for i = 0, 20 do
+		local p1, y1 = Ballistics.recoilStep(Aim, i)
+		local p2, y2 = Ballistics.recoilStep(Aim, i)
+		check(p1 == p2 and y1 == y2, "повтор " .. i)
+	end
+	local p12 = Ballistics.recoilStep(Aim, 12)
+	check(math.abs(p12 - Aim.recoilPitch * (1 + Aim.recoilGrow)) < 1e-9, "рост к 12-му выстрелу")
+end)
+
+-- RateLimit (игрок подменён таблицей) -------------------------------------------------------------------------------
+
+test("RateLimit: первый вызов проходит, повтор в интервале — нет", function()
+	local p: any = {}
+	check(RateLimit.allow(p, "A", 1000), "первый")
+	check(not RateLimit.allow(p, "A", 1000), "повтор в интервале")
+	RateLimit.forget(p)
+end)
+
+test("RateLimit: ключи и игроки независимы", function()
+	local p1: any, p2: any = {}, {}
+	check(RateLimit.allow(p1, "A", 1000), "p1 A")
+	check(RateLimit.allow(p1, "B", 1000), "p1 B")
+	check(RateLimit.allow(p2, "A", 1000), "p2 A")
+	check(not RateLimit.allow(p1, "A", 1000), "p1 A повтор")
+	RateLimit.forget(p1)
+	RateLimit.forget(p2)
+end)
+
+test("RateLimit: после forget снова разрешено, нулевой интервал не блокирует", function()
+	local p: any = {}
+	check(RateLimit.allow(p, "A", 1000), "первый")
+	RateLimit.forget(p)
+	check(RateLimit.allow(p, "A", 1000), "после forget")
+	check(RateLimit.allow(p, "Z", 0), "интервал 0, первый")
+	check(RateLimit.allow(p, "Z", 0), "интервал 0, второй")
+	RateLimit.forget(p)
 end)
 
 print(string.format("\nИТОГО: %d тестов, упало %d", total, failed))

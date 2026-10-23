@@ -16,7 +16,7 @@ local NAMES = {
 	"ShotFx", -- сервер → всем: (shooter: Player, origin: Vector3, hits: {Vector3}, weaponId: string)
 	"ReloadFx", -- сервер → всем: (player: Player, weaponId: string) — звук перезарядки
 	"BuyWeapon", -- клиент → сервер: (weaponId: string) — купить/взять оружие из меню (в режиме осмотра бесплатно)
-	"ShopOpen", -- сервер → клиенту: () — открыть меню покупки (терминал на спавне)
+	"ShopOpen", -- сервер → клиенту: () — меню оружия (палатка) или { vendorId, title, greeting, items } — меню НПС-продавца
 	"DropWeapon", -- клиент → сервер: () — выбросить оружие из рук (G); подбор — ProximityPrompt (E) на выброшенном оружии
 	"SwitchSeat", -- клиент → сервер: (index: number) — пересесть в машине на место index (1 водитель, 2–4 пассажиры, 0 турель)
 	"TentMarkers", -- сервер → клиенту: ({ { pos: Vector3, name: string } }) — метки на военные палатки поблизости (пусто — снять)

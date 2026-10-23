@@ -272,3 +272,12 @@
 - **№21 `WeaponController`:** `tool.Activated` подключается один раз на Tool (таблица `hooked` со слабыми ключами).
 - **№22:** `nextVoice`, `swingSeen` (`SfxController`) и `muzzleCache` (`FxController`) — таблицы со слабыми ключами.
 - Проверено в Studio: Source четырёх скриптов совпал с файлами; плейтест, 8 смен оружия — новых ошибок в консоли нет. Не проверено: окно перков (нужен босс), телефонный тап по `Activated`.
+
+
+## 2026-10-23 — ревью кода, пакет G (документация и тесты; находки №28, №29)
+- **`CLAUDE.md`, «Архитектура»:** добавлены 11 серверных сервисов и 11 клиентских контроллеров, исправлено «трассеры — `FxController`», список атрибутов сверен с `SetAttribute(` в `src/server`.
+- **Config:** удалены мёртвые `ExploreAutoZombies` и `ExploreZombieTypes` (нигде не читались). `WeaponSights` оставлен (следующий этап, решение 2026-10-19). Поле `runners` в `Config.Threat.Tiers` не тронуто — ждёт решения Руслана (реализовать «добавку к доле бегунов» или удалить).
+- **`Remotes`:** комментарий `ShopOpen` — `()` (палатка) или таблица продавца `{ vendorId, title, greeting, items }`.
+- **`tests/run.luau`:** убрана пустая проверка `… == 0 or true`; добавлены тесты `Ballistics` (центр первого выстрела, радиусы, дробь, 2 дробины, воспроизводимость, разброс стоя/ADS/воздух/`walkSpeed = 0`/`bloomMax`, отдача) и `RateLimit` (подменённый игрок). Ручные копии Config остаются: `Config` требует `script`, в Luau CLI не загрузить.
+- **`tools/ReleaseCheck.luau`:** страж релиза (Edit, `execute_luau`): `TestStands`, `Waves.CountScale`, `DebugStartNight`, `Explore`; `ShopList`/`WeaponAim` ↔ `Weapons`; `MeleeFx` ↔ `MeleeAnim.STYLES`/`HIT`; типы зомби в составах волн 1–40 (1–6 игроков) ↔ `Zombies`; уникальность имён `Remotes` (по исходнику `NAMES`). Возвращает число проблем. Сейчас находит ровно две: `TestStands = true` и `CountScale = 0.1` — ожидаемо до релиза.
+- Проверено в Studio: Config и Remotes синхронизированы (размер в байтах совпал), `ReleaseCheck` выдал 2 проблемы (см. выше). Не проверено: `luau tests/run.luau` — Luau CLI не установлен, тесты не прогнаны.
