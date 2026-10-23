@@ -28,8 +28,6 @@ local NAMES = {
 	"TurretReload", -- клиент → сервер: () — перезарядка пулемёта машины
 	"PerkOffer", -- сервер → игроку: (offerId: number, options: { { id, name, desc, stacks, max } }, seconds: number) — выбрать перк команды
 	"PerkChoose", -- клиент → сервер: (offerId: number, index: number) — выбранный перк из предложенных (1–3)
-	"PerkOffer", -- сервер → игроку: (offerId: number, options: { { id, name, desc, stacks, max } }, seconds: number) — выбрать перк команды
-	"PerkChoose", -- клиент → сервер: (offerId: number, index: number) — выбранный перк из предложенных (1–3)
 	"Briefing", -- сервер → игроку: (имя: string, заголовок: string, строки: { string }) — окно задания от генерала
 	"Notify", -- сервер → клиенту/всем: (text: string, seconds: number)
 }
@@ -42,7 +40,10 @@ local function folder(): Folder
 		if not f then
 			local nf = Instance.new("Folder")
 			nf.Name = "Remotes"
+			local seen: { [string]: boolean } = {}
 			for _, name in NAMES do
+				assert(not seen[name], "Remotes: имя события объявлено дважды: " .. name)
+				seen[name] = true
 				local ev = Instance.new("RemoteEvent")
 				ev.Name = name
 				ev.Parent = nf

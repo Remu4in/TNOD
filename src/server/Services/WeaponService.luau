@@ -12,6 +12,7 @@ local Perks = require(Shared:WaitForChild("Perks"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
 local Ballistics = require(Shared:WaitForChild("Ballistics"))
+local Validate = require(Shared:WaitForChild("Validate"))
 local MeleeAnim = require(Shared:WaitForChild("MeleeAnim"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
@@ -28,9 +29,10 @@ local rng = Random.new()
 
 local MAX_ORIGIN_OFFSET = 8 -- насколько точка выстрела может отличаться от головы (лаг, камера)
 
-local function isFiniteVector(v: Vector3): boolean
-	return v.X == v.X and v.Y == v.Y and v.Z == v.Z
-		and math.abs(v.X) < 1e6 and math.abs(v.Y) < 1e6 and math.abs(v.Z) < 1e6
+-- Сидящий в машине не стреляет из ручного оружия (пулемёт машины — отдельное событие TurretFire)
+local function isSeated(player: Player): boolean
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	return hum ~= nil and hum.SeatPart ~= nil
 end
 
 -- Шаблоны мешей оружия (AssetService грузит меш по сети, поэтому один раз и с ожиданием)
@@ -274,12 +276,12 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 	end
 	local o = origin :: Vector3
 	local d = direction :: Vector3
-	if not isFiniteVector(o) or not isFiniteVector(d) or d.Magnitude < 0.5 or d.Magnitude > 1.5 then
+	if not Validate.finiteVector(o) or not Validate.finiteVector(d) or d.Magnitude < 0.5 or d.Magnitude > 1.5 then
 		return
 	end
 	d = d.Unit
 	-- 2. состояние игрока и оружия
-	if not PlayerService.isUp(player) then
+	if not PlayerService.isUp(player) or isSeated(player) then
 		return
 	end
 	local weaponId = equippedWeapon(player)
@@ -395,11 +397,11 @@ local function onMelee(player: Player, direction: unknown)
 		return
 	end
 	local d = direction :: Vector3
-	if not isFiniteVector(d) or d.Magnitude < 0.5 or d.Magnitude > 1.5 then
+	if not Validate.finiteVector(d) or d.Magnitude < 0.5 or d.Magnitude > 1.5 then
 		return
 	end
 	d = d.Unit
-	if not PlayerService.isUp(player) then
+	if not PlayerService.isUp(player) or isSeated(player) then
 		return
 	end
 	local weaponId = equippedWeapon(player)
@@ -554,7 +556,7 @@ local function giveWithAmmo(player: Player, weaponId: string, mag: number, reser
 		inv = {}
 		owned[player] = inv
 	end
-	inv[weaponId] = { mag = math.min(mag, def.magSize), reserve = reserve, lastShot = 0, reloadingUntil = 0, burst = 0 }
+	inv[weaponId] = { mag = math.min(mag, magCap(def)), reserve = reserve, lastShot = 0, reloadingUntil = 0, burst = 0 }
 	giveTool(player, weaponId)
 end
 
@@ -573,7 +575,7 @@ local function equipWeapon(player: Player, weaponId: string)
 end
 
 local function onPickup(player: Player, drop: Model)
-	if not drop.Parent or not PlayerService.isUp(player) then
+	if not drop.Parent or drop:GetAttribute("Taken") or not PlayerService.isUp(player) then
 		return
 	end
 	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -594,18 +596,22 @@ local function onPickup(player: Player, drop: Model)
 			return
 		end
 		-- такое оружие уже есть: забираем только патроны
+		drop:SetAttribute("Taken", true)
+		drop:Destroy()
 		local st = owned[player][weaponId]
 		if st.reserve >= 0 then
-			st.reserve += mag + math.max(reserve, 0)
+			st.reserve = math.min(st.reserve + mag + math.max(reserve, 0), reserveCap(def))
 		end
 		syncAmmo(player, weaponId)
 		Remotes.get("Notify"):FireClient(player, "Патроны: " .. def.name, 1.5)
 	else
+		-- дроп гасим до выдачи: giveTool может уступить управление (загрузка меша), и второй игрок подобрал бы тот же ствол
+		drop:SetAttribute("Taken", true)
+		drop:Destroy()
 		giveWithAmmo(player, weaponId, mag, reserve)
 		equipWeapon(player, weaponId)
 		Remotes.get("Notify"):FireClient(player, "Подобрано: " .. def.name, 1.5)
 	end
-	drop:Destroy()
 end
 
 local function spawnDrop(weaponId: string, mag: number, reserve: number, cf: CFrame, velocity: Vector3)
@@ -642,6 +648,9 @@ local function spawnDrop(weaponId: string, mag: number, reserve: number, cf: CFr
 	end)
 	model:PivotTo(cf)
 	model.Parent = dropsFolder()
+	pcall(function()
+		handle:SetNetworkOwner(nil) -- физикой дропа владеет сервер, а не ближайший клиент
+	end)
 	handle.AssemblyLinearVelocity = velocity
 	handle.AssemblyAngularVelocity = Vector3.new(0, 4, 0)
 	Debris:AddItem(model, DROP_LIFETIME)
