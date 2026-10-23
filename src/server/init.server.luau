@@ -181,9 +181,7 @@ SoldierService.init()
 -- ездовые машины: маркеры Workspace.Markers.VehicleSpawn_<Шаблон>
 local VehicleService = require(Services:WaitForChild("VehicleService"))
 VehicleService.init()
-for i, cf in map.carSpawns or {} do
-	VehicleService.spawn((map.carNames :: { string })[i], cf)
-end
+VehicleService.spawnAll(map.carSpawns, map.carNames) -- каждый раунд ставятся заново (RoundService → VehicleService.resetRound)
 if testStandsOn then
 	buildTestStands(map.playerSpawn)
 end

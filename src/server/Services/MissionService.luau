@@ -49,7 +49,7 @@ type State = {
 local current: State? = nil
 local objects: Folder? = nil
 local rng = Random.new()
-local installedSites: { [number]: { instances: { Instance }, shop: Vector3? } } = {}
+local installedSites: { [number]: { instances: { Instance }, shop: Vector3?, vending: { string } } } = {}
 local suppliedSites: { [number]: { Instance } } = {}
 
 local GROUND_FOLDERS = { "Roads", "Ground", "Grass" }
@@ -255,7 +255,7 @@ local function installTent(site: number)
 	if not f or not tent then
 		return
 	end
-	local rec: { instances: { Instance }, shop: Vector3? } = { instances = {}, shop = nil }
+	local rec: { instances: { Instance }, shop: Vector3?, vending: { string } } = { instances = {}, shop = nil, vending = {} }
 	local clone = tent:Clone()
 	clone.Parent = workspace:FindFirstChild("Base") or workspace
 	table.insert(rec.instances, clone)
@@ -269,6 +269,7 @@ local function installTent(site: number)
 			table.insert(rec.instances, mc)
 			if mc:IsA("BasePart") then
 				VendorService.addVending(mc)
+				table.insert(rec.vending, mc.Name)
 			end
 		end
 	end
@@ -283,10 +284,13 @@ function MissionService.isInstalled(site: number): boolean
 	return installedSites[site] ~= nil
 end
 
--- Новый раунд: убираем установленные шатры и припасы
+-- Новый раунд: убираем установленные шатры, их автоматы и припасы
 function MissionService.resetRound()
 	MissionService.finish()
 	for _, rec in installedSites do
+		for _, name in rec.vending do
+			VendorService.removeVending(name)
+		end
 		for _, i in rec.instances do
 			i:Destroy()
 		end
@@ -414,6 +418,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 			end
 		end
 	end
+	ZombieService.setStreamMode(state.infinite)
 	setStatus(def.title, def.hint or "", state.kind)
 	notify(string.format("Ночь %d — %s", night, def.title), 4)
 	return state.infinite, state.kind
@@ -491,6 +496,9 @@ function MissionService.init()
 			end
 		end)
 	end
+	Players.PlayerRemoving:Connect(function(player: Player)
+		metroDebounce[player] = nil
+	end)
 end
 
 -- Раз в 0,25 с: "done" — миссия выполнена, "fail" — провалена; nil — идёт (classic/clear завершает RoundService по числу зомби)
@@ -579,9 +587,15 @@ function MissionService.update(dt: number): string?
 				end
 			end
 		else
+			-- колонна стоит у места шатра: солдаты продолжают стрелять, гибель грузовика до установки — провал
+			-- (иначе грузовик и солдаты остаются целями зомби, но ни на что не влияют)
+			if ConvoyService.update(dt) == "fail" then
+				notify("Конвой уничтожен!", 5)
+				result = "fail"
+			end
 			ZombieService.moveAnchor(state.anchor)
-			text = "Установите шатёр на отмеченном месте: удерживайте E"
-			if state.installed then
+			text = string.format("Установите шатёр: удерживайте E. Прочность грузовика: %d%%", math.floor(ConvoyService.hpFraction() * 100 + 0.5))
+			if state.installed and not result then
 				result = "done"
 			end
 		end
@@ -615,6 +629,7 @@ function MissionService.finish()
 	ZombieService.setAnchor(nil)
 	ZombieService.setSpawnPoints(nil)
 	ZombieService.setAliveCap(nil)
+	ZombieService.setStreamMode(false)
 	setStatus("", "", "")
 end
 
