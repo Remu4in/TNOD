@@ -72,6 +72,8 @@ local queue: { string } = {}
 local hpMultiplier = 1
 local waveNumber = 1
 local damageMultiplier = 1
+local hazardGen = 0 -- растёт на clearAll и рассвете: колбы и лужи прошлой ночи перестают бить
+local streamMode = false -- бесконечный поток миссии: очередь не пустеет, потерявшихся переносим без ожидания конца волны
 local storage: Folder
 local container: Folder
 local onKilled: ((player: Player?, zombie: Zombie) -> ())? = nil
@@ -641,6 +643,7 @@ local function flaskBurst(def: Config.ZombieDef, landing: Vector3)
 	puddle.Color = Color3.fromRGB(110, 220, 70)
 	puddle.Transparency = 0.45
 	puddle.Parent = workspace
+	local gen = hazardGen
 	local function strike(amount: number)
 		for _, p in PlayerService.upPlayers() do
 			local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -653,6 +656,9 @@ local function flaskBurst(def: Config.ZombieDef, landing: Vector3)
 	task.spawn(function()
 		for _ = 1, 6 do
 			task.wait(0.5)
+			if hazardGen ~= gen then
+				break -- рассвет или конец раунда: лужа высыхает сразу
+			end
 			strike(fl.tick)
 		end
 		puddle:Destroy()
@@ -683,9 +689,12 @@ local function launchFlask(z: Zombie, target: Player)
 	flask.Parent = workspace
 	flask.AssemblyLinearVelocity = (landing - origin) / t - 0.5 * gravity * t
 	local def = z.def
+	local gen = hazardGen
 	task.delay(t, function()
 		flask:Destroy()
-		flaskBurst(def, landing)
+		if hazardGen == gen then
+			flaskBurst(def, landing)
+		end
 	end)
 end
 
@@ -1070,6 +1079,11 @@ end
 
 function ZombieService.queueSize(): number
 	return #queue
+end
+
+-- Бесконечный поток миссии (MissionService): перенос потерявшихся работает и при непустой очереди
+function ZombieService.setStreamMode(on: boolean)
+	streamMode = on
 end
 
 -- Свои точки появления на время миссии (метро): список позиций вместо маркеров карты
@@ -1643,6 +1657,7 @@ end
 -- Рассвет: мутанты не переносят солнце — загораются и гибнут за несколько секунд (без награды); очередь спавна сбрасывается
 function ZombieService.sunrise()
 	table.clear(queue)
+	hazardGen += 1
 	for model, z in active do
 		if z.alive then
 			local gen = z.gen
@@ -1707,6 +1722,7 @@ end
 
 function ZombieService.clearAll()
 	table.clear(queue)
+	hazardGen += 1
 	local list = {}
 	for _, z in active do
 		table.insert(list, z)
@@ -1776,15 +1792,21 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 	end)
 
 	-- потерявшиеся зомби: когда их осталось немного, а кто-то 25 с не приближается к игрокам (застрял, не нашёл путь) — переносим
-	-- на новую точку появления и сбрасываем путь
+	-- на новую точку появления и сбрасываем путь. В бесконечном потоке миссии очередь не пустеет — там проверяем всех живых всегда.
+	-- Запись прогресса привязана к поколению зомби (gen): зомби из пула не наследует таймер прошлой жизни.
 	task.spawn(function()
-		local progress: { [Zombie]: { best: number, at: number } } = {}
+		local progress: { [Zombie]: { best: number, at: number, gen: number } } = {}
 		local function relocateLost()
 			local count = 0
 			for _ in active do
 				count += 1
 			end
-			if #queue == 0 and count > 0 and count <= 12 then
+			for z in progress do
+				if not z.alive or active[z.model] ~= z then
+					progress[z] = nil
+				end
+			end
+			if count > 0 and (streamMode or (#queue == 0 and count <= 12)) then
 				local now = os.clock()
 				local roots: { Vector3 } = {}
 				for _, p in PlayerService.upPlayers() do
@@ -1794,6 +1816,12 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 					end
 				end
 				if #roots > 0 then
+					-- цели-НПС (грузовик и солдаты конвоя) тоже считаются: зомби у грузовика не потерялся
+					for _, t in npcTargets do
+						if t.root.Parent then
+							table.insert(roots, t.root.Position)
+						end
+					end
 					for _, z in active do
 						if z.alive and z.state ~= "Breaking" then
 							local dist = math.huge
@@ -1801,8 +1829,8 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 								dist = math.min(dist, (z.root.Position - r).Magnitude)
 							end
 							local pr = progress[z]
-							if not pr or dist < pr.best - 4 then
-								progress[z] = { best = dist, at = now }
+							if not pr or pr.gen ~= z.gen or dist < pr.best - 4 then
+								progress[z] = { best = dist, at = now, gen = z.gen }
 							elseif now - pr.at > 25 and dist > 30 then
 								local pos = pickSpawnPosition()
 								z.model:PivotTo(CFrame.new(pos))
@@ -1812,7 +1840,7 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 								z.pathFailed = false
 								z.stuckTime = 0
 								z.lastPos = pos
-								progress[z] = { best = math.huge, at = now }
+								progress[z] = { best = math.huge, at = now, gen = z.gen }
 							end
 						end
 					end

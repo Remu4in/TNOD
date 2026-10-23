@@ -251,9 +251,19 @@ local function buildVending(marker: BasePart)
 	vendors[marker.Name] = v
 end
 
--- Автомат, установленный по ходу игры (с шатром)
+-- Автомат, установленный по ходу игры (с шатром). Повторная установка с тем же маркером заменяет старый автомат.
 function VendorService.addVending(marker: BasePart)
+	VendorService.removeVending(marker.Name)
 	buildVending(marker)
+end
+
+-- Убрать автомат по имени маркера (сброс раунда: автоматы шатров не переживают раунд)
+function VendorService.removeVending(name: string)
+	local v = vendors[name]
+	if v then
+		vendors[name] = nil
+		v.model:Destroy()
+	end
 end
 
 function VendorService.init(map: Types.MapInfo)

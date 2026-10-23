@@ -26,6 +26,7 @@ local MissionService = require(script.Parent:WaitForChild("MissionService"))
 local PerkService = require(script.Parent:WaitForChild("PerkService"))
 local Perks = require(Shared:WaitForChild("Perks"))
 local RatingService = require(script.Parent:WaitForChild("RatingService"))
+local VehicleService = require(script.Parent:WaitForChild("VehicleService"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 
 local RoundService = {}
@@ -226,6 +227,7 @@ local function startRound()
 	BarricadeService.repairAll()
 	BuildingService.reset()
 	EquipmentService.clearAll()
+	VehicleService.resetRound() -- разбитые машины и пустой пулемёт прошлого раунда — заново
 	EconomyService.resetRound(players)
 	ScoreService.resetRound(players)
 	PerkService.reset()

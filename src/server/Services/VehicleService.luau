@@ -58,6 +58,7 @@ local TICK = 0.1 -- период проверки давки и аварий, с
 
 local container: Folder
 local vehicles: { [Model]: VehicleState } = {}
+local layout: { { name: string, cf: CFrame } } = {} -- расстановка карты (spawnAll): по ней машины ставятся заново каждый раунд
 
 local function occupantPlayer(seat: (Seat | VehicleSeat)?): Player?
 	local hum = seat and seat.Occupant
@@ -383,6 +384,41 @@ function VehicleService.spawn(modelName: string, cf: CFrame): Model?
 		end
 	end)
 	return model
+end
+
+-- Машины по точкам карты (map.carSpawns / map.carNames); расстановка запоминается для resetRound
+function VehicleService.spawnAll(carSpawns: { CFrame }?, carNames: { string }?)
+	table.clear(layout)
+	for i, cf in carSpawns or {} do
+		local name = carNames and carNames[i]
+		if name then
+			table.insert(layout, { name = name, cf = cf })
+			VehicleService.spawn(name, cf)
+		end
+	end
+end
+
+-- Новый раунд: все машины (и разбитые остовы) убираем, сидящих высаживаем, ставим заново целыми и с полным пулемётом
+function VehicleService.resetRound()
+	if not container then
+		return
+	end
+	for model, state in vehicles do
+		for _, seat in state.seats do
+			local occ = seat.Occupant
+			if occ then
+				occ.Sit = false
+			end
+		end
+		model:Destroy()
+	end
+	table.clear(vehicles)
+	for _, c in container:GetChildren() do
+		c:Destroy()
+	end
+	for _, entry in layout do
+		VehicleService.spawn(entry.name, entry.cf)
+	end
 end
 
 -- Пулемёт ---------------------------------------------------------------------------------------------------------------
