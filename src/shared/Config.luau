@@ -1011,6 +1011,9 @@ Config.Briefs = {
 Config.AmbienceVolume = 0.7 -- общая громкость звуков окружения (зомби, машины); по слуху держим тихо
 Config.DebugStartNight = 1 -- для проверок: с какой ночи начинается раунд (в релизе всегда 1)
 Config.MissionMoveTeam = false -- true: в начале ночи команду переносит к точке миссии (по решению Руслана 2026-10-24 — выключено: идут сами)
+-- Минимум убийств игроков на любой ночи для засчёта миссии: линейно от Solo (1 игрок) до Full (FullPlayers игроков, по числу в начале ночи);
+-- с Config.Waves.CountScale масштабируется как убийства метро (не меньше 5)
+Config.MissionMinKills = { Solo = 15, Full = 30, FullPlayers = 6 }
 Config.MissionReturnTeam = true -- с рассветом команда возвращается в магазин
 -- Маяк места миссии (MissionService): высокий луч, виден издалека; подпись зависит от типа миссии
 Config.PlaceBeacon = { Height = 160, Color = Color3.fromRGB(255, 200, 60) }

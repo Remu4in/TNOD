@@ -40,6 +40,8 @@ type State = {
 	hpMult: number,
 	lastText: string,
 	kills: number,
+	playerKills: number, -- убийства игроков (турель и машина — владельцу) за ночь
+	minKills: number, -- сколько их нужно, чтобы миссия засчиталась (Config.MissionMinKills)
 	phase: string, -- escort: "drive" → "install"; build: "kill" → "install"; metro: "approach" → "inside"
 	metroKills: number,
 	sitePart: BasePart?,
@@ -160,6 +162,15 @@ local function roadStopNear(site: Vector3): Vector3
 		end
 	end
 	return best or Vector3.new(site.X + 25, site.Y, site.Z)
+end
+
+-- Минимум убийств игроков для засчёта миссии: от Solo (1 игрок) до Full (FullPlayers игроков), линейно по числу игроков в начале ночи;
+-- тестовый масштаб волн применяется так же, как к убийствам метро
+local function minKillsFor(players: number): number
+	local K = Config.MissionMinKills
+	local k = math.clamp((players - 1) / math.max(1, K.FullPlayers - 1), 0, 1)
+	local base = math.floor(K.Solo + (K.Full - K.Solo) * k + 0.5)
+	return math.max(5, math.floor(base * (Config.Waves.CountScale or 1) + 0.5))
 end
 
 local function setStatus(title: string, text: string, kind: string)
@@ -366,7 +377,7 @@ local function makeSiteMarker(state: State, enabled: boolean)
 end
 
 -- Начало ночи: comp/hpMult — состав и здоровье волны (для подпитки бесконечного потока)
-function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult: number): (boolean, string)
+function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult: number, players: number): (boolean, string)
 	MissionService.finish()
 	local def: Config.MissionDef = Config.Missions[night] or { type = "classic", title = string.format("Ночь %d", night), anchor = 1 }
 	local anchor = MissionService.anchorPosition(def.anchor)
@@ -381,7 +392,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
 		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false,
+		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false,
 	}
 	current = state
 	ZombieService.setAnchor(anchor)
@@ -436,7 +447,10 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 end
 
 local function topUp(state: State)
-	if state.infinite and ZombieService.queueSize() < 8 then
+	-- classic/clear: волна может быть меньше минимума убийств — тогда подсылаем ещё, пока не наберётся
+	local short = not state.infinite and (state.kind == "classic" or state.kind == "clear")
+		and ZombieService.remaining() + state.playerKills < state.minKills
+	if (state.infinite or short) and ZombieService.queueSize() < 8 then
 		-- подпитка потока: обычные зомби волны (боссы приходят один раз, в начале ночи)
 		local normal: WaveMath.Composition = {}
 		for id, n in state.comp do
@@ -449,10 +463,13 @@ local function topUp(state: State)
 end
 
 -- Убийство зомби (для миссии «установка шатра»: сначала нужно зачистить зону)
-function MissionService.onKill()
+function MissionService.onKill(killer: Player?)
 	local s = current
 	if s then
 		s.kills += 1
+		if killer then
+			s.playerKills += 1
+		end
 		if s.kind == "metro" and s.phase == "inside" then
 			s.metroKills += 1
 		end
@@ -573,7 +590,7 @@ function MissionService.update(dt: number): string?
 				notify("Зона зачищена — установите шатёр на отмеченном месте (удерживайте E)", 5)
 			end
 		else
-			text = "Установите шатёр на отмеченном месте: удерживайте E"
+			text = if state.installed then "Шатёр установлен" else "Установите шатёр на отмеченном месте: удерживайте E"
 			if state.installed then
 				result = "done"
 			end
@@ -594,7 +611,7 @@ function MissionService.update(dt: number): string?
 						state.prompt.Enabled = true
 					end
 				else
-					result = "done"
+					state.phase = "hold" -- без установки: ждём, пока команда добьёт минимум убийств
 				end
 			end
 		else
@@ -605,9 +622,17 @@ function MissionService.update(dt: number): string?
 				result = "fail"
 			end
 			ZombieService.moveAnchor(state.anchor)
-			text = string.format("Установите шатёр: удерживайте E. Прочность грузовика: %d%%", math.floor(ConvoyService.hpFraction() * 100 + 0.5))
-			if state.installed and not result then
-				result = "done"
+			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
+			if state.phase == "install" then
+				text = string.format("Установите шатёр: удерживайте E. Прочность грузовика: %d%%", hp)
+				if state.installed and not result then
+					result = "done"
+				end
+			else
+				text = string.format("Конвой на месте. Прочность грузовика: %d%%", hp)
+				if not result then
+					result = "done"
+				end
 			end
 		end
 	elseif kind == "metro" then
@@ -621,8 +646,17 @@ function MissionService.update(dt: number): string?
 			end
 		end
 	elseif kind == "clear" or kind == "classic" then
-		text = string.format("Осталось зомби: %d", (ReplicatedStorage:GetAttribute("ZombiesLeft") :: number?) or 0)
+		local left = ZombieService.remaining()
+		text = string.format("Осталось зомби: %d", left)
+		if left == 0 then
+			result = "done"
+		end
 	end
+	-- на каждой ночи: задача выполнена И убито не меньше минимума (считаются только убийства игроков); время ночи — по-прежнему лимит
+	if result == "done" and state.playerKills < state.minKills then
+		result = nil
+	end
+	text ..= string.format("\nУбито мутантов: %d из %d", math.min(state.playerKills, state.minKills), state.minKills)
 	if text ~= state.lastText then
 		state.lastText = text
 		ReplicatedStorage:SetAttribute("MissionText", text)
