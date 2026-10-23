@@ -263,6 +263,14 @@ function WaveMath.composition(t: WaveTuning, wave: number, players: number, thre
 			free -= n
 		end
 	end
+	-- уровень угрозы: добавка к бегунам (доля от всей волны) за счёт обычных — только на волнах, где бегуны есть по плану
+	if free > 0 and tier.runners > 0 and row.shares.Runner then
+		local n = math.min(free, math.floor(rest * tier.runners + 0.5))
+		if n > 0 then
+			comp.Runner = (comp.Runner or 0) + n
+			free -= n
+		end
+	end
 	if free > 0 then
 		for id, n in split(free, row.shares) do
 			if n > 0 then

@@ -280,6 +280,18 @@ test("уровень угрозы 3+ приближает особых на во
 	eq(WaveMath.composition(Tuning, 5, 1).Brute, nil, "без оружия — нет")
 end)
 
+test("уровень угрозы добавляет бегунов, только где они есть по плану", function()
+	local threat = threatOf({ { "Rifle" } }, 3) -- 3-й уровень: runners = 0,1
+	local plain = WaveMath.composition(Tuning, 4, 1)
+	local armed = WaveMath.composition(Tuning, 4, 1, threat)
+	local plainShare = (plain.Runner or 0) / WaveMath.total(plain)
+	local armedShare = (armed.Runner or 0) / WaveMath.total(armed)
+	check(armedShare > plainShare + 0.03, string.format("доля бегунов выросла (%.2f → %.2f)", plainShare, armedShare))
+	eq(WaveMath.total(armed), WaveMath.zombieCount(Tuning, 4, 1, threat), "сумма состава не меняется")
+	eq(WaveMath.composition(Tuning, 1, 1, threat).Runner, nil, "1-я волна — без бегунов и с оружием")
+	eq(WaveMath.composition(Tuning, 12, 1, threat).Runner, nil, "11–15: бегунов нет по плану — и не добавляем")
+end)
+
 test("урон зомби +3% за волну", function()
 	eq(WaveMath.damageMultiplier(Tuning, 1), 1, "волна 1")
 	check(math.abs(WaveMath.damageMultiplier(Tuning, 11) - 1.3) < 1e-9, "волна 11 = 1,3")

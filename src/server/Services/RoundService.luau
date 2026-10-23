@@ -367,30 +367,32 @@ local function night()
 	if not gameOver then
 		local cleared = missionDone or ZombieService.remaining() == 0
 		RatingService.onNightEnd(wave, cleared, (os.clock() - nightStart) / nightLength)
-		-- награда за волну в общую кассу: целиком, если все на ногах и зачищено; штраф за каждую потерю — доля заработанного за волну
+		-- награда за волну делится поровну на личные счета: стоящему на ногах — его доля целиком, лежащему — DownedRewardFactor от неё
+		-- (в сумме по команде — как прежняя общая награда); штраф за каждую потерю — доля того, что каждый заработал за волну
 		local E = Config.Economy
-		local up, all = 0, 0
-		for _, p in Players:GetPlayers() do
-			all += 1
-			if PlayerService.isUp(p) then
-				up += 1
-			end
-		end
-		local reward = WaveMath.waveReward(E, wave)
-		if all > 0 then
-			reward *= 1 - (1 - E.DownedRewardFactor) * (all - up) / all
-		end
+		local everyone = Players:GetPlayers()
+		local share = if #everyone > 0 then WaveMath.waveReward(E, wave) / #everyone else 0
 		if not cleared then
-			reward *= E.UnclearedRewardFactor
+			share *= E.UnclearedRewardFactor
 		end
-		EconomyService.add(nil, reward * Perks.mult("coins"))
+		share *= Perks.mult("coins")
+		local gotBy: { [Player]: number } = {}
+		for _, p in everyone do
+			local amount = if PlayerService.isUp(p) then share else share * E.DownedRewardFactor
+			EconomyService.add(p, amount)
+			gotBy[p] = amount
+		end
 		local losses = PlayerService.takeLosses()
 		local fine = if losses > 0 then EconomyService.penalize(E.LossPenalty * losses) else 0
-		local text = string.format("Волна %d пройдена: +%d монет в общую кассу", wave, math.floor(reward + 0.5))
-		if fine > 0 then
-			text ..= string.format(", штраф за потери −%d", fine)
+		for _, p in everyone do
+			local text = string.format("Волна %d пройдена: +%d монет", wave, math.floor((gotBy[p] or 0) + 0.5))
+			if fine > 0 then
+				text ..= string.format(" (штраф команды за потери −%d)", fine)
+			end
+			if p.Parent then
+				Remotes.get("Notify"):FireClient(p, text, 5)
+			end
 		end
-		notifyAll(text, 5)
 		if WaveMath.isBossWave(Config.Waves, wave) and cleared then
 			PerkService.openOffers()
 		end
