@@ -88,9 +88,10 @@ function EffectsController.start()
 			FxController.onRemoteShot(shooter, weaponId)
 		end
 	end)
-	Remotes.get("MeleeFx").OnClientEvent:Connect(function(attacker: Player, _weaponId: string)
+	Remotes.get("MeleeFx").OnClientEvent:Connect(function(attacker: Player, weaponId: string)
 		if attacker ~= player then
 			WeaponSfx.swing(headPosition(attacker))
+			FxController.onRemoteSwing(attacker, _weaponId)
 		end
 	end)
 	Remotes.get("ReloadFx").OnClientEvent:Connect(function(who: Player, weaponId: string)
