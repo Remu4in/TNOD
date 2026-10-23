@@ -22,6 +22,7 @@ local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local ConvoyService = require(script.Parent:WaitForChild("ConvoyService"))
 local ShopService = require(script.Parent:WaitForChild("ShopService"))
+local RoadRoute = require(script.Parent:WaitForChild("RoadRoute"))
 local VendorService = require(script.Parent:WaitForChild("VendorService"))
 
 local MissionService = {}
@@ -127,41 +128,39 @@ function MissionService.anchorPosition(index: number): Vector3
 	return playerSpawnPosition()
 end
 
--- Контрольные точки района: одни и те же для разведки и конвоя (детерминированно по номеру района), 50–100 студов от места шатра
-local function districtPoints(anchorIndex: number, count: number): { Vector3 }
+-- Контрольные точки района: одни и те же для разведки и конвоя (детерминированно по номеру района), 50–100 студов от места шатра.
+-- grid — для конвоя: точки ставятся на дорогу (ближайшая проходимая клетка в 45 студах), без дороги точка не берётся
+local function districtPoints(anchorIndex: number, count: number, grid: RoadRoute.Grid?): { Vector3 }
 	local seeded = Random.new(7000 + anchorIndex * 31)
 	local anchor = MissionService.anchorPosition(anchorIndex)
 	local list: { Vector3 } = {}
 	local tries = 0
 	while #list < count and tries < 120 do
 		tries += 1
-		local angle = ((#list) / count) * math.pi * 2 + (seeded:NextNumber() - 0.5) * 0.8
+		-- на дороге сектор, где её нет, не должен держать поиск: сектора идут по кругу, каждая попытка — следующий
+		local sector = if grid then (tries - 1) % count else #list
+		local angle = (sector / count) * math.pi * 2 + (seeded:NextNumber() - 0.5) * 0.8
 		local radius = 50 + seeded:NextNumber() * 50
-		local ground = groundAt(anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius)
-		if ground then
-			table.insert(list, ground)
+		local x, z = anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius
+		local p: Vector3? = if grid then grid.snap(Vector3.new(x, 0, z), 45) else groundAt(x, z)
+		if p then
+			local dup = false
+			for _, q in list do
+				if Vector3.new(p.X - q.X, 0, p.Z - q.Z).Magnitude < 20 then
+					dup = true
+				end
+			end
+			if not dup then
+				table.insert(list, p)
+			end
 		end
 	end
 	return list
 end
 
--- Ближайшая к месту шатра дорога (для остановки конвоя)
-local function roadStopNear(site: Vector3): Vector3
-	local best: Vector3? = nil
-	local bestDist = math.huge
-	for r = 12, 60, 8 do
-		for i = 0, 15 do
-			local a = i / 16 * math.pi * 2
-			local p = groundAt(site.X + math.cos(a) * r, site.Z + math.sin(a) * r, true)
-			if p and r < bestDist then
-				best, bestDist = p, r
-			end
-		end
-		if best then
-			break
-		end
-	end
-	return best or Vector3.new(site.X + 25, site.Y, site.Z)
+-- Ближайшая к месту шатра дорога (для остановки конвоя): проходимая клетка дороги в 150 студах
+local function roadStopNear(grid: RoadRoute.Grid, site: Vector3): Vector3?
+	return grid.snap(site, 150)
 end
 
 -- Минимум убийств игроков для засчёта миссии: от Solo (1 игрок) до Full (FullPlayers игроков), линейно по числу игроков в начале ночи;
@@ -410,7 +409,8 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	elseif kind == "escort" then
 		-- маршрут: контрольные точки района ближайшим соседом от базы, затем дорога у места шатра
 		local start = playerSpawnPosition()
-		local pts = districtPoints(def.anchor, def.points or 3)
+		local grid = RoadRoute.grid()
+		local pts = districtPoints(def.anchor, def.points or 3, grid)
 		local route: { Vector3 } = {}
 		local from = start
 		while #pts > 0 do
@@ -426,9 +426,9 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 			from = p
 			makeBeacon(p, string.format("Маршрут %d", #route))
 		end
-		local stop = roadStopNear(anchor)
+		local stop = roadStopNear(grid, anchor)
 		local groundStart = groundAt(start.X, start.Z) or start
-		if not ConvoyService.start(groundStart, route, stop) then
+		if not stop or not ConvoyService.start(groundStart, route, stop) then
 			warn("[MissionService] конвой не запущен — миссия играется как обычная ночь")
 			state.kind = "classic"
 			state.infinite = false
