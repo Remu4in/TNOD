@@ -495,6 +495,24 @@ for _, pl in { { -19, -5 }, { 5, 19 } } do
 	end
 end
 
+------------------------------------------------------------------------------------------------ плитка на поясе стен (A002): швы тонкими деталями
+-- пояс TileBand (высота 3,2, внутренняя грань на |z| = 37,55 у главной станции и 17,55 у станции B); плитка 2 × 0,8 студа.
+-- Случайные числа не тратим (раскладка остальных деталей не меняется); детали без коллизии и без запросов.
+local wallTiles = folder("WallTiles")
+local function wallSeams(x0: number, x1: number, zInner: number, inward: number)
+	local zc = zInner + inward * 0.03 -- чуть впереди пояса, внутрь зала
+	for x = x0, x1, 2 do
+		box(wallTiles, "Seam", V(0.1, 3.2, 0.06), x, 1.6, zc, seamColor, Enum.Material.SmoothPlastic, { CanCollide = false, CanQuery = false })
+	end
+	for _, y in { 0.8, 1.6, 2.4 } do
+		box(wallTiles, "Seam", V(x1 - x0, 0.08, 0.06), (x0 + x1) / 2, y, zc, seamColor, Enum.Material.SmoothPlastic, { CanCollide = false, CanQuery = false })
+	end
+end
+wallSeams(-158, 158, 37.55, -1)
+wallSeams(-158, 158, -37.55, 1)
+wallSeams(BX0 + 2, BX1 - 2, 17.55, -1)
+wallSeams(BX0 + 2, BX1 - 2, -17.55, 1)
+
 local count = 0
 for _, d in DECOR:GetDescendants() do
 	if d:IsA("BasePart") then
