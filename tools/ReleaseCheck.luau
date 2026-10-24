@@ -1,7 +1,7 @@
 --!nocheck
 -- Страж релиза и согласованности Config. Запуск: Studio (Edit) → execute_luau, ничего не меняет в месте.
 -- Печатает список проблем и возвращает их число (0 — можно выпускать). Проверяет:
---   релизные флаги (TestStands, Waves.CountScale, DebugStartNight, Explore);
+--   релизные флаги (TestStands, Waves.CountScale, DebugStartNight, Explore, Convoy.TruckSpeed, MissionKillsFloor);
 --   ShopList ↔ Weapons, WeaponAim ↔ Weapons, MeleeFx ↔ MeleeAnim, типы зомби в волнах ↔ Zombies, уникальность имён в Remotes.
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
@@ -27,6 +27,13 @@ if Config.DebugStartNight ~= 1 then
 end
 if Config.Explore then
 	problem("Config.Explore = true: режим осмотра включён (в релизе false)")
+end
+-- тестовые настройки прохождения всех ночей (decisions.md, 2026-10-24): конвой быстрее, нижняя граница убийств ниже
+if Config.Convoy.TruckSpeed > 5 then
+	problem("Config.Convoy.TruckSpeed = " .. tostring(Config.Convoy.TruckSpeed) .. " (тест; в релизе ~3,5 — решение Руслана 2026-10-24)")
+end
+if (Config.MissionKillsFloor or 5) < 5 then
+	problem("Config.MissionKillsFloor = " .. tostring(Config.MissionKillsFloor) .. " (тест; в релизе 5)")
 end
 
 -- 2. Магазин и оружие
