@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local ContextActionService = game:GetService("ContextActionService")
 local UserInputService = game:GetService("UserInputService")
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
@@ -227,10 +228,67 @@ function HUDController.start()
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.6),
 		Size = UDim2.fromScale(0.5, 0.05),
-		Text = "Вы упали! Ждите, пока товарищ поднимет вас",
+		Text = "Вы упали! Товарищ может поднять вас",
 		TextColor3 = Color3.fromRGB(255, 90, 90),
 		Visible = false,
 	})
+	-- «Сдаться»: кнопка (Modal освобождает курсор в виде от первого лица) или удержание X / Y на геймпаде.
+	-- Привязка клавиш — только пока игрок лежит, чтобы не занимать их в бою.
+	local giveUp = Instance.new("TextButton")
+	giveUp.Name = "GiveUp"
+	giveUp.AnchorPoint = Vector2.new(0.5, 0)
+	giveUp.Position = UDim2.fromScale(0.5, 0.66)
+	giveUp.Size = UDim2.fromScale(0.2, 0.05)
+	giveUp.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+	giveUp.BackgroundTransparency = 0.2
+	giveUp.Font = Enum.Font.GothamBold
+	giveUp.TextScaled = true
+	giveUp.TextColor3 = Color3.new(1, 1, 1)
+	giveUp.Text = if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then "Сдаться" else "Сдаться (держите X)"
+	giveUp.Modal = true
+	giveUp.Visible = false
+	giveUp.Parent = gui
+	local function sendGiveUp()
+		if player:GetAttribute("Downed") == true then
+			Remotes.get("GiveUp"):FireServer()
+		end
+	end
+	giveUp.Activated:Connect(sendGiveUp)
+	local holdToken = 0
+	local function onGiveUpKey(_: string, state: Enum.UserInputState): Enum.ContextActionResult
+		holdToken += 1
+		if state == Enum.UserInputState.Begin then
+			local token = holdToken
+			task.delay(1, function()
+				if token == holdToken then -- клавишу не отпускали секунду
+					sendGiveUp()
+				end
+			end)
+		end
+		return Enum.ContextActionResult.Sink
+	end
+	local function onDownedChanged()
+		local isDown = player:GetAttribute("Downed") == true
+		giveUp.Visible = isDown
+		if isDown then
+			ContextActionService:BindAction("NotdGiveUp", onGiveUpKey, false, Enum.KeyCode.X, Enum.KeyCode.ButtonY)
+			-- свою подсказку «Поднять» себе не показываем (поднять себя нельзя, сервер это и так отклоняет)
+			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+			if root then
+				task.spawn(function()
+					local prompt = root:WaitForChild("RevivePrompt", 3) -- сервер ставит подсказку в том же кадре, что и Downed
+					if prompt and prompt:IsA("ProximityPrompt") then
+						prompt.Enabled = false
+					end
+				end)
+			end
+		else
+			holdToken += 1
+			ContextActionService:UnbindAction("NotdGiveUp")
+		end
+	end
+	player:GetAttributeChangedSignal("Downed"):Connect(onDownedChanged)
+	onDownedChanged()
 
 	local noticeToken = 0
 	Remotes.get("Notify").OnClientEvent:Connect(function(text: string, seconds: number)
@@ -287,7 +345,13 @@ function HUDController.start()
 		local frac = if h and h.MaxHealth > 0 then math.clamp(h.Health / h.MaxHealth, 0, 1) else 0
 		hpFill.Size = UDim2.fromScale(frac, 1)
 		coins.Text = string.format("● %d", (player:GetAttribute("Coins") :: number?) or 0)
-		downed.Visible = player:GetAttribute("Downed") == true
+		local isDown = player:GetAttribute("Downed") == true
+		downed.Visible = isDown
+		if isDown then
+			local untilAt = (player:GetAttribute("DownedUntil") :: number?) or 0
+			local leftDown = math.max(0, math.ceil(untilAt - workspace:GetServerTimeNow()))
+			downed.Text = string.format("Вы упали! Товарищ может поднять вас (E) · осталось %d с", leftDown)
+		end
 
 		-- энергия: синяя, при спринте ярче, на исходе — красная
 		local energy = (player:GetAttribute("Energy") :: number?) or Config.Player.EnergyMax

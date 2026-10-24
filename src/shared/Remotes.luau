@@ -28,6 +28,7 @@ local NAMES = {
 	"TurretReload", -- клиент → сервер: () — перезарядка пулемёта машины
 	"PerkOffer", -- сервер → игроку: (offerId: number, options: { { id, name, desc, stacks, max } }, seconds: number) — выбрать перк команды
 	"PerkChoose", -- клиент → сервер: (offerId: number, index: number) — выбранный перк из предложенных (1–3)
+	"GiveUp", -- клиент → сервер: () — упавший сдаётся (сразу погибает, не дожидаясь, пока истечёт кровью)
 	"Briefing", -- сервер → игроку: (имя: string, заголовок: string, строки: { string }) — окно задания от генерала
 	"Notify", -- сервер → клиенту/всем: (text: string, seconds: number)
 }

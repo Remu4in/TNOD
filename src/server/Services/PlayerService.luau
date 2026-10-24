@@ -1,10 +1,16 @@
 --!strict
 -- Здоровье, падение и поднятие игроков, реген, возрождение между волнами.
 -- Урон игрокам наносится только через PlayerService.damage на сервере.
+-- HP кончилось → игрок падает (и в одиночной игре): лежит BleedOutTime секунд, товарищ может поднять (E), можно сдаться (GiveUp).
+-- Раунд кончается, когда никто не стоит и никто не лежит (все погибли); жизнь команды поднимает всех, как только все упали.
 
 local Players = game:GetService("Players")
-local Perks = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Perks"))
-local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Config"))
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Perks = require(Shared:WaitForChild("Perks"))
+local Config = require(Shared:WaitForChild("Config"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
+local RateLimit = require(Shared:WaitForChild("RateLimit"))
 local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 
 local PlayerService = {}
@@ -52,6 +58,7 @@ end
 
 local function clearDowned(player: Player)
 	player:SetAttribute("Downed", false)
+	player:SetAttribute("DownedUntil", nil)
 	local char = player.Character
 	if char then
 		local root = char:FindFirstChild("HumanoidRootPart")
@@ -62,14 +69,38 @@ local function clearDowned(player: Player)
 	end
 end
 
+local function anyoneDowned(): boolean
+	for _, p in Players:GetPlayers() do
+		local h = humanoidOf(p)
+		if h and h.Health > 0 and p:GetAttribute("Downed") == true then
+			return true
+		end
+	end
+	return false
+end
+
+-- Никто не стоит: при жизни команды — сразу (поднимет всех), иначе — когда лежащих не осталось (истекли кровью или сдались)
 local function checkAllDown()
-	if not PlayerService.anyoneUp() and onAllDown then
+	if PlayerService.anyoneUp() or not onAllDown then
+		return
+	end
+	local lives = (ReplicatedStorage:GetAttribute("TeamLives") :: number?) or 0
+	if lives > 0 or not anyoneDowned() then
 		(onAllDown :: () -> ())()
 	end
 end
 
+-- Упавший погибает: истёк кровью или сдался (потеря для штрафа волны)
+local function bleedOut(player: Player, h: Humanoid)
+	bleedToken[player] = (bleedToken[player] or 0) + 1
+	clearDowned(player)
+	lostPlayers += 1
+	h.Health = 0
+end
+
 local function down(player: Player, h: Humanoid)
 	player:SetAttribute("Downed", true)
+	player:SetAttribute("DownedUntil", workspace:GetServerTimeNow() + Config.Player.BleedOutTime) -- таймер на экране падения
 	if h.SeatPart then
 		h.Sit = false -- упавший не водит и не стреляет из машины
 	end
@@ -107,9 +138,7 @@ local function down(player: Player, h: Humanoid)
 	bleedToken[player] = token
 	task.delay(Config.Player.BleedOutTime, function()
 		if bleedToken[player] == token and player:GetAttribute("Downed") then
-			clearDowned(player)
-			lostPlayers += 1
-			h.Health = 0
+			bleedOut(player, h)
 		end
 	end)
 	checkAllDown()
@@ -134,13 +163,7 @@ function PlayerService.damage(player: Player, amount: number)
 	end
 	lastDamage[player] = os.clock()
 	if h.Health - amount <= 0 then
-		-- в одиночной игре сразу конец: поднимать некому
-		if #Players:GetPlayers() <= 1 then
-			h.Health = 0
-			checkAllDown()
-		else
-			down(player, h)
-		end
+		down(player, h)
 	else
 		h.Health -= amount
 	end
@@ -227,6 +250,17 @@ function PlayerService.init(spawnAt: Vector3, allDownCallback: () -> ())
 			onCharacter(player, char)
 		end)
 	end
+	-- сдаться: только упавший, сам за себя
+	Remotes.get("GiveUp").OnServerEvent:Connect(function(player: Player)
+		if not RateLimit.allow(player, "GiveUp", 1) or player:GetAttribute("Downed") ~= true then
+			return
+		end
+		local h = humanoidOf(player)
+		if h and h.Health > 0 then
+			bleedOut(player, h)
+		end
+	end)
+
 	Players.PlayerRemoving:Connect(function(player)
 		lastDamage[player] = nil
 		bleedToken[player] = nil
