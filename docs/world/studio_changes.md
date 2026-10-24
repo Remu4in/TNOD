@@ -19,6 +19,7 @@
 | W013 | 2026-10-24 | **нет отдельного «да»** — расширение секции `floor` из W012 (моя ошибка процесса: запустил без вопроса) | `execute_luau` (Edit) | `Shell.HallFloor`, `HallFloorCutL/R`, `ServiceFloor`, `StationB.PlatformN/S`: Marble → `CeramicTiles`, темнее | как W012 (6 деталей, `OrigColor`) | сделано; Руслан вправе откатить |
 | W014 | 2026-10-25 | «Да, оба (по очереди)» | `execute_luau` (Edit): секция `hall` из `tools/DressMetroInterior.luau` | `Decor.HallV2` (111 деталей): плитка стен R2, 3 колонны с коллизией (88,62), (124,62), (88,96), балки, фаски, трубы, кабели, 4 лампы (2 горят, PointLight), ящики/мешки у стен, знак выхода со стрелкой, красная лампа | `Decor.HallV2:Destroy()` | сделано |
 | W015 | 2026-10-25 | то же | `execute_luau` (Edit): секция `tunnels` | `Decor.TunnelsV2` (1268 деталей без коллизии): фаски, рёбра обделки шаг 14, пятна, кабели, мусор по краям; 66 корпусов аварийных ламп; включённые `Lights.Lamp` (y≈607.2) → `#FF5A46` | `Decor.TunnelsV2:Destroy()`; лампы: у `Lights.Lamp` с Material=Neon и y≈607.2 вернуть `Color=#E6EBFF` | сделано |
+| W016 | 2026-10-25 | «Да, запусти Play, проверь reachability и свет, останови. Запись W016» | `start_stop_play` (старт) → `execute_luau` (Server, только чтение: `Checks.reachability`, `Checks.run`) → `screen_capture` → `get_console_output` → `start_stop_play` (стоп) | Изменений в месте нет; Play запущен и остановлен, Studio в Edit | не требуется | сделано |
 
 ## Проверки чтением
 - 2026-10-24: следов тестов этапа 2 **нет**: `Workspace.WF_Test`, `ServerStorage.WorldForge`, `MaterialService.AssistantMaterials` (включая `Material: WF_A002_WallTileWhite`) — не найдены. Откат из чата WorldForge подтверждён. `Workspace.Metro` на месте.
@@ -53,3 +54,9 @@
 
 ## Итог сессии (2026-10-24)
 Осталось в месте: `ServerStorage.WorldForge` (`Checks`, `Vetter` — оставлены по решению Руслана), `ServerStorage.AssetStaging.A017_Bin` (кандидат), `Workspace.Metro.Decor.WallTiles` (W007) и пересобранный `Decor` (W001) — постоянные. `Workspace.WF_Test`, `MaterialService.AssistantMaterials` — нет (проверено чтением). Studio в Edit, место не сохранено — сохранить в Studio.
+
+## Play-проверка после P2 (W016, 2026-10-25)
+`Checks.reachability` от `Metro_Spawn` (агент: радиус 2, высота 5, прыжок): **Success** до `Metro_Exit`, `Metro_Boss`, `Metro_Vending`, `Metro_Objective_1…3`, `Metro_StationB_Spawn`, `Metro_ZombieSpawn_1/6/10/11` и трёх точек R2 у колонн/в дальнем углу ((88,614,66), (92,614,96), (80,614,108)). `NoPath` нет → колонны R2 проход не перекрыли.
+`Checks.run` (maxPartLength 400): ошибок 0, предупреждений 1 (6 × `TunnelDecor.CeilingPipe` 475 студов — навмеш по ним проходит, как и по прежним длинным деталям), частей 7272, скриптов 0, парящих 0.
+Свет в Play: `Lighting` Brightness 3, Ambient 0,27, ClockTime 14,5 (фаза «День») — тоннель в снимке заметно светлее, чем в Edit, красные лампы и рёбра обделки читаются. Ночью (ClockTime ниже) не проверялось.
+Консоль: ошибок Luau нет; только давние предупреждения о звуках без доступа (`rbxassetid://5028439856`, `143657012` и др.), DataStore в Studio недоступен (ожидаемо), заархивированные ассеты — к метро не относятся.
