@@ -176,3 +176,14 @@ Negative (SB §9): `cartoon, toy, bright saturated colors, clean new, sci-fi, ne
 - **`ServerStorage.AssetStaging`**: 216 объектов верхнего уровня, 154 947 потомков (карантин/черновики всей игры, не только метро). На верхнем уровне — **`ModuleScript` `MainModule`** (имя типичное для загрузчиков по ID) и модель **`Rake script`**: в ServerStorage скрипты не выполняются, но в локацию их не переносить; проверить `Vetter` (после установки) и решить с пользователем. Метро-кандидаты: `Railway Track` (A027), `Train with Zombie` и `Train with Zombie (из Workspace)` (A026), `Subway Tunnels V1`, `Tunnel-Tube`, `Potato's Subway Side/Island Platform`, `Sinus Turnstile`, `JNR C62 steam locomotive`, `Train System` (A033 rejected).
 - **`ServerStorage.Tools`**: `Baker`, `Vetter`, `NormalizeR6`, `BakeZombie`, `WeaponBaker`, `VehicleBaker` — модули игры (не WorldForge). `ServerStorage.WorldForge` — **нет**.
 - Изменения статусов: A012 vetted → **placed**, A030 vetted → **placed**, A039 placed → **todo** (в метро нет); подтверждены placed: A011, A013, A024, A025; vetted (в библиотеке, не стоят): A005, A010, A014, A016, A018; stub: A001, A037.
+
+## Проход 2 интерьера (2026-10-24, `tools/DressMetroInterior.luau`)
+| ID | Что сделано | Статус | Дальше |
+|---|---|---|---|
+| A055 (новый) | Оснащение R1: фаски в углах потолка, 3 продольные балки, ржавые полки поперечных, пятна сырости — `Decor.CeilingV2` (A004 частично: настоящих сводов нет, формы — фаски/балки) | placed (procedural) | своды/арки — P2, решить после осмотра |
+| A019 | Корпус-каркас над 57 лампами зала (`Decor.LampHousings`), включённые лампы менее белые; **нового меша нет** | stub → частично (procedural) | аварийная красная и люминесцентная трубка — по-прежнему `gen-mesh`, P2 |
+| A008 | Провисшие кабели (параболы из 6 сегментов) вместо чёрных палок | placed | — |
+| A024 | Вагоны `Train3_A/B`, `Train1_Full`: темнее/ржавее, мемные Decal удалены, `Decor.TrainWear` | placed, restyled | `Train1_Full`: текстура меша растянута — заменить меш (`TrainPicks`) или оставить; салон (A026) — todo |
+| A001 | Мрамор → `CeramicTiles` (матовая плитка, без «молний») по всему залу, R2, R3, станции B | placed (тест принят на платформе 2) | оценить в Play |
+| A011/A012 | Билетные и торговые автоматы: Decal с брендами/«Tickets» удалены, перекрашены; турникеты перекрашены (остались светлыми из-за текстур) | placed, restyled | турникеты — решить: заменить A012 |
+| A015 | База колонн → `CeramicTiles` | placed | — |
