@@ -131,16 +131,16 @@ if RUN.yard then
 	end
 
 	-- земля: пятна грязи, трещины, лужи
-	for _ = 1, 46 do
-		local d = rng:NextNumber(6, 20)
-		box(f, "Dirt", V(0.06, d, d * rng:NextNumber(0.6, 1)), CFrame.new(rng:NextNumber(658, 822), OY + GY + 0.04, rng:NextNumber(40, 132)) * CFrame.Angles(0, rng:NextNumber(0, 3), math.rad(90)), Color3.fromRGB(52, 48, 42), Enum.Material.Ground, { Shape = Enum.PartType.Cylinder, Transparency = rng:NextNumber(0.15, 0.4) })
+	for _ = 1, 70 do
+		local d = rng:NextNumber(3, 9)
+		box(f, "Dirt", V(0.06, d, d * rng:NextNumber(0.6, 1)), CFrame.new(rng:NextNumber(658, 822), OY + GY + 0.04, rng:NextNumber(40, 132)) * CFrame.Angles(0, rng:NextNumber(0, 3), 0) * CFrame.Angles(0, 0, math.rad(90)), Color3.fromRGB(44, 40, 36), Enum.Material.Ground, { Shape = Enum.PartType.Cylinder, Transparency = rng:NextNumber(0.35, 0.6) })
 	end
 	for _ = 1, 34 do
 		box(f, "Crack", V(rng:NextNumber(5, 14), 0.06, 0.18), CFrame.new(rng:NextNumber(660, 820), OY + GY + 0.06, rng:NextNumber(42, 130)) * CFrame.Angles(0, rng:NextNumber(0, 3.1), 0), Color3.fromRGB(22, 22, 24), Enum.Material.Concrete)
 	end
 	for _ = 1, 9 do
-		local d = rng:NextNumber(5, 11)
-		box(f, "Puddle", V(0.05, d, d * rng:NextNumber(0.6, 0.9)), CFrame.new(rng:NextNumber(662, 818), OY + GY + 0.07, rng:NextNumber(46, 130)) * CFrame.Angles(0, rng:NextNumber(0, 3), math.rad(90)), Color3.fromRGB(26, 32, 38), Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Cylinder, Reflectance = 0.2 })
+		local d = rng:NextNumber(3, 7)
+		box(f, "Puddle", V(0.05, d, d * rng:NextNumber(0.6, 0.9)), CFrame.new(rng:NextNumber(662, 818), OY + GY + 0.07, rng:NextNumber(46, 130)) * CFrame.Angles(0, rng:NextNumber(0, 3), 0) * CFrame.Angles(0, 0, math.rad(90)), Color3.fromRGB(20, 22, 24), Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Cylinder, Reflectance = 0.04, Transparency = 0.15 })
 	end
 	-- облупленная разметка парковки у восточной ограды
 	for z = 48, 128, 10 do
@@ -241,7 +241,7 @@ if RUN.yard then
 	end
 	local function tires(x: number, z: number)
 		for i = 0, rng:NextInteger(2, 4) do
-			box(f, "Tire", V(0.8, 2.4, 2.4), CFrame.new(x + rng:NextNumber(-1.2, 1.2), OY + GY + 0.4 + (i % 2) * 0.7, z + rng:NextNumber(-1.2, 1.2)) * CFrame.Angles(math.rad(rng:NextInteger(0, 1) * 90), rng:NextNumber(0, 3), math.rad(90)), Color3.fromRGB(22, 22, 24), Enum.Material.Rubber, { Shape = Enum.PartType.Cylinder })
+			box(f, "Tire", V(0.8, 2.4, 2.4), CFrame.new(x + rng:NextNumber(-1.2, 1.2), OY + GY + 0.4 + (i % 2) * 0.7, z + rng:NextNumber(-1.2, 1.2)) * CFrame.Angles(0, rng:NextNumber(0, 3), 0) * CFrame.Angles(0, 0, math.rad(90)), Color3.fromRGB(22, 22, 24), Enum.Material.Rubber, { Shape = Enum.PartType.Cylinder })
 		end
 		claim(x, z, 3)
 	end
