@@ -5,7 +5,7 @@
 | # | ID | Что | Приор. | Действие | Запрос / промпт | Габарит | Что прислать |
 |---|---|---|---|---|---|---|---|
 | 1 | — | **Сохранить место (Ctrl+S)**; посмотреть двор R5 и станцию B (W017–W020) | P1 | Посмотреть в Studio | — | — | «принято» / замечания |
-| 2 | — | Повторная Play-проверка навмеша: после W020 (обломки у двери R3 убраны) `Metro_Vending` и `Metro_Objective_3` должны стать достижимыми | P1 | «Да» на Play (W021) | — | — | «да» |
+| 2 | — | Навмеш проверен (W021): все 29 точек Success, двор и R3 достижимы — ничего делать не нужно | P1 | — | — | — | — |
 | 3 | A041 | Гнёзда мутантов для `Metro_Objective_1…3` | P1 | Я сам: `generate_mesh` (по 1 тесту на гнездо) — скажите «да» | `organic mutant nest, pale fleshy growth with cocoons and web strands, on floor, abandoned post-apocalyptic subway, realistic, grimy, desaturated grey and rust tones, low-poly game asset, no blood, single object, game prop` | ≈ 6×3×6 | ничего |
 | 4 | A039 | Заграждения во дворе вместо процедурных мешков (проверить ID `12651656400`) | P2 | Найти в Creator Store | `sandbag barricade` / `military sandbag wall low poly` | ≈ 8×3×2, ≤ 300 частей | ID `A039: …` |
 | 5 | A056 | Контейнеры двора (сейчас коробки с рёбрами) | P2 | Найти в Creator Store | `rusty shipping container low poly` / `cargo container` | 20×8,3×8 | ID `A056: …` |
