@@ -315,3 +315,4 @@
 ## 2026-10-24 — модули WorldForge в репозитории
 - Модули `Checks`, `Vetter`, `Kit`, `Baker` из WorldForge лежат в `tools/worldforge/` (источник истины — файлы). В Studio они ставятся в `ServerStorage.WorldForge` по согласию Руслана через `execute_luau` (по одному вызову на модуль), записи — в `docs/world/studio_changes.md`. Не путать с `ServerStorage.Tools` (`Baker`, `Vetter` игры).
 - `tools/DressMetro.luau`: кучи обломков `Rubble` не ставятся в радиусе 8 студов от любого маркера в `Metro.Markers` (спавн, выход, босс, цели, ящики, точки зомби); поток случайных чисел не меняется. Причина: куча лежала на `Metro_Spawn`.
+- 2026-10-24 Навмеш метро проверен в Play (`Checks.reachability`): от `Metro_Spawn` достижимы выход, босс, цели, станция B, ящики и точки зомби (включая дальний тоннель). Длинные детали (>100 студов) **не режем**; в `Checks.run` для метро `maxPartLength = 400`.
