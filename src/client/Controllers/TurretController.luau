@@ -1,5 +1,7 @@
 --!strict
--- Пулемёт машины (место стрелка 0): ствол наводится по камере, зажатая левая кнопка мыши — очередь, R — перезарядка.
+-- Пулемёт машины (место стрелка 0): ствол наводится по камере. Огонь — та же кнопка, что у оружия: зажатая левая кнопка мыши,
+-- ButtonR2 на геймпаде, экранная кнопка «Огонь» на телефоне. Перезарядка — R, ButtonX или экранная кнопка «R».
+-- Действия ContextActionService привязаны, только пока игрок за пулемётом (высокий приоритет: R и ButtonX не уходят оружию).
 -- Патроны и урон считает сервер (VehicleService); здесь только ввод и подсказка с патронами.
 
 local ContextActionService = game:GetService("ContextActionService")
@@ -58,18 +60,58 @@ function TurretController.start()
 			firing = false
 		end
 	end)
-	ContextActionService:BindActionAtPriority("TurretReload", function(_, state)
-		if state == Enum.UserInputState.Begin and current then
-			Remotes.get("TurretReload"):FireServer()
-			return Enum.ContextActionResult.Sink
+
+	-- геймпад и телефон: кнопки появляются, только пока игрок за пулемётом
+	local bound = false
+	local function setBound(on: boolean)
+		if on == bound then
+			return
 		end
-		return Enum.ContextActionResult.Pass
-	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.R)
+		bound = on
+		-- экранная кнопка перезарядки оружия за пулемётом не работает (оружие убрано): прячем её, чтобы не путать с «R» пулемёта
+		local weaponReload = ContextActionService:GetButton("Reload")
+		if weaponReload then
+			weaponReload.Visible = not on
+		end
+		if on then
+			ContextActionService:BindActionAtPriority("TurretFire", function(_, state)
+				if state == Enum.UserInputState.Begin then
+					firing = true
+				elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+					firing = false
+				end
+				return Enum.ContextActionResult.Sink
+			end, true, Enum.ContextActionPriority.High.Value, Enum.KeyCode.ButtonR2)
+			ContextActionService:SetTitle("TurretFire", "Огонь")
+			ContextActionService:BindActionAtPriority("TurretReload", function(_, state)
+				if state == Enum.UserInputState.Begin then
+					Remotes.get("TurretReload"):FireServer()
+				end
+				return Enum.ContextActionResult.Sink
+			end, true, Enum.ContextActionPriority.High.Value, Enum.KeyCode.R, Enum.KeyCode.ButtonX)
+			ContextActionService:SetTitle("TurretReload", "R")
+		else
+			ContextActionService:UnbindAction("TurretFire")
+			ContextActionService:UnbindAction("TurretReload")
+		end
+	end
+
+	-- подсказка под тем устройством, с которого игрок сейчас играет
+	local function controlsHint(): string
+		local last = UserInputService:GetLastInputType()
+		if last == Enum.UserInputType.Touch then
+			return "кнопки «Огонь» и «R» на экране"
+		elseif string.find(last.Name, "Gamepad") then
+			return "R2 — огонь, X — перезарядка"
+		end
+		return "ЛКМ — огонь, R — перезарядка"
+	end
 
 	local lastAim, lastFire = 0, 0
 	RunService.Heartbeat:Connect(function()
 		current = gunnerModel()
 		gui.Enabled = current ~= nil
+		setBound(current ~= nil)
 		if not current then
 			firing = false
 			return
@@ -80,7 +122,7 @@ function TurretController.start()
 			label.Text = "ПЕРЕЗАРЯДКА…"
 		else
 			label.Text = string.format("ПУЛЕМЁТ  %s / %s\
-R — перезарядка", tostring(mag), tostring(reserve))
+%s", tostring(mag), tostring(reserve), controlsHint())
 		end
 		local cam = workspace.CurrentCamera
 		local now = os.clock()

@@ -1,6 +1,6 @@
 --!strict
 -- Руки и оружие от первого лица (viewmodel): вместо рук персонажа в кадре — предплечья и кисти (рукав и кожа), оружие в руках.
--- Работает для огнестрела; холодное оружие пока держится стандартным способом (FxController / MeleeAnim).
+-- Огнестрел и холодное оружие (у холодного кисть и оружие идут по позе взмаха или осмотра: FxController / MeleeAnim).
 -- Движения (всё считается кодом): достать оружие, покачивание при ходьбе, «запаздывание» за мышью, отдача при выстреле,
 -- прицеливание (оружие к центру), бег (оружие опущено), перезарядка по этапам (магазин вынимается и вставляется левой рукой).
 -- Реальные руки и Tool у персонажа скрываются только для самого игрока (LocalTransparencyModifier), другие видят их как обычно.
@@ -10,6 +10,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local MeleeAnim = require(Shared:WaitForChild("MeleeAnim"))
 
 local ViewModel = {}
 
@@ -21,7 +22,7 @@ local HIP = Vector3.new(0.55, -0.55, -1.6) -- где рукоять оружия
 local DRAW_TIME = 0.4
 local MELEE_HAND = Vector3.new(0.6, -0.7, -1.3) -- где кисть с холодным оружием относительно камеры
 
-type GunPart = { part: BasePart, rel: CFrame, isMag: boolean }
+type GunPart = { part: BasePart, rel: CFrame, isMag: boolean, weld: Weld }
 
 type Rig = {
 	tool: Tool,
@@ -126,7 +127,7 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 				clone.Parent = model
 				local rel = weld.C0
 				local isMag = d:GetAttribute("Group") == "Mag"
-				table.insert(parts, { part = clone, rel = rel, isMag = isMag })
+				table.insert(parts, { part = clone, rel = rel, isMag = isMag, weld = weld })
 				-- габариты по углам детали
 				local half = d.Size / 2
 				for _, sx in { -1, 1 } do
@@ -346,7 +347,8 @@ local function update(dt: number)
 			gp.part.CFrame = weaponCf * CFrame.new(magOffset) * gp.rel
 			gp.part.Transparency = if magAlpha > 0.5 then 0 else 1
 		else
-			gp.part.CFrame = weaponCf * gp.rel
+			-- у холодного оружия части двигает осмотр (рукояти бабочки вокруг шарнира): смещение берём из сварки каждый кадр
+			gp.part.CFrame = weaponCf * (if r.melee then gp.weld.C0 else gp.rel)
 			gp.part.Transparency = 0
 		end
 	end
@@ -356,8 +358,8 @@ local function update(dt: number)
 	local rightHandCf = weaponCf * CFrame.new(0.02, -0.17, 0.12) * tiltDown
 	local leftHandCf = weaponCf * CFrame.new(leftTarget) * CFrame.Angles(math.rad(-10), math.rad(r.pistol and 18 or 0), math.rad(8))
 	if r.melee then
-		-- кисть в рамке хвата, левая рука убрана (у ножей и клинков она не нужна)
-		rightHandCf = handFrame * CFrame.new(0, 0, 0.1) * CFrame.Angles(math.rad(-12), 0, 0)
+		-- кисть в рамке хвата и идёт за взмахом (MeleeAnim.live), иначе оружие «выезжало» бы из неподвижного кулака; левая рука убрана
+		rightHandCf = handFrame * MeleeAnim.live * CFrame.new(0, 0, 0.1) * CFrame.Angles(math.rad(-12), 0, 0)
 		r.lForearm.Transparency = 1
 		r.lHand.Transparency = 1
 		placeArm(r.rForearm, r.rHand, camera.CFrame * CFrame.new(1.3, -3.0, 1.4), rightHandCf)

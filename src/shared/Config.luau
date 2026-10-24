@@ -964,13 +964,14 @@ Config.Perks = {
 }
 
 -- Миссии ночей (сюжет: docs/story.md, MissionService). anchor — номер шатра/точки района по удалению от базы (1 — ближайший);
+-- radius = { от, до } — расстояние контрольных точек от места шатра в студах (по умолчанию Config.ScoutRadius = 50–100);
 -- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
 -- (сейчас играется как classic). Не указано — classic.
-export type MissionDef = { type: string, title: string, anchor: number, points: number?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string? }
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string? }
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
 	TruckHp = 1000,
-	TruckSpeed = 14, -- студов в секунду (быстрее ходьбы игрока 13 почти не ехать нельзя: команда должна успевать)
+	TruckSpeed = 9.5, -- студов в секунду. ТЕСТ (2026-10-24): все конвои за ~3 минуты (самый длинный маршрут, ночь 12, ~1614 студов → ~170 с); в релизе вернуть к ~3,5 или короче маршруты
 	SoldierHp = 300,
 	SoldierDps = 50, -- урон по зомби в секунду каждого солдата
 	SoldierShotInterval = 0.25,
@@ -978,10 +979,11 @@ Config.Convoy = {
 	AliveCap = 14, -- живых зомби одновременно на миссии конвоя (грузовик 1000 HP не выдержит 40)
 	InstallHold = 6, -- сколько секунд держать «Установить шатёр»
 }
--- Тексты генерала Нурсултана по типам миссий ({points}, {kills}, {seconds}, {hold} подставляются из Config.Missions и Config.Convoy)
+Config.ScoutRadius = { 50, 100 } -- радиус контрольных точек от места шатра по умолчанию (у миссии можно задать свой: radius)
+-- Тексты генерала Нурсултана по типам миссий ({points}, {radius}, {kills}, {seconds}, {hold} подставляются из Config.Missions и Config.Convoy)
 Config.Briefs = {
 	scout = {
-		"Нужна разведка. Вокруг места будущего шатра отмечены контрольные точки — {points} синих маяков в 50–100 шагах от него.",
+		"Нужна разведка. Вокруг места будущего шатра отмечены контрольные точки — {points} синих маяков в {radius} шагах от него.",
 		"Обойдите их все. Мутанты пойдут со всех сторон без остановки: не стойте на месте и держитесь вместе.",
 	},
 	build = {
@@ -1010,12 +1012,19 @@ Config.Briefs = {
 } :: { [string]: { string } }
 Config.AmbienceVolume = 0.7 -- общая громкость звуков окружения (зомби, машины); по слуху держим тихо
 Config.DebugStartNight = 1 -- для проверок: с какой ночи начинается раунд (в релизе всегда 1)
-Config.MissionMoveTeam = true -- в начале ночи команда выдвигается к точке миссии; с рассветом возвращается в магазин
+Config.MissionMoveTeam = false -- true: в начале ночи команду переносит к точке миссии (по решению Руслана 2026-10-24 — выключено: идут сами)
+-- Минимум убийств игроков на любой ночи для засчёта миссии: линейно от Solo (1 игрок) до Full (FullPlayers игроков, по числу в начале ночи);
+-- с Config.Waves.CountScale масштабируется как убийства метро (не меньше 5)
+Config.MissionMinKills = { Solo = 15, Full = 30, FullPlayers = 6 }
+Config.MissionKillsFloor = 3 -- ТЕСТ: нижняя граница убийств после масштаба CountScale (минимум убийств, зачистка шатра, метро); в релизе удалить (было 5)
+Config.MissionReturnTeam = true -- с рассветом команда возвращается в магазин
+-- Маяк места миссии (MissionService): высокий луч, виден издалека; подпись зависит от типа миссии
+Config.PlaceBeacon = { Height = 160, Color = Color3.fromRGB(255, 200, 60) }
 Config.Missions = {
 	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
 	[2] = { type = "build", title = "Зачистка зоны и установка шатра", anchor = 1, kills = 15, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
 	[3] = { type = "escort", title = "Сопровождение конвоя с припасами", anchor = 1, points = 3, hint = "Не дайте уничтожить грузовик: он объедет контрольные точки и встанет у шатра" },
-	[4] = { type = "scout", title = "Разведка ближайших зданий", anchor = 1, points = 4, hint = "Обойдите контрольные точки" },
+	[4] = { type = "scout", title = "Разведка ближайших зданий", anchor = 1, points = 4, radius = { 100, 150 }, hint = "Обойдите контрольные точки" },
 	[5] = { type = "classic", title = "Защита шатра от босса", anchor = 1, planned = "defend-boss", hint = "Убейте босса и волну" },
 	[6] = { type = "scout", title = "Разведка второго района", anchor = 2, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
 	[7] = { type = "build", title = "Зачистка и установка шатра", anchor = 2, kills = 20, hint = "Зачистите зону и установите шатёр на отмеченном месте" },

@@ -391,9 +391,47 @@ end
 -- Взмах ближнего боя: рукоять двигается по ключевым позам (через Tool.Grip), камера подаётся вперёд
 -- Позы взмахов и осмотра — в Shared/MeleeAnim
 local swing: { tool: Tool, style: string, started: number, duration: number, baseGrip: CFrame }? = nil
+-- Взмахи других игроков (по событию MeleeFx): у них двигается только рука — Tool.Grip чужого оружия мы не трогаем
+local remoteSwings: { [Model]: { style: string, started: number, duration: number } } = {}
 
 local function poseAt(style: string, u: number): CFrame
 	return MeleeAnim.poseAt(style, u)
+end
+
+-- Рука при взмахе (вид от 3 лица и чужие игроки): правое плечо (R15 — RightUpperArm.RightShoulder, R6 — Torso."Right Shoulder")
+-- поворачивается по позе: наклон оружия вперёд = рука вперёд, рыскание = рука в сторону. Исходный C0 запоминаем один раз.
+local shoulderBase: { [Motor6D]: CFrame } = setmetatable({}, { __mode = "k" }) :: any
+
+local function shoulderOf(char: Model): Motor6D?
+	local upper = char:FindFirstChild("RightUpperArm")
+	local m = if upper then upper:FindFirstChild("RightShoulder") else nil
+	if not m then
+		local torso = char:FindFirstChild("Torso")
+		m = if torso then torso:FindFirstChild("Right Shoulder") else nil
+	end
+	return if m and m:IsA("Motor6D") then m else nil
+end
+
+-- pose = nil — вернуть руку на место
+local function setArmPose(char: Model, pose: CFrame?)
+	local m = shoulderOf(char)
+	if not m then
+		return
+	end
+	local base = shoulderBase[m]
+	if not base then
+		if not pose then
+			return
+		end
+		base = m.C0
+		shoulderBase[m] = base
+	end
+	if pose then
+		local rx, ry, rz = pose:ToEulerAnglesXYZ()
+		m.C0 = (base :: CFrame) * CFrame.Angles(-rx * 0.9, ry * 0.8, rz * 0.4)
+	else
+		m.C0 = base :: CFrame
+	end
 end
 
 function FxController.onLocalSwing(tool: Tool, weaponId: string)
@@ -406,8 +444,24 @@ function FxController.onLocalSwing(tool: Tool, weaponId: string)
 		swing.tool.Grip = swing.baseGrip
 	end
 	swing = { tool = tool, style = fx.style, started = os.clock(), duration = fx.time, baseGrip = tool.Grip }
-	-- короткий «подаёт плечом» вперёд
+	-- короткий «подаёт плечом» вперёд, а в момент попадания — толчок своего стиля (по MeleeAnim.HIT, как у сервера)
 	kickCamera(-0.6, 0.6, 1.2)
+	local cam = MeleeAnim.CAM[fx.style]
+	if cam then
+		task.delay(fx.time * (MeleeAnim.HIT[fx.style] or 0.5), function()
+			kickCamera(cam[1], cam[2], cam[3])
+		end)
+	end
+end
+
+-- Чужой взмах: сервер сообщил, что attacker замахнулся оружием weaponId — двигаем ему руку по стилю
+function FxController.onRemoteSwing(attacker: Player, weaponId: string)
+	local fx = Config.MeleeFx[weaponId]
+	local char = attacker.Character
+	if not fx or not char or not MeleeAnim.STYLES[fx.style] then
+		return
+	end
+	remoteSwings[char] = { style = fx.style, started = os.clock(), duration = fx.time }
 end
 
 -- Осмотр холодного оружия (клавиша F): оружие двигается по MeleeAnim.INSPECT, части модели — вокруг шарниров
@@ -559,6 +613,7 @@ function FxController.start()
 		end
 
 		-- осмотр ближнего оружия
+		local live = CFrame.identity
 		local ins = inspecting
 		if ins then
 			local active = toolOf(player.Character)
@@ -567,6 +622,7 @@ function FxController.start()
 				FxController.cancelInspect(active == ins.tool and u < 1)
 			else
 				local frame = ins.frame(u)
+				live = frame.grip
 				ins.tool.Grip = ins.baseGrip * frame.grip:Inverse()
 				for _, part in ins.parts do
 					local rot = frame.parts and frame.parts[part.key]
@@ -584,12 +640,42 @@ function FxController.start()
 				swing = nil
 			else
 				local u = (os.clock() - s.started) / s.duration
+				local char = player.Character
 				if u >= 1 then
 					s.tool.Grip = s.baseGrip
+					if char then
+						setArmPose(char, nil)
+					end
 					swing = nil
 				else
-					s.tool.Grip = s.baseGrip * poseAt(s.style, u):Inverse()
+					local pose = poseAt(s.style, u)
+					if ViewModel.active() then
+						-- от первого лица видны только оружие и кисть: оба идут по позе (кисть — в ViewModelController через MeleeAnim.live)
+						s.tool.Grip = s.baseGrip * pose:Inverse()
+						live = pose
+						if char then
+							setArmPose(char, nil)
+						end
+					else
+						-- от третьего лица двигается рука целиком, оружие в ней неподвижно
+						s.tool.Grip = s.baseGrip
+						if char then
+							setArmPose(char, pose)
+						end
+					end
 				end
+			end
+		end
+		MeleeAnim.live = live
+
+		-- взмахи других игроков
+		for char, rs in remoteSwings do
+			local u = (os.clock() - rs.started) / rs.duration
+			if u >= 1 or not char.Parent then
+				setArmPose(char, nil)
+				remoteSwings[char] = nil
+			else
+				setArmPose(char, poseAt(rs.style, u))
 			end
 		end
 	end)

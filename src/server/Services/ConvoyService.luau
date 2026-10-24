@@ -2,8 +2,9 @@
 -- Конвой (миссия escort): грузовик Transport Truck (1000 HP) едет по маршруту (контрольные точки района, затем остановка на дороге у места шатра)
 -- в сопровождении двух военных (300 HP, ~50 урона в секунду по зомби каждый). Зомби атакуют конвой наравне с игроками
 -- (ZombieService.registerTarget). Погиб грузовик — миссия провалена. Грузовик двигается кинематически (CFrame), его нельзя толкнуть.
+-- Едет только по дорогам (Workspace.Roads): весь маршрут считается один раз при старте (RoadRoute, A* по клеткам дороги), прямой линии
+-- через здания не бывает; точка, до которой дорогой не добраться, пропускается, не добраться до остановки — конвой не стартует.
 
-local PathfindingService = game:GetService("PathfindingService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
@@ -12,28 +13,24 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local SoldierService = require(script.Parent:WaitForChild("SoldierService"))
+local RoadRoute = require(script.Parent:WaitForChild("RoadRoute"))
 
 local ConvoyService = {}
 
-type Escort = { model: Model, hum: Humanoid, root: BasePart, hp: number, alive: boolean, offset: Vector3, nextShot: number }
+type Escort = { model: Model, hum: Humanoid, root: BasePart, hp: number, alive: boolean, offset: Vector3, nextShot: number, farSince: number }
 type State = {
 	truck: Model,
 	root: BasePart,
 	hp: number,
 	bottom: number, -- расстояние от оси модели до низа (для посадки на землю)
-	route: { Vector3 },
-	routeIndex: number,
-	waypoints: { Vector3 },
+	waypoints: { Vector3 }, -- весь маршрут по дорогам: от выезда до остановки
 	wpIndex: number,
-	pathBusy: boolean,
-	finalStop: Vector3,
+	length: number,
 	escorts: { Escort },
 	bar: Frame,
 	arrived: boolean,
 	failed: boolean,
 	heading: Vector3,
-	lastTarget: Vector3?,
-	stuckSince: number,
 }
 
 local current: State? = nil
@@ -200,7 +197,7 @@ local function buildEscort(offset: Vector3, spawn: Vector3, index: number): Esco
 	hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	model.Parent = folder
 	root:SetNetworkOwner(nil)
-	local escort: Escort = { model = model, hum = hum, root = root, hp = C.SoldierHp, alive = true, offset = offset, nextShot = 0 }
+	local escort: Escort = { model = model, hum = hum, root = root, hp = C.SoldierHp, alive = true, offset = offset, nextShot = 0, farSince = 0 }
 	ZombieService.registerTarget(model, root, function(amount: number)
 		if not escort.alive then
 			return
@@ -217,26 +214,105 @@ local function buildEscort(offset: Vector3, spawn: Vector3, index: number): Esco
 	return escort
 end
 
--- Старт: route — точки по порядку, finalStop — где остановиться; spawn — откуда выезжает. true — запущен.
+local function pathLength(points: { Vector3 }): number
+	local len = 0
+	for i = 2, #points do
+		len += (points[i] - points[i - 1]).Magnitude
+	end
+	return len
+end
+
+-- Маршрут от точки выезда: по порядку через контрольные точки (недостижимые пропускаем), в конце — остановка. nil — до остановки не доехать
+local function planFrom(grid: RoadRoute.Grid, start: Vector3, route: { Vector3 }, finalStop: Vector3): { Vector3 }?
+	local waypoints: { Vector3 } = { start }
+	local current = start
+	local function leg(target: Vector3): boolean
+		local path = grid.find(current, target)
+		if not path then
+			return false
+		end
+		for i = 2, #path do
+			table.insert(waypoints, path[i])
+		end
+		current = path[#path]
+		return true
+	end
+	for i, p in route do
+		local onRoad = grid.snap(p, 60)
+		if not onRoad or not leg(onRoad) then
+			warn(string.format("[ConvoyService] до контрольной точки %d дорогой не доехать — пропущена", i))
+		end
+	end
+	local stop = grid.snap(finalStop, 150)
+	if not stop or not leg(stop) then
+		return nil
+	end
+	return waypoints
+end
+
+-- Выезд с базы: базу окружают здания, дорога начинается в десятках студов от точки появления игроков. Берём ближайшую дорогу и ещё несколько
+-- вокруг, из них — ту, с которой маршрут короче.
+local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3): { Vector3 }?
+	local grid = RoadRoute.grid()
+	local starts: { Vector3 } = {}
+	local function addStart(p: Vector3?)
+		if not p then
+			return
+		end
+		for _, s in starts do
+			if (s - p).Magnitude < 30 then
+				return
+			end
+		end
+		table.insert(starts, p)
+	end
+	addStart(grid.snap(spawn, 150))
+	for i = 0, 7 do
+		local a = i / 8 * math.pi * 2
+		addStart(grid.snap(spawn + Vector3.new(math.cos(a) * 90, 0, math.sin(a) * 90), 50))
+	end
+	local best: { Vector3 }? = nil
+	local bestLen = math.huge
+	for _, s in starts do
+		local plan = planFrom(grid, s, route, finalStop)
+		if plan then
+			local len = pathLength(plan)
+			if len < bestLen then
+				best, bestLen = plan, len
+			end
+		end
+	end
+	return best
+end
+
+-- Старт: route — точки по порядку, finalStop — где остановиться; spawn — база (грузовик выезжает на ближайшую дорогу). true — запущен.
 function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vector3): boolean
 	ConvoyService.finish()
+	local waypoints = planRoute(spawn, route, finalStop)
+	if not waypoints or #waypoints < 2 then
+		warn("[ConvoyService] по дорогам до места шатра не доехать")
+		return false
+	end
+	local begin = waypoints[1]
+	local heading = Vector3.new(waypoints[2].X - begin.X, 0, waypoints[2].Z - begin.Z)
+	heading = if heading.Magnitude > 0.1 then heading.Unit else Vector3.new(0, 0, -1)
 	folder = Instance.new("Folder")
 	folder.Name = "Convoy"
 	folder.Parent = workspace
-	local first = route[1] or finalStop
-	local heading = Vector3.new(first.X - spawn.X, 0, first.Z - spawn.Z)
-	heading = if heading.Magnitude > 0.1 then heading.Unit else Vector3.new(0, 0, -1)
-	local gy = ground(spawn.X, spawn.Z, {}) or spawn.Y
-	local truck, root, bottom = buildTruck(Vector3.new(spawn.X, gy + 0, spawn.Z), heading)
+	local gy = ground(begin.X, begin.Z, {}) or begin.Y
+	local truck, root, bottom = buildTruck(Vector3.new(begin.X, gy + 0, begin.Z), heading)
 	if not truck or not root then
+		ConvoyService.finish()
 		return false
 	end
+	local length = pathLength(waypoints)
+	print(string.format("[ConvoyService] маршрут по дорогам: %d студов, %d точек, в пути около %d с при скорости %.1f", length, #waypoints, length / C.TruckSpeed, C.TruckSpeed))
 	local state: State = {
-		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, route = route, routeIndex = 1, waypoints = {}, wpIndex = 1,
-		pathBusy = false, finalStop = finalStop, escorts = {}, bar = makeBar(root), arrived = false, failed = false,
-		heading = heading, lastTarget = nil, stuckSince = os.clock(),
+		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, waypoints = waypoints, wpIndex = 2, length = length,
+		escorts = {}, bar = makeBar(root), arrived = false, failed = false, heading = heading,
 	}
 	truck:SetAttribute("Hp", C.TruckHp)
+	truck:SetAttribute("RouteLength", math.floor(length)) -- для проверок: хватит ли ночи (длина / TruckSpeed)
 	ZombieService.registerTarget(truck, root, damageTruck)
 	for i = 1, 2 do
 		-- смещение в системе грузовика: по бокам (за пределами кузова) и чуть позади
@@ -258,74 +334,27 @@ function ConvoyService.hpFraction(): number
 	return if current then current.hp / C.TruckHp else 0
 end
 
-local function nextTarget(s: State): Vector3?
-	if s.routeIndex <= #s.route then
-		return s.route[s.routeIndex]
-	end
-	return s.finalStop
-end
-
-local function requestPath(s: State, target: Vector3)
-	if s.pathBusy then
-		return
-	end
-	s.pathBusy = true
-	task.spawn(function()
-		local points: { Vector3 }? = nil
-		for _, radius in { 6, 4, 2.5 } do
-			local path = PathfindingService:CreatePath({ AgentRadius = radius, AgentHeight = 8, AgentCanJump = false, AgentCanClimb = false })
-			local ok = pcall(function()
-				path:ComputeAsync(s.root.Position, target)
-			end)
-			if ok and path.Status == Enum.PathStatus.Success then
-				points = {}
-				for _, wp in path:GetWaypoints() do
-					table.insert(points, wp.Position)
-				end
-				break
-			end
-		end
-		if current == s then
-			s.waypoints = points or { target }
-			s.wpIndex = 1
-			s.lastTarget = target
-		end
-		s.pathBusy = false
-	end)
+-- Длина маршрута по дорогам и оценка времени в пути (для проверки, что колонна успеет за ночь)
+function ConvoyService.routeInfo(): (number, number)
+	local s = current
+	return if s then s.length else 0, if s then s.length / C.TruckSpeed else 0
 end
 
 local function moveTruck(s: State, dt: number)
-	local target = nextTarget(s)
-	if not target then
-		return
-	end
-	if s.lastTarget ~= target and not s.pathBusy then
-		requestPath(s, target)
-		return
-	end
-	if #s.waypoints == 0 then
-		return
-	end
 	local pos = s.root.Position
 	local wp = s.waypoints[s.wpIndex]
 	if not wp then
-		-- путь пройден до конца
-		if s.routeIndex <= #s.route then
-			s.routeIndex += 1
-			s.lastTarget = nil
-		else
-			s.arrived = true
-		end
+		s.arrived = true
 		return
 	end
 	local flat = Vector3.new(wp.X - pos.X, 0, wp.Z - pos.Z)
-	if flat.Magnitude < 6 then
+	if flat.Magnitude < 3 then
 		s.wpIndex += 1
 		return
 	end
-	-- плавный поворот и движение вперёд
+	-- плавный поворот и движение вперёд по отрезку маршрута
 	local want = flat.Unit
-	s.heading = (s.heading + (want - s.heading) * math.min(1, dt * 2.5))
+	s.heading = (s.heading + (want - s.heading) * math.min(1, dt * 6))
 	if s.heading.Magnitude < 0.01 then
 		s.heading = want
 	end
@@ -340,11 +369,20 @@ local function updateEscorts(s: State, dt: number)
 	local now = os.clock()
 	for _, e in s.escorts do
 		if e.alive then
-			-- держимся у грузовика (отстали больше чем на 40 студов — подтягиваем к колонне)
+			-- держимся у грузовика: отстали больше чем на 40 студов или не могут дойти больше 4 с (упёрлись в препятствие) — подтягиваем к колонне
 			local anchorPos = s.root.Position + s.truck:GetPivot():VectorToWorldSpace(e.offset)
 			local gap = (e.root.Position - anchorPos).Magnitude
-			if gap > 40 then
-				e.model:PivotTo(CFrame.new(anchorPos + Vector3.new(0, 4, 0)))
+			if gap > 7 then
+				if e.farSince == 0 then
+					e.farSince = now
+				end
+			else
+				e.farSince = 0
+			end
+			if gap > 40 or (e.farSince > 0 and now - e.farSince > 4) then
+				local near = s.root.Position + s.truck:GetPivot():VectorToWorldSpace(e.offset * 0.6)
+				e.model:PivotTo(CFrame.new(near + Vector3.new(0, 4, 0)))
+				e.farSince = 0
 			elseif gap > 7 then
 				e.hum:MoveTo(anchorPos)
 			end

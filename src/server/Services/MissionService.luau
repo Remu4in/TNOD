@@ -1,16 +1,18 @@
 --!strict
 -- Миссии ночи (сюжет: docs/story.md). Ночь = миссия из Config.Missions[ночь]: точка миссии (место шатра района), задача и «поток» зомби,
 -- который идёт со всех сторон на расстоянии 100–150 студов от точки (ZombieService.setAnchor), пока задача не выполнена.
---   scout   — разведка: обойти контрольные точки в 50–100 студах от места шатра (поток без конца)
+--   scout   — разведка: обойти контрольные точки вокруг места шатра (радиус — radius в Config.Missions, по умолчанию Config.ScoutRadius 50–100 студов; поток без конца)
 --   build   — установка шатра: убить N мутантов, затем удерживать «Установить шатёр» у места (поток без конца)
 --   escort  — конвой: грузовик с двумя солдатами объезжает контрольные точки и встаёт на дороге у места шатра (ConvoyService);
 --             с install = true после приезда ещё надо установить шатёр
 --   defend  — защита шатра: продержаться SECONDS секунд рядом (поток без конца)
 --   clear / classic — убить всю волну
 -- Места шатров — ServerStorage.Assets.TentSites.Site_<n> (шатёр + припасы + автомат), шатёр базы (Workspace.Base.Tent) — точка 5.
+-- Игроки идут к месту миссии сами (Config.MissionMoveTeam = false), место отмечено высоким маяком.
 -- Статус для клиентов — атрибуты ReplicatedStorage: MissionTitle, MissionText, MissionKind.
 
 local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -21,6 +23,7 @@ local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local ConvoyService = require(script.Parent:WaitForChild("ConvoyService"))
 local ShopService = require(script.Parent:WaitForChild("ShopService"))
+local RoadRoute = require(script.Parent:WaitForChild("RoadRoute"))
 local VendorService = require(script.Parent:WaitForChild("VendorService"))
 
 local MissionService = {}
@@ -39,6 +42,8 @@ type State = {
 	hpMult: number,
 	lastText: string,
 	kills: number,
+	playerKills: number, -- убийства игроков (турель и машина — владельцу) за ночь
+	minKills: number, -- сколько их нужно, чтобы миссия засчиталась (Config.MissionMinKills)
 	phase: string, -- escort: "drive" → "install"; build: "kill" → "install"; metro: "approach" → "inside"
 	metroKills: number,
 	sitePart: BasePart?,
@@ -51,6 +56,11 @@ local objects: Folder? = nil
 local rng = Random.new()
 local installedSites: { [number]: { instances: { Instance }, shop: Vector3?, vending: { string } } } = {}
 local suppliedSites: { [number]: { Instance } } = {}
+
+-- Подписи маяка места миссии по типу
+local PLACE_LABELS: { [string]: string } = {
+	scout = "Район разведки", build = "Место шатра", escort = "Место шатра", defend = "Шатёр: оборона", metro = "Вход в метро", classic = "Зона боя", clear = "Зона боя",
+}
 
 local GROUND_FOLDERS = { "Roads", "Ground", "Grass" }
 
@@ -119,41 +129,64 @@ function MissionService.anchorPosition(index: number): Vector3
 	return playerSpawnPosition()
 end
 
--- Контрольные точки района: одни и те же для разведки и конвоя (детерминированно по номеру района), 50–100 студов от места шатра
-local function districtPoints(anchorIndex: number, count: number): { Vector3 }
+-- Пешком можно дойти от a до b (PathfindingService): точка не должна оказаться за забором или на недоступном пятачке.
+-- Сам сервис недоступен (pcall) — считаем, что дойти можно.
+local function walkable(a: Vector3, b: Vector3): boolean
+	local path = PathfindingService:CreatePath({ AgentRadius = 2, AgentHeight = 5, AgentCanJump = true })
+	local ok = pcall(function()
+		path:ComputeAsync(a + Vector3.new(0, 3, 0), b + Vector3.new(0, 3, 0))
+	end)
+	return not ok or path.Status ~= Enum.PathStatus.NoPath
+end
+
+-- Контрольные точки района: одни и те же для разведки и конвоя (детерминированно по номеру района), радиус radius (по умолчанию
+-- Config.ScoutRadius = 50–100 студов) от места шатра, поровну по кругу: сектор на каждую точку.
+-- grid — для конвоя: точки ставятся на дорогу (ближайшая проходимая клетка в 45 студах), без дороги точка не берётся;
+-- без grid — на землю (Roads / Ground / Grass, ровно, без крыши над головой) и только там, куда можно дойти пешком от места шатра
+local function districtPoints(anchorIndex: number, count: number, grid: RoadRoute.Grid?, radiusRange: { number }?): { Vector3 }
 	local seeded = Random.new(7000 + anchorIndex * 31)
 	local anchor = MissionService.anchorPosition(anchorIndex)
 	local list: { Vector3 } = {}
 	local tries = 0
 	while #list < count and tries < 120 do
 		tries += 1
-		local angle = ((#list) / count) * math.pi * 2 + (seeded:NextNumber() - 0.5) * 0.8
-		local radius = 50 + seeded:NextNumber() * 50
-		local ground = groundAt(anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius)
-		if ground then
-			table.insert(list, ground)
+		-- на дороге сектор, где её нет, не должен держать поиск: сектора идут по кругу, каждая попытка — следующий
+		local sector = if grid then (tries - 1) % count else #list
+		local angle = (sector / count) * math.pi * 2 + (seeded:NextNumber() - 0.5) * 0.3
+		local rr = radiusRange or Config.ScoutRadius
+		local radius = rr[1] + seeded:NextNumber() * (rr[2] - rr[1])
+		local x, z = anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius
+		local p: Vector3? = if grid then grid.snap(Vector3.new(x, 0, z), 45) else groundAt(x, z)
+		if p and not grid and not walkable(anchor, p) then
+			p = nil
+		end
+		if p then
+			local dup = false
+			for _, q in list do
+				if Vector3.new(p.X - q.X, 0, p.Z - q.Z).Magnitude < 20 then
+					dup = true
+				end
+			end
+			if not dup then
+				table.insert(list, p)
+			end
 		end
 	end
 	return list
 end
 
--- Ближайшая к месту шатра дорога (для остановки конвоя)
-local function roadStopNear(site: Vector3): Vector3
-	local best: Vector3? = nil
-	local bestDist = math.huge
-	for r = 12, 60, 8 do
-		for i = 0, 15 do
-			local a = i / 16 * math.pi * 2
-			local p = groundAt(site.X + math.cos(a) * r, site.Z + math.sin(a) * r, true)
-			if p and r < bestDist then
-				best, bestDist = p, r
-			end
-		end
-		if best then
-			break
-		end
-	end
-	return best or Vector3.new(site.X + 25, site.Y, site.Z)
+-- Ближайшая к месту шатра дорога (для остановки конвоя): проходимая клетка дороги в 150 студах
+local function roadStopNear(grid: RoadRoute.Grid, site: Vector3): Vector3?
+	return grid.snap(site, 150)
+end
+
+-- Минимум убийств игроков для засчёта миссии: от Solo (1 игрок) до Full (FullPlayers игроков), линейно по числу игроков в начале ночи;
+-- тестовый масштаб волн применяется так же, как к убийствам метро
+local function minKillsFor(players: number): number
+	local K = Config.MissionMinKills
+	local k = math.clamp((players - 1) / math.max(1, K.FullPlayers - 1), 0, 1)
+	local base = math.floor(K.Solo + (K.Full - K.Solo) * k + 0.5)
+	return math.max(Config.MissionKillsFloor, math.floor(base * (Config.Waves.CountScale or 1) + 0.5))
 end
 
 local function setStatus(title: string, text: string, kind: string)
@@ -166,20 +199,23 @@ local function notify(text: string, seconds: number)
 	Remotes.get("Notify"):FireAllClients(text, seconds)
 end
 
-local function makeBeacon(pos: Vector3, label: string): BasePart
+-- Маяк: тонкий неоновый луч с подписью. По умолчанию — синий маячок точки (30 студов); для места миссии — высокий золотой (Config.PlaceBeacon),
+-- он виден через весь район, чтобы команда шла к нему сама
+local function makeBeacon(pos: Vector3, label: string, color: Color3?, height: number?): BasePart
+	local h = height or 30
 	local part = Instance.new("Part")
 	part.Name = "ScoutBeacon"
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanQuery = false
 	part.Material = Enum.Material.Neon
-	part.Color = Color3.fromRGB(80, 200, 255)
+	part.Color = color or Color3.fromRGB(80, 200, 255)
 	part.Transparency = 0.35
-	part.Size = Vector3.new(2, 30, 2)
-	part.Position = pos + Vector3.new(0, 15, 0)
+	part.Size = Vector3.new(2, h, 2)
+	part.Position = pos + Vector3.new(0, h / 2, 0)
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(200, 44)
-	gui.StudsOffset = Vector3.new(0, 18, 0)
+	gui.StudsOffset = Vector3.new(0, h / 2 + 3, 0)
 	gui.AlwaysOnTop = true
 	gui.MaxDistance = 1500
 	gui.Parent = part
@@ -188,7 +224,7 @@ local function makeBeacon(pos: Vector3, label: string): BasePart
 	text.BackgroundTransparency = 1
 	text.Font = Enum.Font.GothamBold
 	text.TextScaled = true
-	text.TextColor3 = Color3.fromRGB(120, 220, 255)
+	text.TextColor3 = (color or Color3.fromRGB(120, 220, 255)):Lerp(Color3.new(1, 1, 1), 0.35)
 	text.TextStrokeTransparency = 0.3
 	text.Text = label
 	text.Parent = gui
@@ -357,7 +393,7 @@ local function makeSiteMarker(state: State, enabled: boolean)
 end
 
 -- Начало ночи: comp/hpMult — состав и здоровье волны (для подпитки бесконечного потока)
-function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult: number): (boolean, string)
+function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult: number, players: number): (boolean, string)
 	MissionService.finish()
 	local def: Config.MissionDef = Config.Missions[night] or { type = "classic", title = string.format("Ночь %d", night), anchor = 1 }
 	local anchor = MissionService.anchorPosition(def.anchor)
@@ -372,15 +408,17 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
 		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false,
+		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false,
 	}
 	current = state
 	ZombieService.setAnchor(anchor)
 	if Config.MissionMoveTeam and kind ~= "escort" then
 		moveTeam(anchor)
 	end
+	-- место миссии отмечено высоким маяком: команда идёт к нему сама (телепорта нет)
+	makeBeacon(anchor, PLACE_LABELS[kind] or PLACE_LABELS.classic, Config.PlaceBeacon.Color, Config.PlaceBeacon.Height)
 	if kind == "scout" then
-		for i, pos in districtPoints(def.anchor, def.points or 3) do
+		for i, pos in districtPoints(def.anchor, def.points or 3, nil, def.radius) do
 			table.insert(state.points, { pos = pos, part = makeBeacon(pos, string.format("Точка %d", i)), done = false })
 		end
 	elseif kind == "build" then
@@ -388,7 +426,8 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	elseif kind == "escort" then
 		-- маршрут: контрольные точки района ближайшим соседом от базы, затем дорога у места шатра
 		local start = playerSpawnPosition()
-		local pts = districtPoints(def.anchor, def.points or 3)
+		local grid = RoadRoute.grid()
+		local pts = districtPoints(def.anchor, def.points or 3, grid, def.radius)
 		local route: { Vector3 } = {}
 		local from = start
 		while #pts > 0 do
@@ -404,9 +443,9 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 			from = p
 			makeBeacon(p, string.format("Маршрут %d", #route))
 		end
-		local stop = roadStopNear(anchor)
+		local stop = roadStopNear(grid, anchor)
 		local groundStart = groundAt(start.X, start.Z) or start
-		if not ConvoyService.start(groundStart, route, stop) then
+		if not stop or not ConvoyService.start(groundStart, route, stop) then
 			warn("[MissionService] конвой не запущен — миссия играется как обычная ночь")
 			state.kind = "classic"
 			state.infinite = false
@@ -425,7 +464,10 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 end
 
 local function topUp(state: State)
-	if state.infinite and ZombieService.queueSize() < 8 then
+	-- classic/clear: волна может быть меньше минимума убийств — тогда подсылаем ещё, пока не наберётся
+	local short = not state.infinite and (state.kind == "classic" or state.kind == "clear")
+		and ZombieService.remaining() + state.playerKills < state.minKills
+	if (state.infinite or short) and ZombieService.queueSize() < 8 then
 		-- подпитка потока: обычные зомби волны (боссы приходят один раз, в начале ночи)
 		local normal: WaveMath.Composition = {}
 		for id, n in state.comp do
@@ -438,10 +480,13 @@ local function topUp(state: State)
 end
 
 -- Убийство зомби (для миссии «установка шатра»: сначала нужно зачистить зону)
-function MissionService.onKill()
+function MissionService.onKill(killer: Player?)
 	local s = current
 	if s then
 		s.kills += 1
+		if killer then
+			s.playerKills += 1
+		end
 		if s.kind == "metro" and s.phase == "inside" then
 			s.metroKills += 1
 		end
@@ -551,7 +596,7 @@ function MissionService.update(dt: number): string?
 			result = "done"
 		end
 	elseif kind == "build" then
-		local need = state.def.kills or 15
+		local need = math.max(Config.MissionKillsFloor, math.floor((state.def.kills or 15) * (Config.Waves.CountScale or 1) + 0.5))
 		if state.phase == "kill" then
 			text = string.format("Зачистите зону: убито %d из %d", math.min(state.kills, need), need)
 			if state.kills >= need then
@@ -562,7 +607,7 @@ function MissionService.update(dt: number): string?
 				notify("Зона зачищена — установите шатёр на отмеченном месте (удерживайте E)", 5)
 			end
 		else
-			text = "Установите шатёр на отмеченном месте: удерживайте E"
+			text = if state.installed then "Шатёр установлен" else "Установите шатёр на отмеченном месте: удерживайте E"
 			if state.installed then
 				result = "done"
 			end
@@ -583,7 +628,7 @@ function MissionService.update(dt: number): string?
 						state.prompt.Enabled = true
 					end
 				else
-					result = "done"
+					state.phase = "hold" -- без установки: ждём, пока команда добьёт минимум убийств
 				end
 			end
 		else
@@ -594,13 +639,21 @@ function MissionService.update(dt: number): string?
 				result = "fail"
 			end
 			ZombieService.moveAnchor(state.anchor)
-			text = string.format("Установите шатёр: удерживайте E. Прочность грузовика: %d%%", math.floor(ConvoyService.hpFraction() * 100 + 0.5))
-			if state.installed and not result then
-				result = "done"
+			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
+			if state.phase == "install" then
+				text = string.format("Установите шатёр: удерживайте E. Прочность грузовика: %d%%", hp)
+				if state.installed and not result then
+					result = "done"
+				end
+			else
+				text = string.format("Конвой на месте. Прочность грузовика: %d%%", hp)
+				if not result then
+					result = "done"
+				end
 			end
 		end
 	elseif kind == "metro" then
-		local need = math.max(5, math.floor((state.def.kills or 40) * (Config.Waves.CountScale or 1) + 0.5))
+		local need = math.max(Config.MissionKillsFloor, math.floor((state.def.kills or 40) * (Config.Waves.CountScale or 1) + 0.5))
 		if state.phase == "approach" then
 			text = "Спуститесь в метро: лестница у входа"
 		else
@@ -610,8 +663,17 @@ function MissionService.update(dt: number): string?
 			end
 		end
 	elseif kind == "clear" or kind == "classic" then
-		text = string.format("Осталось зомби: %d", (ReplicatedStorage:GetAttribute("ZombiesLeft") :: number?) or 0)
+		local left = ZombieService.remaining()
+		text = string.format("Осталось зомби: %d", left)
+		if left == 0 then
+			result = "done"
+		end
 	end
+	-- на каждой ночи: задача выполнена И убито не меньше минимума (считаются только убийства игроков); время ночи — по-прежнему лимит
+	if result == "done" and state.playerKills < state.minKills then
+		result = nil
+	end
+	text ..= string.format("\nУбито мутантов: %d из %d", math.min(state.playerKills, state.minKills), state.minKills)
 	if text ~= state.lastText then
 		state.lastText = text
 		ReplicatedStorage:SetAttribute("MissionText", text)

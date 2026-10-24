@@ -258,7 +258,7 @@ local function day(first: boolean)
 	BuildingService.openShop()
 	if currentMap then
 		PlayerService.setSpawn(currentMap.playerSpawn)
-		if wave > 0 and Config.MissionMoveTeam then
+		if wave > 0 and Config.MissionReturnTeam then
 			MissionService.returnTeam(currentMap.playerSpawn)
 		end
 	end
@@ -345,8 +345,9 @@ local function night()
 	if bossName then
 		notifyAll(string.format("Идёт босс: %s!", bossName), 3)
 	end
-	-- миссия ночи (MissionService): точка, задача, поток зомби вокруг точки; classic/clear заканчиваются, когда убита вся волна
-	local infinite = MissionService.begin(wave, comp, WaveMath.hpMultiplier(Config.Waves, wave, threat))
+	-- миссия ночи (MissionService): точка, задача, поток зомби вокруг точки; ночь засчитана, когда задача выполнена и убит минимум зомби
+	-- (classic/clear — когда убита вся волна и набран минимум; MissionService.update возвращает "done")
+	MissionService.begin(wave, comp, WaveMath.hpMultiplier(Config.Waves, wave, threat), players)
 	local missionDone = false
 	while not gameOver do
 		local left = ZombieService.remaining()
@@ -358,7 +359,7 @@ local function night()
 		elseif missionState == "fail" then
 			break
 		end
-		if (not infinite and left == 0) or os.clock() > nightEndsAt then
+		if os.clock() > nightEndsAt then
 			break
 		end
 		task.wait(0.25)
@@ -450,7 +451,7 @@ function RoundService.onAllDown()
 end
 
 function RoundService.onZombieKilled(player: Player?, zombie: any)
-	MissionService.onKill()
+	MissionService.onKill(player)
 	if player then
 		-- убийство выстрелом в голову: больше монет и очков
 		local head = zombie.headKill == true

@@ -41,6 +41,7 @@ type Soldier = {
 	stuckSince: number,
 	targetYaw: number,
 	partner: Soldier?,
+	pathBusy: boolean, -- путь считается в отдельном потоке: солдат стоит в паузе
 }
 
 local soldiers: { Soldier } = {}
@@ -90,7 +91,8 @@ local function faceYaw(s: Soldier, yaw: number, dt: number)
 	s.root.CFrame = CFrame.new(s.root.Position) * CFrame.Angles(0, current + step, 0)
 end
 
-local function newPatrolTarget(s: Soldier)
+-- Поиск пути (до 8 ComputeAsync) уходит в task.spawn, чтобы не держать Heartbeat; пока он идёт, солдат в паузе.
+local function computePatrol(s: Soldier)
 	for _ = 1, 8 do
 		local a = rng:NextNumber(0, math.pi * 2)
 		local r = rng:NextNumber(8, PATROL_RADIUS)
@@ -100,6 +102,9 @@ local function newPatrolTarget(s: Soldier)
 			local ok = pcall(function()
 				path:ComputeAsync(s.root.Position, p)
 			end)
+			if not s.model.Parent then
+				return
+			end
 			if ok and path.Status == Enum.PathStatus.Success then
 				s.waypoints = path:GetWaypoints()
 				s.wpIndex = 2
@@ -112,6 +117,17 @@ local function newPatrolTarget(s: Soldier)
 	end
 	s.state = "pause"
 	s.nextAt = os.clock() + 2
+end
+
+local function newPatrolTarget(s: Soldier)
+	if s.pathBusy then
+		return
+	end
+	s.pathBusy = true
+	task.spawn(function()
+		computePatrol(s)
+		s.pathBusy = false
+	end)
 end
 
 local function setMoving(s: Soldier, moving: boolean)
@@ -279,7 +295,7 @@ function SoldierService.init()
 				home = root.Position, homeYaw = yaw,
 				idle = loadTrack(animator, set.idle, true), walk = loadTrack(animator, set.walk, true), emotes = emotes,
 				nextAt = os.clock() + rng:NextNumber(0, 4), state = "pause", waypoints = {}, wpIndex = 1,
-				lastPos = root.Position, stuckSince = os.clock(), targetYaw = yaw, partner = nil,
+				lastPos = root.Position, stuckSince = os.clock(), targetYaw = yaw, partner = nil, pathBusy = false,
 			}
 			if s.idle then
 				s.idle:Play()
@@ -315,13 +331,15 @@ function SoldierService.init()
 		if acc < 0.1 then
 			return
 		end
+		-- обнуляем до прохода: шаг не должен накладываться на следующий кадр
+		local elapsed = acc
+		acc = 0
 		local now = os.clock()
 		for _, s in soldiers do
 			if s.model.Parent then
-				step(s, now, acc)
+				step(s, now, elapsed)
 			end
 		end
-		acc = 0
 	end)
 	print("[SoldierService] солдат: " .. #soldiers)
 end
