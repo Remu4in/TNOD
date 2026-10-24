@@ -207,7 +207,7 @@ if RUN.yard then
 		box(f, "ExitLampPost", V(0.5, 9, 0.5), CFrame.new(777.5, OY + GY + 4.5, 40), DARK, Enum.Material.Metal)
 		box(f, "ExitLampArm", V(5, 0.35, 0.35), CFrame.new(775, OY + GY + 8.8, 40), DARK, Enum.Material.Metal)
 		local head = box(f, "ExitLamp", V(1.6, 0.4, 1.0), CFrame.new(772.5, OY + GY + 8.5, 40), Color3.fromRGB(255, 205, 140), Enum.Material.Neon)
-		pointLight(head, Color3.fromRGB(255, 200, 140), 1.2, 34)
+		pointLight(head, Color3.fromRGB(255, 200, 140), 2.2, 44)
 	end
 
 	-- укрытия: контейнеры, мешки, паллеты, шины, бочки-костры
@@ -252,7 +252,7 @@ if RUN.yard then
 		fire.Size = 4
 		fire.Heat = 6
 		fire.Parent = glow
-		pointLight(glow, Color3.fromRGB(255, 150, 70), 1.5, 26)
+		pointLight(glow, Color3.fromRGB(255, 150, 70), 2.4, 34)
 		claim(x, z, 3)
 	end
 
@@ -303,7 +303,7 @@ if RUN.yard then
 	for _, p in { { 700, 50 }, { 780, 50 }, { 700, 128 }, { 790, 128 } } do
 		box(f, "FloodPost", V(0.6, 14, 0.6), CFrame.new(p[1], OY + GY + 7, p[2]), DARK, Enum.Material.Metal)
 		local head = box(f, "FloodLamp", V(2.2, 0.5, 1.2), CFrame.new(p[1], OY + GY + 14.3, p[2]), Color3.fromRGB(205, 220, 245), Enum.Material.Neon)
-		pointLight(head, Color3.fromRGB(190, 210, 255), 1.1, 46)
+		pointLight(head, Color3.fromRGB(190, 210, 255), 2.6, 62)
 	end
 end
 
