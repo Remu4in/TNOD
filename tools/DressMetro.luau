@@ -241,10 +241,34 @@ end
 
 ------------------------------------------------------------------------------------------------ мусор, ящики, кровь, лужи
 local rubbleColors = { Color3.fromRGB(88, 84, 78), Color3.fromRGB(70, 68, 64), Color3.fromRGB(104, 98, 90) }
+-- зона без обломков вокруг маркеров спавна, выхода, босса, цели, ящиков и точек зомби (радиус по XZ, в студах)
+local CLEAR_RADIUS = 8
+local clearZones: { Vector3 } = {}
+local markersFolder = ROOT:FindFirstChild("Markers")
+if markersFolder then
+	for _, m in markersFolder:GetChildren() do
+		if m:IsA("BasePart") then
+			table.insert(clearZones, V(m.Position.X, 0, m.Position.Z))
+		end
+	end
+end
+local function inClearZone(x: number, z: number): boolean
+	for _, c in clearZones do
+		if (c.X - x) ^ 2 + (c.Z - z) ^ 2 < CLEAR_RADIUS ^ 2 then
+			return true
+		end
+	end
+	return false
+end
 local function rubblePile(parent: Instance, x: number, y: number, z: number, count: number, spread: number)
 	for _ = 1, count do
 		local s = rng:NextNumber(0.5, 2.2)
-		box(parent, "Rubble", V(s * rng:NextNumber(0.8, 1.6), s * rng:NextNumber(0.5, 1), s * rng:NextNumber(0.8, 1.6)), x + rng:NextNumber(-spread, spread), y + s * 0.3, z + rng:NextNumber(-spread, spread), rubbleColors[rng:NextInteger(1, 3)], Enum.Material.Slate, { Orientation = V(rng:NextInteger(-20, 20), rng:NextInteger(0, 360), rng:NextInteger(-20, 20)) })
+		local sx, sy, sz = s * rng:NextNumber(0.8, 1.6), s * rng:NextNumber(0.5, 1), s * rng:NextNumber(0.8, 1.6)
+		local px, pz = x + rng:NextNumber(-spread, spread), z + rng:NextNumber(-spread, spread)
+		local color, orient = rubbleColors[rng:NextInteger(1, 3)], V(rng:NextInteger(-20, 20), rng:NextInteger(0, 360), rng:NextInteger(-20, 20))
+		if not inClearZone(px, pz) then -- случайные числа тратим всегда: раскладка остальных куч не меняется
+			box(parent, "Rubble", V(sx, sy, sz), px, y + s * 0.3, pz, color, Enum.Material.Slate, { Orientation = orient })
+		end
 	end
 end
 -- кучи у стен и у колонн
