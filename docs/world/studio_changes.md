@@ -4,7 +4,7 @@
 
 | W# | Дата | Согласие пользователя | Инструмент / вызов | Что создано или изменено | Откат | Статус |
 |---|---|---|---|---|---|---|
-| — | 2026-10-24 | — | — | Записей в место пока нет. Только чтение (`execute_luau` без изменений, `get_studio_state`). | — | — |
+| W001 | 2026-10-24 | «да, запускай DressMetro в Studio (Edit), запись в журнал W001» | `execute_luau` (Edit): содержимое `tools/DressMetro.luau` из коммита 65c0eed (без комментариев) | `Workspace.Metro.Decor` пересоздана (удалена и построена заново); `Metro.Platform.Platform*` — повторно выставлены Material=Marble, Color. Было: 2923 детали, 391 Rubble, 11 в радиусе 8 студов от `Metro_Spawn`. Стало: 2856 деталей, 340 Rubble, **0** у спавна | Запустить `tools/DressMetro.luau` из коммита 266bbbc (`git show 266bbbc:tools/DressMetro.luau`) — вернёт прежнюю раскладку (тот же seed) | сделано |
 
 ## Проверки чтением
 - 2026-10-24: следов тестов этапа 2 **нет**: `Workspace.WF_Test`, `ServerStorage.WorldForge`, `MaterialService.AssistantMaterials` (включая `Material: WF_A002_WallTileWhite`) — не найдены. Откат из чата WorldForge подтверждён. `Workspace.Metro` на месте.
