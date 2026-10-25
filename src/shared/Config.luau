@@ -1159,7 +1159,10 @@ Config.MissionMoveTeam = false -- true: в начале ночи команду 
 -- с Config.Waves.CountScale масштабируется как убийства метро (не меньше 5)
 Config.MissionMinKills = { Solo = 15, Full = 30, FullPlayers = 6 }
 Config.MissionKillsFloor = 3 -- ТЕСТ: нижняя граница убийств после масштаба CountScale (минимум убийств, зачистка шатра, метро); в релизе удалить (было 5)
-Config.MissionReturnTeam = true -- с рассветом команда возвращается в магазин
+Config.MissionReturnTeam = false -- true: с рассветом команду переносит к магазину (по решению Руслана 2026-10-26 — выключено: не телепортировать на рассвете)
+-- Военная база (Workspace.Base: стены x −159…107, ворота у z = 300, дальняя стена z ≈ 580): с началом ночи всех, кто внутри, выталкивает к точке сбора
+-- игроков (BuildingService.expelFromBase, по образцу магазина). locationId — локация, для которой верны границы; maxY — выше (вышки, вертолёты) не считаем
+Config.BaseZone = { locationId = "Custom", minX = -161, maxX = 109, minZ = 300, maxZ = 580, maxY = 60 }
 -- Маяк места миссии (MissionService): высокий луч, виден издалека; подпись зависит от типа миссии
 Config.PlaceBeacon = { Height = 160, Color = Color3.fromRGB(255, 200, 60) }
 Config.Missions = {
