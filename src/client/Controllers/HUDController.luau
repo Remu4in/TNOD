@@ -44,6 +44,7 @@ function HUDController.start()
 	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
 	gui.Parent = player:WaitForChild("PlayerGui")
 
+	-- Прицел показывается только при прицеливании (ПКМ, атрибут ADS); от бедра экран чистый, остаётся маркер попадания.
 	-- Прицел: отдельный ScreenGui без отступа под верхнюю панель. В обычном GUI центр на ~18 px ниже настоящего центра
 	-- экрана, куда летят пули, — из-за этого прицел «врал». Четыре чёрточки расходятся по текущему разбросу
 	-- (атрибут AimSpread ставит WeaponController), точка в центре, поверх — маркер попадания.
@@ -313,7 +314,13 @@ function HUDController.start()
 		-- перекрестие: зазор растёт с разбросом (в пикселях по текущему полю зрения), у ближнего боя чёрточек нет
 		local camera = workspace.CurrentCamera
 		local spread = (player:GetAttribute("AimSpread") :: number?) or 0
-		local show = spread > 0
+		local ads = player:GetAttribute("ADS") == true
+		-- у оптики (снайперка) своё перекрестие в маске прицела: отдельный прицел HUD не нужен
+		local toolNow = currentTool()
+		local weaponId = if toolNow then toolNow:GetAttribute("WeaponId") else nil
+		local scoped = ads and typeof(weaponId) == "string" and Config.ScopedWeapons[weaponId] == true and camera ~= nil and camera.FieldOfView < 30
+		dot.Visible = ads and not scoped
+		local show = spread > 0 and ads and not scoped
 		local px = if camera then math.tan(math.rad(spread)) / math.tan(math.rad(camera.FieldOfView / 2)) * (camera.ViewportSize.Y / 2) else 0
 		local gap = math.clamp(4 + px, 4, 160)
 		bars[1].Position = UDim2.new(0.5, 0, 0.5, -(gap + 5))
