@@ -21,6 +21,8 @@ local SKIN_FALLBACK = Color3.fromRGB(226, 182, 148)
 local HIP = Vector3.new(0.55, -0.55, -1.6) -- где рукоять оружия относительно камеры от бедра
 local DRAW_TIME = 0.4
 local MELEE_HAND = Vector3.new(0.6, -0.7, -1.3) -- где кисть с холодным оружием относительно камеры
+local DEFAULT_HAND = Vector3.new(0.02, -0.17, 0.12) -- где правая кисть на оружии (система рукояти), если нет записи в Config.WeaponHands
+local PISTOL_LEFT = Vector3.new(-0.24, -0.11, 0) -- левая рука у пистолета: смещение от правой кисти
 
 type GunPart = { part: BasePart, rel: CFrame, isMag: boolean, weld: Weld }
 
@@ -33,6 +35,8 @@ type Rig = {
 	rHand: Part,
 	lForearm: Part,
 	lHand: Part,
+	hand: Vector3, -- где правая кисть держит оружие (система рукояти)
+	sightX: number, -- боковое смещение прицельных приспособлений (система рукояти): в прицеливании оружие сдвигается на него к центру
 	leftHold: Vector3, -- где левая рука держит оружие (система рукояти)
 	magPos: Vector3, -- где магазин (система рукояти)
 	muzzle: Vector3, -- дуло (система рукояти)
@@ -108,6 +112,7 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 	local parts: { GunPart } = {}
 	local minZ, maxZ, minY, maxY = math.huge, -math.huge, math.huge, -math.huge
 	local magSum, magN = Vector3.zero, 0
+	local sightSum, sightN = 0, 0
 	for _, d in tool:GetChildren() do
 		if d:IsA("BasePart") and d ~= handle then
 			local weld = d:FindFirstChildOfClass("Weld")
@@ -143,6 +148,10 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 					magSum += rel.Position
 					magN += 1
 				end
+				if string.find(string.lower(d.Name), "sight", 1, true) then
+					sightSum += rel.Position.X
+					sightN += 1
+				end
 			end
 		end
 	end
@@ -153,13 +162,16 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 	local length = maxZ - minZ
 	local pistol = length < 2.0
 	local skin = skinColor()
+	local hand = Config.WeaponHands[weaponId] or DEFAULT_HAND
 	local rig_: Rig = {
 		tool = tool, weaponId = weaponId, model = model, parts = parts,
 		rForearm = makePart("RForearm", Vector3.new(0.4, 0.4, 3), SLEEVE, model),
 		rHand = makePart("RHand", Vector3.new(0.38, 0.34, 0.55), skin, model),
 		lForearm = makePart("LForearm", Vector3.new(0.4, 0.4, 3), SLEEVE, model),
 		lHand = makePart("LHand", Vector3.new(0.38, 0.34, 0.55), skin, model),
-		leftHold = if pistol then Vector3.new(-0.22, -0.28, 0.12) else Vector3.new(-0.02, minY + 0.12, minZ + length * 0.32),
+		hand = hand,
+		sightX = if sightN > 0 then sightSum / sightN else 0,
+		leftHold = if pistol then hand + PISTOL_LEFT else Vector3.new(-0.02, minY + 0.12, minZ + length * 0.32),
 		magPos = if magN > 0 then magSum / magN else Vector3.new(0, -0.7, -0.1),
 		muzzle = Vector3.new(0, (minY + maxY) / 2 + 0.05, minZ - 0.05),
 		aimY = maxY,
@@ -309,7 +321,7 @@ local function update(dt: number)
 	local stance = HIP
 	local stanceRot = Vector3.zero
 	if ads then
-		stance = Vector3.new(0, -r.aimY - 0.1, -1.0)
+		stance = Vector3.new(-r.sightX, -r.aimY - 0.1, -1.0) -- прицельные приспособления на оси камеры (у винтовок они смещены от оси модели)
 	elseif sprint then
 		stance = HIP + Vector3.new(-0.18, -0.32, 0.12)
 		stanceRot = Vector3.new(math.rad(-22), math.rad(14), math.rad(-12))
@@ -355,7 +367,7 @@ local function update(dt: number)
 
 	-- кисти: правая на рукояти, левая на цевье (или магазине во время перезарядки)
 	local tiltDown = CFrame.Angles(math.rad(-18), 0, 0)
-	local rightHandCf = weaponCf * CFrame.new(0.02, -0.17, 0.12) * tiltDown
+	local rightHandCf = weaponCf * CFrame.new(r.hand) * tiltDown
 	local leftHandCf = weaponCf * CFrame.new(leftTarget) * CFrame.Angles(math.rad(-10), math.rad(r.pistol and 18 or 0), math.rad(8))
 	if r.melee then
 		-- кисть в рамке хвата и идёт за взмахом (MeleeAnim.live), иначе оружие «выезжало» бы из неподвижного кулака; левая рука убрана

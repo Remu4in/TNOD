@@ -491,6 +491,17 @@ Config.WeaponModels = {
 	Machete = { ref = "Melee/StandardMachete", length = 2.5 },
 } :: { [string]: WeaponModelDef }
 
+-- Где правая кисть держит оружие (студы, система рукояти, уже с масштабом модели). У пистолетов, револьверов и Kriss Vector начало
+-- координат модели не в рукояти (как у винтовок), поэтому кисть берётся отсюда; нет записи — ViewModelController.DEFAULT_HAND.
+Config.WeaponHands = {
+	Pistol = Vector3.new(0, -0.12, -0.16),
+	M1911 = Vector3.new(0, -0.02, -0.06),
+	FiveSeven = Vector3.new(0, -0.05, -0.06),
+	Revolver = Vector3.new(0, -0.02, 0.04),
+	Model29 = Vector3.new(0, -0.02, 0.08),
+	Vector = Vector3.new(0, -0.1, -0.55),
+} :: { [string]: Vector3 }
+
 -- ЧЕРНОВИК ассортимента (не подключён к игре; числа предложены 2026-10-19 и утверждаются Русланом / balance-analyst).
 -- Работающий баланс — Config.Weapons выше. class — папка библиотеки; slot — место в магазине (1–12) в порядке роста цены;
 -- tier: "start" | "wall" (стены/вендинг за монеты) | "donate" (за донат, как косметика/ускорение) | "late" (поздняя игра, база).
