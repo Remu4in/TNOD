@@ -75,9 +75,23 @@ local function isGround(inst: Instance): boolean
 	return false
 end
 
--- Точка на земле под (x, z): только дороги, земля и трава (не крыши зданий)
+-- Точка на земле под (x, z): только дороги, земля и трава (не крыши зданий). Луч идёт только по этим папкам: раньше он останавливался на
+-- первой же крыше, и в застроенном районе (ночь 4, 100–150 студов) почти все точки отбраковывались; «пол внутри здания» отсекает проверка крыши ниже
 local function groundAt(x: number, z: number, roadsOnly: boolean?): Vector3?
-	local hit = workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0))
+	local include: { Instance } = {}
+	for _, name in GROUND_FOLDERS do
+		local f = workspace:FindFirstChild(name)
+		if f then
+			table.insert(include, f)
+		end
+	end
+	if #include == 0 then
+		return nil
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = include
+	local hit = workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0), params)
 	if hit and hit.Normal.Y > 0.9 and isGround(hit.Instance) then
 		if roadsOnly then
 			local roads = workspace:FindFirstChild("Roads")
@@ -85,7 +99,7 @@ local function groundAt(x: number, z: number, roadsOnly: boolean?): Vector3?
 				return nil
 			end
 		end
-		local up = workspace:Raycast(hit.Position + Vector3.new(0, 2, 0), Vector3.new(0, 40, 0))
+		local up = workspace:Raycast(hit.Position + Vector3.new(0, 2, 0), Vector3.new(0, 60, 0))
 		if not up then
 			return hit.Position
 		end
@@ -140,38 +154,86 @@ local function walkable(a: Vector3, b: Vector3): boolean
 	return not ok or path.Status ~= Enum.PathStatus.NoPath
 end
 
+-- Свободно ли над землёй место для маяка: нет твёрдых деталей (стены, машины, ящики) в коробке 6×6×6 над точкой
+local function openSpot(p: Vector3): boolean
+	for _, part in workspace:GetPartBoundsInBox(CFrame.new(p + Vector3.new(0, 3.5, 0)), Vector3.new(6, 6, 6)) do
+		if part.CanCollide and not isGround(part) then
+			return false
+		end
+	end
+	return true
+end
+
 -- Контрольные точки района: одни и те же для разведки и конвоя (детерминированно по номеру района), радиус radius (по умолчанию
 -- Config.ScoutRadius = 50–100 студов) от места шатра, поровну по кругу: сектор на каждую точку.
 -- grid — для конвоя: точки ставятся на дорогу (ближайшая проходимая клетка в 45 студах), без дороги точка не берётся;
--- без grid — на землю (Roads / Ground / Grass, ровно, без крыши над головой) и только там, куда можно дойти пешком от места шатра
+-- без grid (разведка) — на землю (Roads / Ground / Grass, ровно, без крыши над головой, не в коробке из деталей) и только там, куда можно дойти
+-- пешком от места шатра. Если в секторе точка не нашлась, угол и радиус меняются (до 24 попыток на сектор); не хватило — любой угол
+-- (ещё 120 попыток); не нашлось ни одной — последний проход без проверки пути. Меньше нужного — warn и столько, сколько нашлось.
 local function districtPoints(anchorIndex: number, count: number, grid: RoadRoute.Grid?, radiusRange: { number }?): { Vector3 }
 	local seeded = Random.new(7000 + anchorIndex * 31)
 	local anchor = MissionService.anchorPosition(anchorIndex)
+	local rr = radiusRange or Config.ScoutRadius
 	local list: { Vector3 } = {}
-	local tries = 0
-	while #list < count and tries < 120 do
-		tries += 1
-		-- на дороге сектор, где её нет, не должен держать поиск: сектора идут по кругу, каждая попытка — следующий
-		local sector = if grid then (tries - 1) % count else #list
-		local angle = (sector / count) * math.pi * 2 + (seeded:NextNumber() - 0.5) * 0.3
-		local rr = radiusRange or Config.ScoutRadius
-		local radius = rr[1] + seeded:NextNumber() * (rr[2] - rr[1])
-		local x, z = anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius
-		local p: Vector3? = if grid then grid.snap(Vector3.new(x, 0, z), 45) else groundAt(x, z)
-		if p and not grid and not walkable(anchor, p) then
-			p = nil
-		end
-		if p then
-			local dup = false
-			for _, q in list do
-				if Vector3.new(p.X - q.X, 0, p.Z - q.Z).Magnitude < 20 then
-					dup = true
-				end
+	local function farEnough(p: Vector3): boolean
+		for _, q in list do
+			if Vector3.new(p.X - q.X, 0, p.Z - q.Z).Magnitude < 20 then
+				return false
 			end
-			if not dup then
+		end
+		return true
+	end
+	if grid then
+		local tries = 0
+		while #list < count and tries < 120 do
+			tries += 1
+			-- на дороге сектор, где её нет, не должен держать поиск: сектора идут по кругу, каждая попытка — следующий
+			local sector = (tries - 1) % count
+			local angle = (sector / count) * math.pi * 2 + (seeded:NextNumber() - 0.5) * 0.3
+			local radius = rr[1] + seeded:NextNumber() * (rr[2] - rr[1])
+			local p = grid.snap(Vector3.new(anchor.X + math.cos(angle) * radius, 0, anchor.Z + math.sin(angle) * radius), 45)
+			if p and farEnough(p) then
 				table.insert(list, p)
 			end
 		end
+		return list
+	end
+	local width = math.pi * 2 / count
+	local function candidate(angle: number, needWalk: boolean): Vector3?
+		local radius = rr[1] + seeded:NextNumber() * (rr[2] - rr[1])
+		local p = groundAt(anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius)
+		if p and farEnough(p) and openSpot(p) and (not needWalk or walkable(anchor, p)) then
+			return p
+		end
+		return nil
+	end
+	for sector = 0, count - 1 do
+		for _ = 1, 24 do
+			local p = candidate((sector + seeded:NextNumber()) * width, true)
+			if p then
+				table.insert(list, p)
+				break
+			end
+		end
+	end
+	local tries = 0
+	while #list < count and tries < 120 do
+		tries += 1
+		local p = candidate(seeded:NextNumber() * math.pi * 2, true)
+		if p then
+			table.insert(list, p)
+		end
+	end
+	tries = 0
+	while #list == 0 and tries < 120 do
+		tries += 1
+		local p = candidate(seeded:NextNumber() * math.pi * 2, false)
+		if p then
+			table.insert(list, p)
+		end
+	end
+	if #list < count then
+		warn(string.format("[MissionService] точек разведки района %d: нашлось %d из %d (радиус %d–%d)", anchorIndex, #list, count, rr[1], rr[2]))
 	end
 	return list
 end
