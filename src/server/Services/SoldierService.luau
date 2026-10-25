@@ -10,16 +10,22 @@ local RunService = game:GetService("RunService")
 
 local SoldierService = {}
 
+-- Скорость ходьбы, под которую сделаны официальные анимации ходьбы (R6 и R15): при меньшей WalkSpeed анимация замедляется
+-- пропорционально (так же делает стандартный скрипт Animate), иначе ноги «бегут» на месте, а солдат плывёт по земле.
+local WALK_ANIM_SPEED = 14.5
+
 local ANIMS = {
 	R15 = {
 		idle = "rbxassetid://507766666",
+		idleAlt = "rbxassetid://507766388",
 		walk = "rbxassetid://507777826",
 		emotes = { "rbxassetid://507770239", "rbxassetid://507770453", "rbxassetid://507770677", "rbxassetid://507770818" }, -- wave, point, cheer, laugh
 	},
 	R6 = {
 		idle = "rbxassetid://180435571",
+		idleAlt = "rbxassetid://180435792",
 		walk = "rbxassetid://180426354",
-		emotes = {},
+		emotes = { "rbxassetid://128777973", "rbxassetid://128853357", "rbxassetid://129423030", "rbxassetid://129423131" }, -- wave, point, cheer, laugh
 	},
 }
 
@@ -31,6 +37,7 @@ type Soldier = {
 	home: Vector3,
 	homeYaw: number,
 	idle: AnimationTrack?,
+	idleAlt: AnimationTrack?, -- второй вариант стойки: солдаты на посту не стоят одинаково
 	walk: AnimationTrack?,
 	emotes: { AnimationTrack },
 	nextAt: number,
@@ -41,6 +48,7 @@ type Soldier = {
 	stuckSince: number,
 	targetYaw: number,
 	partner: Soldier?,
+	useAlt: boolean, -- в стойке играет второй вариант
 	pathBusy: boolean, -- путь считается в отдельном потоке: солдат стоит в паузе
 }
 
@@ -131,20 +139,26 @@ local function newPatrolTarget(s: Soldier)
 end
 
 local function setMoving(s: Soldier, moving: boolean)
-	local walk, idle = s.walk, s.idle
+	local walk = s.walk
 	if moving then
 		if walk and not walk.IsPlaying then
-			walk:Play(0.2)
+			walk:Play(0.3)
 		end
-		if idle and idle.IsPlaying then
-			idle:Stop(0.2)
+		if walk then
+			walk:AdjustSpeed(math.max(0.3, s.hum.WalkSpeed / WALK_ANIM_SPEED))
+		end
+		for _, t in { s.idle, s.idleAlt } do
+			if t and t.IsPlaying then
+				t:Stop(0.3)
+			end
 		end
 	else
-		if idle and not idle.IsPlaying then
-			idle:Play(0.2)
+		local stance = if s.useAlt and s.idleAlt then s.idleAlt else s.idle
+		if stance and not stance.IsPlaying then
+			stance:Play(0.3)
 		end
 		if walk and walk.IsPlaying then
-			walk:Stop(0.2)
+			walk:Stop(0.3)
 		end
 	end
 end
@@ -296,10 +310,12 @@ function SoldierService.init()
 				idle = loadTrack(animator, set.idle, true), walk = loadTrack(animator, set.walk, true), emotes = emotes,
 				nextAt = os.clock() + rng:NextNumber(0, 4), state = "pause", waypoints = {}, wpIndex = 1,
 				lastPos = root.Position, stuckSince = os.clock(), targetYaw = yaw, partner = nil, pathBusy = false,
+				idleAlt = loadTrack(animator, set.idleAlt, true), useAlt = rng:NextNumber() < 0.5,
 			}
-			if s.idle then
-				s.idle:Play()
-				s.idle.TimePosition = rng:NextNumber(0, 2)
+			local startIdle = if s.useAlt and s.idleAlt then s.idleAlt else s.idle
+			if startIdle then
+				startIdle:Play()
+				startIdle.TimePosition = rng:NextNumber(0, 1)
 			end
 			table.insert(list, s)
 		end
