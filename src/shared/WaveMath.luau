@@ -318,28 +318,44 @@ function WaveMath.spawnQueue(comp: Composition, rng: Random): { string }
 end
 
 -- Экономика команды ------------------------------------------------------------------------------------
--- Касса общая. За волну: награда за прохождение (waveReward) + пул за убийства (killPool): убийство в голову платит полную долю,
--- в тело — KillBodyShare от неё. Доля зависит от веса типа и не от размера толпы, поэтому доход за волну не растёт с числом зомби.
+-- Вариант C (docs/balance/economy_2026-10.md). За ночь: награда за миссию (missionReward: личная часть + командная, делится на игроков)
+-- + монеты за убийства: пул (killPool) делится по весам типов, убийство в голову платит полную долю, в тело — KillBodyShare; сверх killCap
+-- на игрока за ночь убийства не платят.
 export type EconomyTuning = {
-	WaveRewardBase: number,
-	WaveRewardPerWave: number,
-	KillPoolBase: number,
-	KillPoolPerWave: number,
+	MissionPersonalTotal: number,
+	MissionTeamTotal: number,
+	MissionGrowth: number,
+	MissionRewardWaves: number,
+	KillCapMin: number,
+	KillCapMax: number,
+	KillCapWaves: number,
+	KillPoolShare: number,
 	KillBodyShare: number,
 	KillWeights: { [string]: number },
 	BossKillWeight: number,
 }
 
-function WaveMath.waveReward(e: EconomyTuning, wave: number): number
-	return e.WaveRewardBase + e.WaveRewardPerWave * wave
+-- Награда за миссию ночи: (личная — каждому игроку целиком, командная — всего, делится поровну). Рост от ночи к ночи линейный;
+-- сумма за MissionRewardWaves ночей равна заданным итогам.
+function WaveMath.missionReward(e: EconomyTuning, wave: number): (number, number)
+	local n = e.MissionRewardWaves
+	local k = (1 + e.MissionGrowth * (math.max(wave, 1) - 1)) / (n + e.MissionGrowth * n * (n - 1) / 2)
+	return e.MissionPersonalTotal * k, e.MissionTeamTotal * k
 end
 
-function WaveMath.killPool(e: EconomyTuning, wave: number): number
-	return e.KillPoolBase + e.KillPoolPerWave * wave
+-- Потолок монет за убийства на игрока за ночь: растёт от KillCapMin к KillCapMax за KillCapWaves ночей
+function WaveMath.killCap(e: EconomyTuning, wave: number): number
+	local k = math.clamp((wave - 1) / math.max(1, e.KillCapWaves - 1), 0, 1)
+	return e.KillCapMin + (e.KillCapMax - e.KillCapMin) * k
+end
+
+-- Пул монет за убийства всей волны (если убить всех): доля потолка на каждого игрока команды
+function WaveMath.killPool(e: EconomyTuning, wave: number, players: number?): number
+	return e.KillPoolShare * WaveMath.killCap(e, wave) * math.max(1, players or 1)
 end
 
 -- Монеты за убийство в голову по типам (в тело — умножить на KillBodyShare); сумма по всей волне = killPool
-function WaveMath.killUnits(e: EconomyTuning, wave: number, comp: Composition): { [string]: number }
+function WaveMath.killUnits(e: EconomyTuning, wave: number, comp: Composition, players: number?): { [string]: number }
 	local function weight(id: string): number
 		return e.KillWeights[id] or (if WaveMath.isBossType(id) then e.BossKillWeight else 1)
 	end
@@ -351,7 +367,7 @@ function WaveMath.killUnits(e: EconomyTuning, wave: number, comp: Composition): 
 	if sum <= 0 then
 		return units
 	end
-	local pool = WaveMath.killPool(e, wave)
+	local pool = WaveMath.killPool(e, wave, players)
 	for id in comp do
 		units[id] = pool * weight(id) / sum
 	end

@@ -22,10 +22,14 @@ local Tuning = {
 }
 
 local Economy = {
-	WaveRewardBase = 350,
-	WaveRewardPerWave = 25,
-	KillPoolBase = 440,
-	KillPoolPerWave = 33,
+	MissionPersonalTotal = 3413,
+	MissionTeamTotal = 13050,
+	MissionGrowth = 0.18,
+	MissionRewardWaves = 15,
+	KillCapMin = 200,
+	KillCapMax = 300,
+	KillCapWaves = 15,
+	KillPoolShare = 0.35,
 	KillBodyShare = 0.4,
 	KillWeights = { Walker = 1, Runner = 1.2, Crawler = 0.8, Dark = 2, BucketHead = 2.5, Military = 3, Chemist = 3, Brute = 6 },
 	BossKillWeight = 40,
@@ -297,50 +301,64 @@ test("урон зомби +3% за волну", function()
 	check(math.abs(WaveMath.damageMultiplier(Tuning, 11) - 1.3) < 1e-9, "волна 11 = 1,3")
 end)
 
-local function cumulative(upTo: number, headShare: number): number
-	local sum = 0
-	for w = 1, upTo do
-		local comp = WaveMath.composition(Tuning, w, 1)
-		local units = WaveMath.killUnits(Economy, w, comp)
-		local pool = 0
-		for id, n in comp do
-			pool += units[id] * n * (headShare + (1 - headShare) * Economy.KillBodyShare)
-		end
-		sum += WaveMath.waveReward(Economy, w) + pool
+test("экономика: награда за миссии за 1–15 ночи равна заданным итогам и растёт", function()
+	local personal, team, prev = 0, 0, 0
+	for w = 1, 15 do
+		local p, t = WaveMath.missionReward(Economy, w)
+		personal += p
+		team += t
+		check(p > prev, "рост на ночи " .. w)
+		prev = p
 	end
-	return sum
-end
+	check(math.abs(personal - Economy.MissionPersonalTotal) < 1e-6, "личная часть " .. personal)
+	check(math.abs(team - Economy.MissionTeamTotal) < 1e-6, "командная часть " .. team)
+end)
+
+test("экономика: доход игрока к 15-й ночи ≈ 0,9 корзины при 1, 2, 4 и 6 игроках", function()
+	local killPoolFull = 0
+	for w = 1, 15 do
+		killPoolFull += WaveMath.killPool(Economy, w, 1)
+	end
+	for _, n in { 1, 2, 4, 6 } do
+		local income = Economy.MissionPersonalTotal + killPoolFull + Economy.MissionTeamTotal / n
+		local target = 0.9 * (5250 + 14500 / n)
+		check(math.abs(income - target) < target * 0.01, n .. " игроков: " .. income .. " против " .. target)
+	end
+end)
+
+test("экономика: потолок монет за убийства за ночь 200–300 и растёт", function()
+	eq(WaveMath.killCap(Economy, 1), 200, "ночь 1")
+	eq(WaveMath.killCap(Economy, 15), 300, "ночь 15")
+	eq(WaveMath.killCap(Economy, 40), 300, "дальше потолок не растёт")
+	check(WaveMath.killCap(Economy, 8) > WaveMath.killCap(Economy, 3), "рост")
+end)
 
 test("экономика: сумма единиц за убийство равна пулу волны", function()
 	for w = 1, 20 do
-		local comp = WaveMath.composition(Tuning, w, 3)
-		local units = WaveMath.killUnits(Economy, w, comp)
+		for _, players in { 1, 3 } do
+			local comp = WaveMath.composition(Tuning, w, players)
+			local units = WaveMath.killUnits(Economy, w, comp, players)
+			local sum = 0
+			for id, n in comp do
+				sum += units[id] * n
+			end
+			check(math.abs(sum - WaveMath.killPool(Economy, w, players)) < 1e-6, "волна " .. w)
+		end
+	end
+end)
+
+test("экономика: пул убийств не зависит от размера толпы и растёт с числом игроков", function()
+	local function total(players: number, crowdPlayers: number): number
+		local comp = WaveMath.composition(Tuning, 10, crowdPlayers)
+		local units = WaveMath.killUnits(Economy, 10, comp, players)
 		local sum = 0
 		for id, n in comp do
 			sum += units[id] * n
 		end
-		check(math.abs(sum - WaveMath.killPool(Economy, w)) < 1e-6, "волна " .. w)
+		return sum
 	end
-end)
-
-test("экономика: к 16-й без хедшотов ≈13,6 тыс., только хедшоты ≈20,5 тыс.", function()
-	local low, high = cumulative(16, 0), cumulative(16, 1)
-	check(low > 13000 and low < 14200, "минимум " .. low)
-	check(high > 20000 and high < 21000, "максимум " .. high)
-	check(cumulative(19, 0) > 14500 and cumulative(17, 0) < 16000, "все здания (14,5 тыс.) в минимуме — около 16–18-й")
-end)
-
-test("экономика: за волну не зависит от размера толпы", function()
-	local a = WaveMath.killUnits(Economy, 10, WaveMath.composition(Tuning, 10, 1))
-	local b = WaveMath.killUnits(Economy, 10, WaveMath.composition(Tuning, 10, 4))
-	local sa, sb = 0, 0
-	for id, n in WaveMath.composition(Tuning, 10, 1) do
-		sa += a[id] * n
-	end
-	for id, n in WaveMath.composition(Tuning, 10, 4) do
-		sb += b[id] * n
-	end
-	check(math.abs(sa - sb) < 1e-6, "пул одинаков для 1 и 4 игроков")
+	check(math.abs(total(2, 1) - total(2, 4)) < 1e-6, "пул при той же команде одинаков для толп разного размера")
+	check(math.abs(total(4, 4) - 4 * total(1, 1)) < 1e-6, "пул пропорционален числу игроков")
 end)
 
 -- Ballistics ---------------------------------------------------------------------------------------------------------

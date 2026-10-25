@@ -264,23 +264,31 @@ Config.Score = {
 }
 
 Config.Economy = {
-	CoinsPerHit = 0, -- монеты за попадания убраны: доход — награда за волну и пул за убийства (WaveMath.waveReward / killPool)
+	CoinsPerHit = 0, -- монеты за попадания убраны: доход — награда за миссию и пул за убийства (WaveMath.missionReward / killPool / killCap)
 	CoinsPerPlankRepair = 10,
 	MaxRepairCoinsPerDay = 100, -- на всю команду
-	-- Личные счета (с 2026-10-23; на здания скидываются у вывески). Убийство — монеты убившему. За волну R делится поровну между игроками
-	-- (StartCoins — каждому). R = WaveRewardBase + WaveRewardPerWave·волна (выжившим доля целиком; лежащим на конец ночи — половина доли,
-	-- не зачищена до таймера — тоже половина) + пул за убийства K = KillPoolBase + KillPoolPerWave·волна: в голову полная доля, в тело — KillBodyShare.
+	-- Вариант C «миссии решают» (2026-10-25, docs/balance/economy_2026-10.md). Личные счета (на здания скидываются у вывески). Основной доход —
+	-- награда за миссию ночи: личная часть каждому целиком + командная, поровну на всех (она оплачивает здания). Обе растут от ночи к ночи
+	-- как 1 + MissionGrowth·(ночь − 1); суммы за MissionRewardWaves ночей — MissionPersonalTotal и MissionTeamTotal (цель на игрока к 15-й
+	-- ночи ≈ 0,9 × (5250 на 3–4 ствола + 14 500 / игроков на здания); стартовые 500 — на патроны). Миссия провалена — доля MissionFailShare
+	-- (0: награды нет). Лежащему на конец ночи — DownedRewardFactor от награды.
+	-- Убийства: пул ночи на игрока = KillPoolShare от потолка KillCap (растёт от KillCapMin до KillCapMax за KillCapWaves ночей), пул растёт
+	-- с числом игроков; в голову полная доля, в тело — KillBodyShare. Потолок монет за убийства на игрока за ночь — KillCap (200–300): сколько бы
+	-- зомби ни пришло за время миссии, больше потолка убийства не платят (было 3000 за первую ночь на потоке зомби).
 	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту волну.
-	-- Цель к 16-й волне: без хедшотов ≈ 13,6 тыс., только хедшоты ≈ 20,5 тыс. (все здания = 14,5 тыс., остальное — оружие и расходники).
-	WaveRewardBase = 350,
-	WaveRewardPerWave = 25,
-	KillPoolBase = 440,
-	KillPoolPerWave = 33,
+	MissionPersonalTotal = 3413,
+	MissionTeamTotal = 13050,
+	MissionGrowth = 0.18,
+	MissionRewardWaves = 15,
+	MissionFailShare = 0,
+	KillCapMin = 200,
+	KillCapMax = 300,
+	KillCapWaves = 15,
+	KillPoolShare = 0.35,
 	KillBodyShare = 0.4,
 	KillWeights = { Walker = 1, Runner = 1.2, Crawler = 0.8, Dark = 2, BucketHead = 2.5, Military = 3, Chemist = 3, Brute = 6 },
 	BossKillWeight = 40,
 	DownedRewardFactor = 0.5,
-	UnclearedRewardFactor = 0.5,
 	LossPenalty = 0.2,
 	HeadshotMultiplier = 2, -- урон по голове (было 1,5)
 	LimbMultiplier = 0.75, -- урон по рукам и ногам: целиться в корпус и голову выгоднее

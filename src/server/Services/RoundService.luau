@@ -39,6 +39,7 @@ local gameOver = false
 local fellAtNight = false
 local rng = Random.new()
 local killUnits: { [string]: number } = {} -- монеты за убийство в голову по типам на текущую ночь (WaveMath.killUnits)
+local killEarned: { [Player]: number } = {} -- сколько монет за убийства игрок уже получил за эту ночь (потолок WaveMath.killCap)
 local roundSeed = 1 -- семя бросков прогрессии (WaveMath.roll): одно на раунд, чтобы рост по волнам был воспроизводим
 local dayVotes: { [Player]: boolean } = {} -- голоса «завершить день»
 
@@ -333,7 +334,8 @@ local function night()
 	local players = #Players:GetPlayers()
 	local threat = WaveMath.makeThreat(Config.ThreatClasses, Config.Threat.Tiers, loadouts(), roundSeed)
 	local comp = WaveMath.composition(Config.Waves, wave, players, threat)
-	killUnits = WaveMath.killUnits(Config.Economy, wave, comp)
+	killUnits = WaveMath.killUnits(Config.Economy, wave, comp, players)
+	table.clear(killEarned)
 	EconomyService.newWave()
 	PlayerService.takeLosses()
 	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave, threat), wave)
@@ -368,13 +370,14 @@ local function night()
 	if not gameOver then
 		local cleared = missionDone or ZombieService.remaining() == 0
 		RatingService.onNightEnd(wave, cleared, (os.clock() - nightStart) / nightLength)
-		-- награда за волну делится поровну на личные счета: стоящему на ногах — его доля целиком, лежащему — DownedRewardFactor от неё
-		-- (в сумме по команде — как прежняя общая награда); штраф за каждую потерю — доля того, что каждый заработал за волну
+		-- награда за миссию: личная часть каждому + командная поровну; стоящему на ногах — целиком, лежащему — DownedRewardFactor от неё;
+		-- провал миссии — доля MissionFailShare; штраф за каждую потерю — доля того, что каждый заработал за волну
 		local E = Config.Economy
 		local everyone = Players:GetPlayers()
-		local share = if #everyone > 0 then WaveMath.waveReward(E, wave) / #everyone else 0
+		local personal, team = WaveMath.missionReward(E, wave)
+		local share = personal + (if #everyone > 0 then team / #everyone else 0)
 		if not cleared then
-			share *= E.UnclearedRewardFactor
+			share *= E.MissionFailShare
 		end
 		share *= Perks.mult("coins")
 		local gotBy: { [Player]: number } = {}
@@ -457,6 +460,10 @@ function RoundService.onZombieKilled(player: Player?, zombie: any)
 		local head = zombie.headKill == true
 		local unit = killUnits[zombie.def.id] or 0
 		local coins = unit * (if head then 1 else Config.Economy.KillBodyShare) * Perks.mult("coins")
+		-- потолок за ночь: поток зомби во время миссии не даёт фармить
+		local earned = killEarned[player] or 0
+		coins = math.min(coins, math.max(0, WaveMath.killCap(Config.Economy, wave) - earned))
+		killEarned[player] = earned + coins
 		local bonusPoints = if head then math.floor(zombie.def.points * Config.Economy.HeadshotKillPointsBonus + 0.5) else 0
 		if head then
 			player:SetAttribute("Headshots", ((player:GetAttribute("Headshots") :: number?) or 0) + 1)
