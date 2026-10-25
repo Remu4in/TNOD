@@ -42,6 +42,8 @@ function GeneralService.brief(night: number): (string, { string })
 				return tostring(def.seconds or 150)
 			elseif key == "hold" then
 				return tostring(Config.Convoy.InstallHold)
+			elseif key == "follow" then
+				return tostring(Config.Convoy.FollowRadius)
 			end
 			return key
 		end)

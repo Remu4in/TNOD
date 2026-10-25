@@ -31,6 +31,8 @@ type State = {
 	arrived: boolean,
 	failed: boolean,
 	heading: Vector3,
+	speed: number, -- студов в секунду (у миссии своя: Config.Missions[n].convoySpeed, иначе Config.Convoy.TruckSpeed)
+	held: boolean, -- рядом нет живого игрока: грузовик стоит
 }
 
 local current: State? = nil
@@ -250,8 +252,8 @@ local function planFrom(grid: RoadRoute.Grid, start: Vector3, route: { Vector3 }
 	return waypoints
 end
 
--- Выезд с базы: базу окружают здания, дорога начинается в десятках студов от точки появления игроков. Берём ближайшую дорогу и ещё несколько
--- вокруг, из них — ту, с которой маршрут короче.
+-- Выезд из начальной зоны: дорога начинается в десятках студов от точки появления игроков. Берём ближайшую дорогу и ещё несколько вокруг,
+-- из них — ту, с которой путь короче (вместе с прямым отрезком от начальной зоны до неё: до ближайшей дороги порой ехать в разы дальше, чем от другой).
 local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3): { Vector3 }?
 	local grid = RoadRoute.grid()
 	local starts: { Vector3 } = {}
@@ -276,7 +278,7 @@ local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3)
 	for _, s in starts do
 		local plan = planFrom(grid, s, route, finalStop)
 		if plan then
-			local len = pathLength(plan)
+			local len = pathLength(plan) + Vector3.new(s.X - spawn.X, 0, s.Z - spawn.Z).Magnitude
 			if len < bestLen then
 				best, bestLen = plan, len
 			end
@@ -285,13 +287,20 @@ local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3)
 	return best
 end
 
--- Старт: route — точки по порядку, finalStop — где остановиться; spawn — база (грузовик выезжает на ближайшую дорогу). true — запущен.
-function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vector3): boolean
+-- Старт: route — точки по порядку, finalStop — где остановиться; spawn — начальная зона (точка появления игроков): колонна стартует отсюда
+-- и первым отрезком едет к ближайшей дороге. speed — скорость миссии (иначе Config.Convoy.TruckSpeed). true — запущен.
+function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vector3, speed: number?): boolean
 	ConvoyService.finish()
 	local waypoints = planRoute(spawn, route, finalStop)
 	if not waypoints or #waypoints < 2 then
 		warn("[ConvoyService] по дорогам до места шатра не доехать")
 		return false
+	end
+	-- грузовик стоит в начальной зоне: на StartOffset студов от точки появления игроков к первой дороге (не на самой точке, где появляются игроки)
+	local toRoad = Vector3.new(waypoints[1].X - spawn.X, 0, waypoints[1].Z - spawn.Z)
+	if toRoad.Magnitude > C.StartOffset + 6 then
+		local from = spawn + toRoad.Unit * C.StartOffset
+		table.insert(waypoints, 1, Vector3.new(from.X, spawn.Y, from.Z))
 	end
 	local begin = waypoints[1]
 	local heading = Vector3.new(waypoints[2].X - begin.X, 0, waypoints[2].Z - begin.Z)
@@ -306,13 +315,15 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 		return false
 	end
 	local length = pathLength(waypoints)
-	print(string.format("[ConvoyService] маршрут по дорогам: %d студов, %d точек, в пути около %d с при скорости %.1f", length, #waypoints, length / C.TruckSpeed, C.TruckSpeed))
+	local v = speed or C.TruckSpeed
+	print(string.format("[ConvoyService] маршрут по дорогам: %d студов, %d точек, в пути около %d с при скорости %.1f", length, #waypoints, length / v, v))
 	local state: State = {
 		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, waypoints = waypoints, wpIndex = 2, length = length,
-		escorts = {}, bar = makeBar(root), arrived = false, failed = false, heading = heading,
+		escorts = {}, bar = makeBar(root), arrived = false, failed = false, heading = heading, speed = v, held = false,
 	}
 	truck:SetAttribute("Hp", C.TruckHp)
-	truck:SetAttribute("RouteLength", math.floor(length)) -- для проверок: хватит ли ночи (длина / TruckSpeed)
+	truck:SetAttribute("RouteLength", math.floor(length)) -- для проверок: хватит ли ночи (длина / Speed)
+	truck:SetAttribute("Speed", v)
 	ZombieService.registerTarget(truck, root, damageTruck)
 	for i = 1, 2 do
 		-- смещение в системе грузовика: по бокам (за пределами кузова) и чуть позади
@@ -337,11 +348,13 @@ end
 -- Длина маршрута по дорогам и оценка времени в пути (для проверки, что колонна успеет за ночь)
 function ConvoyService.routeInfo(): (number, number)
 	local s = current
-	return if s then s.length else 0, if s then s.length / C.TruckSpeed else 0
+	return if s then s.length else 0, if s then s.length / s.speed else 0
 end
 
 local function moveTruck(s: State, dt: number)
-	local pos = s.root.Position
+	-- от точки привязки модели (pivot), а не от самой большой детали: деталь стоит в стороне от pivot, и грузовик на каждом шаге сдвигался
+	-- ещё и на это смещение (ехал примерно вдвое быстрее заданной скорости)
+	local pos = s.truck:GetPivot().Position
 	local wp = s.waypoints[s.wpIndex]
 	if not wp then
 		s.arrived = true
@@ -359,7 +372,7 @@ local function moveTruck(s: State, dt: number)
 		s.heading = want
 	end
 	s.heading = s.heading.Unit
-	local step = math.min(C.TruckSpeed * dt, flat.Magnitude)
+	local step = math.min(s.speed * dt, flat.Magnitude)
 	local nx, nz = pos.X + s.heading.X * step, pos.Z + s.heading.Z * step
 	local gy = ground(nx, nz, { s.truck, folder :: Instance }) or (pos.Y - s.bottom)
 	s.truck:PivotTo(CFrame.lookAt(Vector3.new(nx, gy, nz), Vector3.new(nx, gy, nz) + s.heading))
@@ -419,8 +432,14 @@ local function updateEscorts(s: State, dt: number)
 	end
 end
 
+-- Стоит ли колонна, ожидая игроков (для текста миссии)
+function ConvoyService.isHeld(): boolean
+	return current ~= nil and current.held
+end
+
+-- playerNear: рядом (Config.Convoy.FollowRadius) есть живой игрок; без него грузовик стоит.
 -- "arrived" — грузовик стоит у места шатра, "fail" — грузовик уничтожен
-function ConvoyService.update(dt: number): string?
+function ConvoyService.update(dt: number, playerNear: boolean?): string?
 	local s = current
 	if not s then
 		return nil
@@ -428,7 +447,8 @@ function ConvoyService.update(dt: number): string?
 	if s.failed then
 		return "fail"
 	end
-	if not s.arrived then
+	s.held = playerNear == false
+	if not s.arrived and not s.held then
 		moveTruck(s, dt)
 	end
 	updateEscorts(s, dt)

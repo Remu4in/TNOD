@@ -190,6 +190,40 @@ local function minKillsFor(players: number): number
 	return math.max(Config.MissionKillsFloor, math.floor(base * (Config.Waves.CountScale or 1) + 0.5))
 end
 
+-- Мешки с песком (Base.Fort), перекрывающие выезд из начальной зоны: на ночь конвоя (clearSandbags) уносим в ServerStorage, на рассвете возвращаем
+local hiddenSandbags: { { model: Instance, parent: Instance } } = {}
+
+local function setSandbags(removed: boolean)
+	if removed then
+		if #hiddenSandbags > 0 then
+			return
+		end
+		local folder = workspace:FindFirstChild(Config.Convoy.SandbagFolder)
+		if not folder then
+			return
+		end
+		local holder = ServerStorage:FindFirstChild("HiddenSandbags")
+		if not holder then
+			holder = Instance.new("Folder")
+			holder.Name = "HiddenSandbags"
+			holder.Parent = ServerStorage
+		end
+		for _, c in folder:GetChildren() do
+			if c.Name == Config.Convoy.SandbagName then
+				table.insert(hiddenSandbags, { model = c, parent = folder })
+				c.Parent = holder
+			end
+		end
+	else
+		for _, e in hiddenSandbags do
+			if e.parent.Parent then
+				e.model.Parent = e.parent
+			end
+		end
+		table.clear(hiddenSandbags)
+	end
+end
+
 local function setStatus(title: string, text: string, kind: string)
 	ReplicatedStorage:SetAttribute("MissionTitle", title)
 	ReplicatedStorage:SetAttribute("MissionText", text)
@@ -477,6 +511,9 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	elseif kind == "escort" then
 		-- маршрут: контрольные точки района ближайшим соседом от базы, затем дорога у места шатра
 		local start = playerSpawnPosition()
+		if def.clearSandbags then
+			setSandbags(true)
+		end
 		local grid = RoadRoute.grid()
 		local pts = districtPoints(def.anchor, def.points or 3, grid, def.radius)
 		local route: { Vector3 } = {}
@@ -496,7 +533,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		end
 		local stop = roadStopNear(grid, anchor)
 		local groundStart = groundAt(start.X, start.Z) or start
-		if not stop or not ConvoyService.start(groundStart, route, stop) then
+		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed) then
 			warn("[MissionService] конвой не запущен — миссия играется как обычная ночь")
 			state.kind = "classic"
 			state.infinite = false
@@ -665,8 +702,22 @@ function MissionService.update(dt: number): string?
 		end
 	elseif kind == "escort" then
 		if state.phase == "drive" then
-			local status = ConvoyService.update(dt)
-			text = string.format("Сопровождайте конвой. Прочность грузовика: %d%%", math.floor(ConvoyService.hpFraction() * 100 + 0.5))
+			-- едет, только пока рядом (Config.Convoy.FollowRadius) есть живой игрок
+			local near = false
+			local truckPos = ConvoyService.position()
+			if truckPos then
+				for _, pos in upPositions() do
+					if flatDist(pos, truckPos) <= Config.Convoy.FollowRadius then
+						near = true
+						break
+					end
+				end
+			end
+			local status = ConvoyService.update(dt, near)
+			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
+			text = if near
+				then string.format("Сопровождайте конвой. Прочность грузовика: %d%%", hp)
+				else string.format("Подойдите к конвою: он ждёт (в радиусе %d студов). Прочность грузовика: %d%%", Config.Convoy.FollowRadius, hp)
 			if status == "fail" then
 				notify("Конвой уничтожен!", 5)
 				result = "fail"
@@ -734,6 +785,7 @@ end
 
 function MissionService.finish()
 	ConvoyService.finish()
+	setSandbags(false)
 	if objects then
 		objects:Destroy()
 		objects = nil
