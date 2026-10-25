@@ -23,6 +23,8 @@ local DRAW_TIME = 0.4
 local MELEE_HAND = Vector3.new(0.6, -0.7, -1.3) -- где кисть с холодным оружием относительно камеры
 local DEFAULT_HAND = Vector3.new(0.02, -0.17, 0.12) -- где правая кисть на оружии (система рукояти), если нет записи в Config.WeaponHands
 local PISTOL_LEFT = Vector3.new(-0.24, -0.11, 0) -- левая рука у пистолета: смещение от правой кисти
+local RELOAD_DROP = 0.55 -- на сколько магазин уходит вниз при перезарядке (студы): больше — рука и магазин вылетали за нижний край кадра
+local RELOAD_OUT = Vector3.new(-0.25, -0.85, 0.1) -- где левая рука с вынутым магазином (относительно места магазина)
 local SCOPE_FOV = 30 -- маска прицела появляется, когда поле зрения сузилось до этого (камера уже «приблизила» картинку)
 
 type GunPart = { part: BasePart, rel: CFrame, isMag: boolean, weld: Weld }
@@ -312,7 +314,8 @@ end
 -- Анимация перезарядки: смещение оружия, положение левой руки и сдвиг магазина (система рукояти), прозрачность магазина
 local function reloadPose(r: Rig, u: number): (CFrame, Vector3, Vector3, number)
 	local tilt = segment(u, 0, 0.18) - segment(u, 0.82, 1)
-	local weaponCf = CFrame.new(-0.16 * tilt, -0.3 * tilt, 0.12 * tilt) * CFrame.Angles(math.rad(-14) * tilt, math.rad(8) * tilt, math.rad(-28) * tilt)
+	-- оружие чуть наклоняется и опускается, но остаётся в кадре вместе с правой рукой
+	local weaponCf = CFrame.new(-0.1 * tilt, -0.1 * tilt, 0.08 * tilt) * CFrame.Angles(math.rad(-12) * tilt, math.rad(6) * tilt, math.rad(-22) * tilt)
 	-- левая рука: к магазину → вниз с ним → за новым → вверх → к цевью
 	local toMag = segment(u, 0.05, 0.2)
 	local pull = segment(u, 0.2, 0.4)
@@ -325,14 +328,14 @@ local function reloadPose(r: Rig, u: number): (CFrame, Vector3, Vector3, number)
 	local magOffset = Vector3.zero
 	local magAlpha = 0
 	if u < 0.5 then
-		magOffset = Vector3.new(0, -1.7 * pull, 0)
-		hand = hand + Vector3.new(0, -1.7 * pull, 0)
+		magOffset = Vector3.new(0, -RELOAD_DROP * pull, 0)
+		hand = hand + Vector3.new(0, -RELOAD_DROP * pull, 0)
 		magAlpha = 1 - away -- магазин исчезает, когда рука его бросила
-		hand = hand + Vector3.new(-0.5 * away, -1.2 * away, 0.3 * away)
+		hand = hand + (RELOAD_OUT - Vector3.new(0, -RELOAD_DROP, 0)) * away
 	elseif u < 0.86 then
-		local outHand = magHome + Vector3.new(-0.5, -2.9, 0.3)
-		hand = outHand:Lerp(magHome + Vector3.new(0, -1.7, 0), fresh):Lerp(magHome, seat)
-		magOffset = Vector3.new(0, -1.7 * (1 - seat), 0)
+		local outHand = magHome + RELOAD_OUT
+		hand = outHand:Lerp(magHome + Vector3.new(0, -RELOAD_DROP, 0), fresh):Lerp(magHome, seat)
+		magOffset = Vector3.new(0, -RELOAD_DROP * (1 - seat), 0)
 		magAlpha = fresh -- новый магазин появляется у руки
 	else
 		hand = magHome:Lerp(r.leftHold, back)
