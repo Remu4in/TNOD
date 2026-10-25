@@ -700,6 +700,60 @@ meleeFx("Karambit", "swipe", 0.2, 1.2)
 meleeFx("Balisong", "stab", 0.24, 1.4)
 meleeFx("Crowbar", "smash", 0.38, 2.6)
 meleeFx("Sledge", "heavy", 0.95, 6.0)
+-- Доставание оружия (ViewModelController): стиль по классу оружия. time — вся анимация, с; rise — доля времени, за которую оружие приходит
+-- из начального положения (variants: pos — смещение от стойки вправо/вверх/назад в студах, rot — наклон, градусы; вариант выбирается случайно);
+-- turn/turnAt — осмотр: поворот (градусы) в промежутке turnAt долей времени; action — затвор (slide: затвор пистолета, charge: рукоятка/затвор
+-- сбоку, pump: помпа дробовика) в промежутке actionAt, actionDist — ход затвора в студах. Холодное оружие (melee) — короткое доставание снизу.
+export type DrawVariant = { pos: Vector3, rot: Vector3 }
+export type DrawAnimDef = {
+	time: number,
+	rise: number,
+	variants: { DrawVariant },
+	turn: Vector3?,
+	turnAt: { number }?,
+	action: string?,
+	actionAt: { number }?,
+	actionDist: number?,
+}
+Config.DrawAnim = {
+	melee = { time = 0.4, rise = 1, variants = { { pos = Vector3.new(0, -1, 0.35), rot = Vector3.new(-38, 0, 12) } } },
+	-- пистолеты: поднимаются снизу, небольшой осмотр (поворот ствола к себе), передёргивание затвора левой рукой сверху
+	pistol = {
+		time = 1.25, rise = 0.3, variants = { { pos = Vector3.new(0.05, -0.85, 0.3), rot = Vector3.new(-40, 0, 8) } },
+		turn = Vector3.new(-6, -38, 30), turnAt = { 0.3, 0.64 }, action = "slide", actionAt = { 0.64, 0.95 }, actionDist = 0.35,
+	},
+	-- ПП: небольшой поворот при выходе и передёргивание затвора сбоку (рукоятка взведения)
+	smg = {
+		time = 1.1, rise = 0.4, variants = { { pos = Vector3.new(0.25, -0.7, 0.4), rot = Vector3.new(-30, 22, -14) } },
+		turn = Vector3.new(0, -28, -22), turnAt = { 0.25, 0.56 }, action = "charge", actionAt = { 0.58, 0.94 }, actionDist = 0.4,
+	},
+	-- винтовки: снизу или из-за спины (случайно)
+	rifle = {
+		time = 0.85, rise = 0.7,
+		variants = {
+			{ pos = Vector3.new(0.05, -1, 0.4), rot = Vector3.new(-42, 0, 10) },
+			{ pos = Vector3.new(0.85, -0.2, 0.9), rot = Vector3.new(-12, 58, -34) },
+		},
+	},
+	-- дробовики: из-за спины, в конце передёргивание помпой
+	shotgun = {
+		time = 1.3, rise = 0.5, variants = { { pos = Vector3.new(0.9, -0.15, 0.95), rot = Vector3.new(-14, 62, -36) } },
+		action = "pump", actionAt = { 0.62, 0.95 }, actionDist = 0.45,
+	},
+	-- пулемёт: двумя руками справа из-за спины, тяжёлый, поэтому дольше
+	lmg = { time = 1.4, rise = 0.7, variants = { { pos = Vector3.new(1.1, -0.3, 1.0), rot = Vector3.new(-18, 70, -40) } } },
+} :: { [string]: DrawAnimDef }
+
+-- Стиль доставания по оружию: холодное — melee, пулемёт — lmg, снайперка — rifle, остальное — по папке модели (пистолеты и револьверы — pistol)
+local DRAW_BY_CLASS = { Pistols = "pistol", Revolvers = "pistol", SMG = "smg", Shotguns = "shotgun", Rifles = "rifle", Carbines = "rifle" }
+local WeaponDraw: { [string]: string } = {}
+for id, def in Weapons do
+	local model = Config.WeaponModels[id]
+	local class = if model then (string.match(model.ref, "^(%w+)/") or "") else ""
+	WeaponDraw[id] = if def.melee then "melee" elseif id == "LMG" then "lmg" else (DRAW_BY_CLASS[class] or "rifle")
+end
+Config.WeaponDraw = WeaponDraw
+
 -- Комбо на ЛКМ: серия ударов разными позами (MeleeAnim.STYLES), если следующий удар начат не позже window секунд после начала предыдущего
 -- (window больше интервала 1/fireRate оружия); после последнего удара серия идёт заново. time — длительность взмаха; удар по зомби сервер
 -- применяет в долю MeleeAnim.HIT[style] от неё. Урон и темп (fireRate) не меняются. Катана: справа, слева, снизу. Бита: справа, слева.

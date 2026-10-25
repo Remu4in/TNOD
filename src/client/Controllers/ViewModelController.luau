@@ -19,15 +19,17 @@ local player = Players.LocalPlayer
 local SLEEVE = Color3.fromRGB(62, 74, 52) -- рукав: оливковый
 local SKIN_FALLBACK = Color3.fromRGB(226, 182, 148)
 local HIP = Vector3.new(0.55, -0.55, -1.6) -- где рукоять оружия относительно камеры от бедра
-local DRAW_TIME = 0.4
 local MELEE_HAND = Vector3.new(0.6, -0.7, -1.3) -- где кисть с холодным оружием относительно камеры
 local DEFAULT_HAND = Vector3.new(0.02, -0.17, 0.12) -- где правая кисть на оружии (система рукояти), если нет записи в Config.WeaponHands
+-- куда левая рука берётся при действии затвором (система рукояти, от центра двигаемых деталей): затвор пистолета — сверху слева,
+-- рукоятка взведения — слева-сверху сбоку, помпа — снизу
+local ACTION_HAND = { slide = Vector3.new(-0.1, 0.12, 0.05), charge = Vector3.new(-0.12, 0.1, 0), pump = Vector3.new(0, -0.06, 0) }
 local PISTOL_LEFT = Vector3.new(-0.24, -0.11, 0) -- левая рука у пистолета: смещение от правой кисти
 local RELOAD_DROP = 0.55 -- на сколько магазин уходит вниз при перезарядке (студы): больше — рука и магазин вылетали за нижний край кадра
 local RELOAD_OUT = Vector3.new(-0.25, -0.85, 0.1) -- где левая рука с вынутым магазином (относительно места магазина)
 local SCOPE_FOV = 30 -- маска прицела появляется, когда поле зрения сузилось до этого (камера уже «приблизила» картинку)
 
-type GunPart = { part: BasePart, rel: CFrame, isMag: boolean, weld: Weld }
+type GunPart = { part: BasePart, rel: CFrame, isMag: boolean, weld: Weld, action: boolean }
 
 type Rig = {
 	tool: Tool,
@@ -38,6 +40,10 @@ type Rig = {
 	rHand: Part,
 	lForearm: Part,
 	lHand: Part,
+	draw: Config.DrawAnimDef, -- анимация доставания этого оружия (Config.DrawAnim)
+	drawVariant: Config.DrawVariant,
+	actionKind: string?, -- "slide" | "charge" | "pump": чем действуем при доставании (если подходящие детали есть)
+	actionAnchor: Vector3, -- центр двигаемых деталей (система рукояти)
 	hand: Vector3, -- где правая кисть держит оружие (система рукояти)
 	sightX: number, -- боковое смещение прицельных приспособлений (система рукояти): в прицеливании оружие сдвигается на него к центру
 	leftHold: Vector3, -- где левая рука держит оружие (система рукояти)
@@ -202,7 +208,7 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 				clone.Parent = model
 				local rel = weld.C0
 				local isMag = d:GetAttribute("Group") == "Mag"
-				table.insert(parts, { part = clone, rel = rel, isMag = isMag, weld = weld })
+				table.insert(parts, { part = clone, rel = rel, isMag = isMag, weld = weld, action = false })
 				-- габариты по углам детали
 				local half = d.Size / 2
 				for _, sx in { -1, 1 } do
@@ -233,6 +239,36 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 	local pistol = length < 2.0
 	local skin = skinColor()
 	local hand = Config.WeaponHands[weaponId] or DEFAULT_HAND
+	-- доставание: стиль по классу оружия; детали затвора (Slide / ChargingHandle или Bolt / Pump) двигаются при передёргивании
+	local draw = Config.DrawAnim[Config.WeaponDraw[weaponId] or (if melee then "melee" else "rifle")]
+	local actionKind = draw.action
+	local actionSum, actionN = Vector3.zero, 0
+	if actionKind then
+		local function matches(name: string, tag: string): boolean
+			local l = string.lower(name)
+			return if actionKind == "pump" then (string.match(l, "^pump") ~= nil and not string.find(l, "line", 1, true)) else string.find(l, tag, 1, true) ~= nil
+		end
+		local tag = if actionKind == "slide" then "slide" else "charginghandle"
+		local found = false
+		for _, gp in parts do
+			if matches(gp.part.Name, tag) then
+				found = true
+			end
+		end
+		if actionKind == "charge" and not found then
+			tag = "bolt" -- у части оружия рукоятки нет: тянем затвор
+		end
+		for _, gp in parts do
+			if matches(gp.part.Name, tag) then
+				gp.action = true
+				actionSum += gp.rel.Position
+				actionN += 1
+			end
+		end
+		if actionN == 0 then
+			actionKind = nil
+		end
+	end
 	local rig_: Rig = {
 		tool = tool, weaponId = weaponId, model = model, parts = parts,
 		rForearm = makePart("RForearm", Vector3.new(0.4, 0.4, 3), SLEEVE, model),
@@ -240,6 +276,10 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 		lForearm = makePart("LForearm", Vector3.new(0.4, 0.4, 3), SLEEVE, model),
 		lHand = makePart("LHand", Vector3.new(0.38, 0.34, 0.55), skin, model),
 		hand = hand,
+		draw = draw,
+		drawVariant = draw.variants[math.random(1, #draw.variants)],
+		actionKind = actionKind,
+		actionAnchor = if actionN > 0 then actionSum / actionN else Vector3.zero,
 		sightX = if sightN > 0 then sightSum / sightN else 0,
 		leftHold = if pistol then hand + PISTOL_LEFT else Vector3.new(-0.02, minY + 0.12, minZ + length * 0.32),
 		magPos = if magN > 0 then magSum / magN else Vector3.new(0, -0.7, -0.1),
@@ -405,9 +445,30 @@ local function update(dt: number)
 		stance = HIP + Vector3.new(-0.18, -0.32, 0.12)
 		stanceRot = Vector3.new(math.rad(-22), math.rad(14), math.rad(-12))
 	end
-	local draw = smooth((now - r.drawStart) / DRAW_TIME)
-	stance += Vector3.new(0, -1.0 * (1 - draw), 0.35 * (1 - draw))
-	stanceRot += Vector3.new(math.rad(-38) * (1 - draw), 0, math.rad(12) * (1 - draw))
+	-- доставание: из начального положения (снизу или из-за спины) в стойку, осмотр, передёргивание (Config.DrawAnim)
+	local da = r.draw
+	local du = (now - r.drawStart) / da.time
+	local away = 1 - smooth(du / da.rise)
+	local variant = r.drawVariant
+	stance += variant.pos * away
+	stanceRot += Vector3.new(math.rad(variant.rot.X), math.rad(variant.rot.Y), math.rad(variant.rot.Z)) * away
+	if da.turn and da.turnAt then
+		local turnK = math.sin(math.pi * math.clamp((du - da.turnAt[1]) / (da.turnAt[2] - da.turnAt[1]), 0, 1))
+		stanceRot += Vector3.new(math.rad(da.turn.X), math.rad(da.turn.Y), math.rad(da.turn.Z)) * turnK
+	end
+	-- ход затвора (0…1) и захват его левой рукой (0…1)
+	local pull, grab = 0, 0
+	local kind = r.actionKind
+	if kind and da.actionAt and du >= da.actionAt[1] and du < 1 then
+		local w = math.clamp((du - da.actionAt[1]) / (da.actionAt[2] - da.actionAt[1]), 0, 1)
+		if kind == "pump" then
+			pull = smooth(w / 0.4) - smooth((w - 0.5) / 0.4)
+		else
+			-- затвор тянем плавно, отпускаем резко (пружина)
+			pull = if w < 0.5 then smooth(w / 0.5) elseif w < 0.62 then 1 else 1 - smooth((w - 0.62) / 0.1)
+		end
+		grab = smooth(w / 0.15) - smooth((w - 0.85) / 0.15)
+	end
 	local stiffness = if ads then 260 else 150
 	pos, posVel = springStep(pos, posVel, Vector3.new(swayX, swayY, 0) + bob, dt, stiffness, 20)
 	rot, rotVel = springStep(rot, rotVel, Vector3.new(swayY * 0.8, swayX * 1.4, swayX * 1.2) + stanceRot, dt, stiffness, 20)
@@ -425,6 +486,12 @@ local function update(dt: number)
 		end
 	end
 
+	if kind and grab > 0 and not rl then
+		-- левая рука идёт к затвору и тянет его вместе с деталями
+		local target = r.actionAnchor + ACTION_HAND[kind] + Vector3.new(0, 0, (r.draw.actionDist or 0.3) * pull)
+		leftTarget = leftTarget:Lerp(target, grab)
+	end
+
 	local weaponCf = camera.CFrame * CFrame.new(stance + pos) * CFrame.Angles(rot.X, rot.Y, rot.Z) * reloadCf
 	-- холодное оружие: «кисть» — это рамка, в которой Tool.Grip задаёт положение рукояти (хват, взмах, осмотр двигают Grip)
 	local handFrame = weaponCf
@@ -439,7 +506,11 @@ local function update(dt: number)
 			gp.part.Transparency = if magAlpha > 0.5 then 0 else 1
 		else
 			-- у холодного оружия части двигает осмотр (рукояти бабочки вокруг шарнира): смещение берём из сварки каждый кадр
-			gp.part.CFrame = weaponCf * (if r.melee then gp.weld.C0 else gp.rel)
+			if gp.action and pull > 0 then
+				gp.part.CFrame = weaponCf * CFrame.new(0, 0, (r.draw.actionDist or 0.3) * pull) * gp.rel
+			else
+				gp.part.CFrame = weaponCf * (if r.melee then gp.weld.C0 else gp.rel)
+			end
 			gp.part.Transparency = 0
 		end
 	end
