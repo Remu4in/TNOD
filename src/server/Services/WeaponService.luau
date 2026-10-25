@@ -185,6 +185,61 @@ local function syncAmmo(player: Player, weaponId: string)
 	update(player.Character)
 end
 
+-- Хотбар (стандартный Backpack Roblox): слоты идут по порядку добавления, и после выброса оружия в середине остаётся пустой слот.
+-- Каждому инструменту при появлении ставим сквозной номер Order (по нему же колёсико мыши листает оружие на клиенте), а compactBackpack
+-- снимает инструменты рюкзака и возвращает их в порядке Order: слоты снова идут подряд с 1. Клиент в этом не участвует.
+local toolOrder = 0
+
+local function stampTool(tool: Instance)
+	if tool:IsA("Tool") and tool:GetAttribute("Order") == nil then
+		toolOrder += 1
+		tool:SetAttribute("Order", toolOrder)
+	end
+end
+
+local compacting: { [Player]: boolean } = {}
+local compactAgain: { [Player]: boolean } = {}
+
+local function compactBackpack(player: Player)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not backpack then
+		return
+	end
+	if compacting[player] then
+		compactAgain[player] = true -- ещё одна выброшенная пушка, пока идёт пересборка: повторим после
+		return
+	end
+	compacting[player] = true
+	local tools: { Tool } = {}
+	for _, t in backpack:GetChildren() do
+		if t:IsA("Tool") then
+			stampTool(t)
+			table.insert(tools, t)
+		end
+	end
+	table.sort(tools, function(a: Tool, b: Tool)
+		return (a:GetAttribute("Order") :: number) < (b:GetAttribute("Order") :: number)
+	end)
+	for _, t in tools do
+		t.Parent = nil
+	end
+	-- хотбар убирает слоты не мгновенно, а добавляемые одним пакетом инструменты занимают слоты в произвольном порядке (проверено в Studio):
+	-- поэтому пауза после снятия и возврат по одному
+	task.wait(0.4)
+	for _, t in tools do
+		if not backpack.Parent then
+			break
+		end
+		t.Parent = backpack
+		task.wait(0.1)
+	end
+	compacting[player] = nil
+	if compactAgain[player] then
+		compactAgain[player] = nil
+		compactBackpack(player)
+	end
+end
+
 local function giveTool(player: Player, weaponId: string)
 	local backpack = player:FindFirstChildOfClass("Backpack") or player:WaitForChild("Backpack", 5)
 	if not backpack then
@@ -202,7 +257,9 @@ local function giveTool(player: Player, weaponId: string)
 		return false
 	end
 	if not has(backpack) and not has(player.Character) then
-		buildTool(Config.Weapons[weaponId]).Parent = backpack
+		local tool = buildTool(Config.Weapons[weaponId])
+		stampTool(tool)
+		tool.Parent = backpack
 	end
 	syncAmmo(player, weaponId)
 end
@@ -611,6 +668,7 @@ local function onPickup(player: Player, drop: Model)
 		drop:Destroy()
 		giveWithAmmo(player, weaponId, mag, reserve)
 		equipWeapon(player, weaponId)
+		task.defer(compactBackpack, player)
 		Remotes.get("Notify"):FireClient(player, "Подобрано: " .. def.name, 1.5)
 	end
 end
@@ -670,6 +728,7 @@ local function onDrop(player: Player)
 	local st = inv[weaponId]
 	inv[weaponId] = nil
 	tool:Destroy()
+	task.defer(compactBackpack, player) -- закрыть пустой слот хотбара: оружие из следующих слотов сдвигается к началу
 	local look = head.CFrame.LookVector
 	spawnDrop(weaponId, st.mag, st.reserve, CFrame.new(head.Position + look * 2.5), look * 24 + Vector3.new(0, 10, 0))
 end
@@ -830,6 +889,16 @@ function WeaponService.init(map: Types.MapInfo)
 	local function hook(player: Player)
 		player.CharacterAdded:Connect(function()
 			onCharacter(player)
+			-- рюкзак создаётся заново при каждом возрождении: нумеруем всё, что в него попадает (оружие, аптечки, турели)
+			task.spawn(function()
+				local backpack = player:FindFirstChildOfClass("Backpack") or player:WaitForChild("Backpack", 5)
+				if backpack then
+					for _, t in backpack:GetChildren() do
+						stampTool(t)
+					end
+					backpack.ChildAdded:Connect(stampTool)
+				end
+			end)
 		end)
 	end
 	Players.PlayerAdded:Connect(hook)

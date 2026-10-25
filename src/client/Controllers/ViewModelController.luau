@@ -275,6 +275,11 @@ function ViewModel.active(): boolean
 	return rig ~= nil
 end
 
+-- Идёт ли сейчас перезарядка (колёсико мыши в это время оружие не меняет)
+function ViewModel.isReloading(): boolean
+	return reload ~= nil
+end
+
 -- Дуло в мире (для вспышки, гильз, трассеров): из deck-а viewmodel, а не из скрытого оружия в руках персонажа
 function ViewModel.handleCFrame(tool: Tool): CFrame?
 	local r = rig
