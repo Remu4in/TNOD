@@ -10,8 +10,8 @@ local MeleeAnim = {}
 
 export type Pose = { t: number, cf: CFrame }
 -- grip — поза оружия; hand — поза кисти от первого лица (по умолчанию как у оружия): у ножа и керамбита оружие крутится само, а кисть остаётся на месте;
--- parts: префикс имени детали → поворот в системе рукояти (вокруг pivot)
-export type InspectFrame = { grip: CFrame, hand: CFrame?, parts: { [string]: CFrame }? }
+-- model — вращение всей модели в её системе (вокруг рукояти: флипы бабочки); parts: префикс имени детали → поворот в системе рукояти (вокруг шарнира)
+export type InspectFrame = { grip: CFrame, hand: CFrame?, model: CFrame?, parts: { [string]: CFrame }? }
 
 local CF, ANG = CFrame.new, CFrame.Angles
 local rad = math.rad
@@ -175,16 +175,27 @@ local function bell(u: number): number
 	return math.sin(math.pi * math.clamp(u, 0, 1))
 end
 
--- Нож: остриём вверх, чуть присесть, подбросить с закруткой вокруг собственной оси (как бутылку) и поймать
-local function knife(u: number): InspectFrame
+-- Нож (как в CS2): поднять, повернуть к камере правую грань клинка, затем левую и в конце небольшой росчерк остриём (острие описывает круг,
+-- клинок делает оборот вокруг своей оси). Кисть только приподнимается: вращается нож, а не рука.
+local function knife(u: number, _hinge: Vector3?): InspectFrame
 	local hold = Config.MeleeHold.Knife or Config.MeleeHold.default
 	local axis = hold.dir.Unit -- ось ножа в системе кисти
-	local dip = math.sin(math.pi * math.clamp(u / 0.16, 0, 1)) -- замах перед броском
-	local k = math.clamp((u - 0.16) / 0.64, 0, 1)
-	local toss = math.sin(math.pi * k) -- подброс и возврат
-	local spin = ease(k) * math.pi * 6 -- три оборота вокруг оси лезвия
-	-- нож крутится в воздухе после броска, кисть только приседает и раскрывается (иначе вместе с ножом по оси крутилась бы и рука)
-	return { grip = CF(0.02, 1.1 * toss - 0.18 * dip, 0.05 * toss) * CFrame.fromAxisAngle(axis, spin), hand = CF(0.02, -0.18 * dip, 0) }
+	local function seg(a: number, b: number): number
+		return ease((u - a) / (b - a))
+	end
+	local lift = seg(0, 0.12) - seg(0.9, 1)
+	-- поворот вокруг оси клинка: 0 → правая грань (+75°) → левая (−75°) → 0
+	local roll = rad(75) * seg(0.12, 0.34) - rad(150) * seg(0.4, 0.62) + rad(75) * seg(0.84, 0.96)
+	-- росчерк: острие кружит (полтора оборота малого круга) и клинок делает один оборот вокруг оси
+	local k = seg(0.62, 0.84)
+	local env = math.sin(math.pi * k)
+	local phase = 2 * math.pi * 1.5 * k
+	local tilt = ANG(0.5 * env * math.sin(phase), 0, 0.5 * env * math.cos(phase))
+	local spin = 2 * math.pi * k
+	return {
+		grip = CF(0.02 * lift, 0.12 * lift, 0.05 * lift) * tilt * CFrame.fromAxisAngle(axis, roll + spin),
+		hand = CF(0.02 * lift, 0.04 * lift, 0),
+	}
 end
 
 -- Катана: поднять, повернуть плоскостью к камере, повести остриём и вернуть
@@ -205,28 +216,37 @@ local function karambit(u: number): InspectFrame
 	return { grip = pos * ANG(spin, 0, 0) * ANG(0, rad(35) * twist, rad(-20) * twist), hand = pos }
 end
 
--- Бабочка: классический флип балисонга. Рукояти вращаются вокруг шарнира у основания клинка (две половинки в разные стороны:
--- верхняя уходит вверх-назад, нижняя вниз-вперёд), на каждом обороте они то складываются вдоль клинка, то раскрываются —
--- клинок «закрывается и открывается»; всего два полных оборота, нижняя рукоять чуть отстаёт. Нож при этом повёрнут боком к камере,
--- чтобы поворот рукоятей был виден, и слегка покачивается в кисти.
-local function butterfly(u: number): InspectFrame
-	local lift = bell(u * 1.05)
-	local present = ease(u / 0.12) - ease((u - 0.9) / 0.1)
-	local top = ease((u - 0.1) / 0.78) -- 0 → 1: прогресс верхней рукояти
-	local bottom = ease((u - 0.16) / 0.74)
-	local sway = math.sin(u * math.pi * 4) * 0.08
+-- Бабочка (балисонг) по образцу CS2. Нож развёрнут плоскостью к камере, чтобы ось шарнира (X модели) смотрела на игрока и всё было видно.
+-- Три тела вокруг шарнира у основания клинка: рукоять Handle (в кисти, неподвижна), рукоять BiteHandle и клинок Blade. Угол — вокруг оси X шарнира
+-- (0 у клинка — вперёд, у рукояти в открытом ноже — назад). Порядок: открытый нож → BiteHandle переходит вперёд через верх → клинок уходит через низ
+-- в Handle (нож закрыт, клинок в рукояти) → флип: вся сборка делает оборот вокруг пальцев → BiteHandle уходит через низ назад (всё сложено) →
+-- второй флип → клинок возвращается через верх вперёд (открыт) → хват. Каждая рукоять и клинок делают по полному обороту вокруг шарнира;
+-- к концу все углы кратны 2π, нож в исходном положении. Кисть не крутится: двигается только вверх (hand), вращает нож сама сборка (model).
+local function butterfly(u: number, _hinge: Vector3?): InspectFrame
+	local function seg(a: number, b: number): number
+		return ease((u - a) / (b - a))
+	end
+	local present = seg(0, 0.1) - seg(0.94, 1) -- нож разворачивается боком к камере и возвращается
+	local lift = present
+	-- BiteHandle: 0 → −π (вперёд через верх) → −2π (назад через низ); Blade: 0 → −π (в рукоять через низ) → −2π (вперёд через верх)
+	local handle2 = -math.pi * seg(0.10, 0.24) - math.pi * seg(0.58, 0.72)
+	local blade = -math.pi * seg(0.24, 0.38) - math.pi * seg(0.86, 0.96)
+	-- два флипа: оборот всей сборки вокруг кисти (ось шарнира)
+	local spin = -2 * math.pi * seg(0.38, 0.58) - 2 * math.pi * seg(0.72, 0.86)
 	return {
-		grip = CF(0.05 * lift, 0.3 * lift, -0.1 * lift) * ANG(rad(-10) * present, rad(55) * present, rad(-15) * present + sway),
-		parts = { Handle = ANG(-math.pi * 4 * top, 0, 0), BiteHandle = ANG(math.pi * 4 * bottom, 0, 0) },
+		grip = CF(0.04 * lift, 0.18 * lift, -0.1 * lift) * ANG(0, rad(80) * present, 0),
+		hand = CF(0.04 * lift, 0.08 * lift, 0),
+		model = ANG(spin, 0, 0),
+		parts = { BiteHandle = ANG(handle2, 0, 0), Blade = ANG(blade, 0, 0) },
 	}
 end
 
 -- Осмотр по оружию: длительность (с) и функция времени. Ключ — id оружия из Config.Weapons.
 MeleeAnim.INSPECT = {
-	Knife = { time = 2.2, frame = knife },
+	Knife = { time = 3.0, frame = knife },
 	Katana = { time = 2.6, frame = katana },
 	Karambit = { time = 1.5, frame = karambit },
-	Balisong = { time = 2.8, frame = butterfly },
-} :: { [string]: { time: number, frame: (number) -> InspectFrame } }
+	Balisong = { time = 3.6, frame = butterfly },
+} :: { [string]: { time: number, frame: (number, Vector3?) -> InspectFrame } }
 
 return MeleeAnim

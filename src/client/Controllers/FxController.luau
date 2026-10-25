@@ -483,7 +483,7 @@ end
 
 -- Осмотр холодного оружия (клавиша F): оружие двигается по MeleeAnim.INSPECT, части модели — вокруг шарниров
 type InspectPart = { weld: Weld, base: CFrame, pivot: Vector3, key: string }
-local inspecting: { tool: Tool, started: number, time: number, frame: (number) -> MeleeAnim.InspectFrame, baseGrip: CFrame, parts: { InspectPart } }? = nil
+local inspecting: { tool: Tool, started: number, time: number, frame: (number, Vector3?) -> MeleeAnim.InspectFrame, baseGrip: CFrame, parts: { InspectPart }, hinge: Vector3? }? = nil
 
 -- Плавный возврат оружия в руку после прерванного осмотра (как в CS2: F — осмотр, R — отмена, F — снова)
 local returning: { tool: Tool, from: CFrame, to: CFrame, started: number }? = nil
@@ -527,24 +527,36 @@ function FxController.inspect()
 	end
 	local handle = handleOf(tool)
 	local parts: { InspectPart } = {}
-	local keys = def.frame(0.5).parts
+	local keys = def.frame(0.5, nil).parts
+	local hinge: Vector3? = nil
 	if keys and handle then
+		-- шарнир один на все части (рукояти и клинок): ось по X модели, на переднем (−Z) конце рукоятей
+		local hingeZ, hingeN = 0, 0
+		local found: { { weld: Weld, key: string } } = {}
 		for _, d in tool:GetChildren() do
 			if d:IsA("BasePart") and d ~= handle then
 				local weld = d:FindFirstChildOfClass("Weld")
 				if weld and weld.Part0 == handle then
 					for key in keys do
 						if string.sub(d.Name, 1, #key) == key then
-							-- шарнир рукояти: её конец со стороны клинка (-Z), длина — наибольший размер детали
-							local half = math.max(d.Size.X, d.Size.Y, d.Size.Z) / 2
-							table.insert(parts, { weld = weld, base = weld.C0, pivot = weld.C0.Position + Vector3.new(0, 0, -half), key = key })
+							table.insert(found, { weld = weld, key = key })
+							if key ~= "Blade" then
+								hingeZ += weld.C0.Position.Z - math.max(d.Size.X, d.Size.Y, d.Size.Z) / 2
+								hingeN += 1
+							end
 						end
 					end
 				end
 			end
 		end
+		if hingeN > 0 then
+			hinge = Vector3.new(0, 0, hingeZ / hingeN)
+			for _, f in found do
+				table.insert(parts, { weld = f.weld, base = f.weld.C0, pivot = hinge :: Vector3, key = f.key })
+			end
+		end
 	end
-	inspecting = { tool = tool, started = os.clock(), time = def.time, frame = def.frame, baseGrip = tool.Grip, parts = parts }
+	inspecting = { tool = tool, started = os.clock(), time = def.time, frame = def.frame, baseGrip = tool.Grip, parts = parts, hinge = hinge }
 end
 
 -- Покадровое применение отдачи и взмаха -----------------------------------
@@ -638,9 +650,10 @@ function FxController.start()
 			if active ~= ins.tool or u >= 1 or swing then
 				FxController.cancelInspect(active == ins.tool and u < 1)
 			else
-				local frame = ins.frame(u)
+				local frame = ins.frame(u, ins.hinge)
 				live = frame.hand or frame.grip
-				ins.tool.Grip = ins.baseGrip * frame.grip:Inverse()
+				-- вращение всей модели (frame.model) — в системе модели: Grip = model⁻¹ · базовый · поза⁻¹
+				ins.tool.Grip = (if frame.model then frame.model:Inverse() else CFrame.identity) * ins.baseGrip * frame.grip:Inverse()
 				for _, part in ins.parts do
 					local rot = frame.parts and frame.parts[part.key]
 					if rot and part.weld.Parent then
