@@ -1163,8 +1163,11 @@ Config.MissionReturnTeam = false -- true: с рассветом команду �
 -- Военная база (Workspace.Base: стены x −159…107, ворота у z = 300, дальняя стена z ≈ 580): с началом ночи всех, кто внутри, выталкивает к точке сбора
 -- игроков (BuildingService.expelFromBase, по образцу магазина). locationId — локация, для которой верны границы; maxY — выше (вышки, вертолёты) не считаем
 Config.BaseZone = { locationId = "Custom", minX = -161, maxX = 109, minZ = 300, maxZ = 580, maxY = 60 }
--- Маяк места миссии (MissionService): высокий луч, виден издалека; подпись зависит от типа миссии
-Config.PlaceBeacon = { Height = 160, Color = Color3.fromRGB(255, 200, 60) }
+-- Метки миссий (MissionService.makeBeacon): светящийся полупрозрачный круг на земле + метка в HUD с расстоянием (столбы убраны по просьбе Руслана 2026-10-26).
+-- ScoutPointRadius — радиус круга контрольной точки = радиус засчитывания; PlaceBeacon — круг места миссии (подпись зависит от типа миссии)
+Config.ScoutPointRadius = 10
+Config.ScoutPointColor = Color3.fromRGB(80, 200, 255)
+Config.PlaceBeacon = { Radius = 16, Color = Color3.fromRGB(255, 200, 60) }
 Config.Missions = {
 	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
 	[2] = { type = "build", title = "Зачистка зоны и установка шатра", anchor = 1, kills = 15, hint = "Зачистите зону и установите шатёр на отмеченном месте" },

@@ -11,6 +11,7 @@
 -- Игроки идут к месту миссии сами (Config.MissionMoveTeam = false), место отмечено высоким маяком.
 -- Статус для клиентов — атрибуты ReplicatedStorage: MissionTitle, MissionText, MissionKind.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -199,35 +200,80 @@ local function notify(text: string, seconds: number)
 	Remotes.get("Notify"):FireAllClients(text, seconds)
 end
 
--- Маяк: тонкий неоновый луч с подписью. По умолчанию — синий маячок точки (30 студов); для места миссии — высокий золотой (Config.PlaceBeacon),
--- он виден через весь район, чтобы команда шла к нему сама
-local function makeBeacon(pos: Vector3, label: string, color: Color3?, height: number?): BasePart
-	local h = height or 30
-	local part = Instance.new("Part")
-	part.Name = "ScoutBeacon"
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanQuery = false
-	part.Material = Enum.Material.Neon
-	part.Color = color or Color3.fromRGB(80, 200, 255)
-	part.Transparency = 0.35
-	part.Size = Vector3.new(2, h, 2)
-	part.Position = pos + Vector3.new(0, h / 2, 0)
+-- Метка на земле (контрольные точки разведки, маршрут конвоя, место миссии): полупрозрачный светящийся круг радиуса radius с яркой кромкой,
+-- мягкий свет и медленные искры вверх. Издалека видна метка в HUD (BillboardGui поверх всего с дистанцией — её обновляет MissionController
+-- по тегу MissionZone): столб не нужен, а метка видна и сквозь дома, и в тумане. Радиус точки разведки = радиус засчитывания (Config.ScoutPointRadius).
+local function makeBeacon(pos: Vector3, label: string, color: Color3?, radius: number?): BasePart
+	local r = radius or Config.ScoutPointRadius
+	local col = color or Config.ScoutPointColor
+	local function disc(name: string, diameter: number, thick: number, transparency: number, lift: number): Part
+		local d = Instance.new("Part")
+		d.Name = name
+		d.Anchored = true
+		d.CanCollide = false
+		d.CanQuery = false
+		d.CanTouch = false
+		d.CastShadow = false
+		d.Shape = Enum.PartType.Cylinder
+		d.Material = Enum.Material.Neon
+		d.Color = col
+		d.Transparency = transparency
+		d.Size = Vector3.new(thick, diameter, diameter)
+		d.CFrame = CFrame.new(pos + Vector3.new(0, lift, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		return d
+	end
+	local part = disc("ScoutBeacon", r * 2, 0.2, 0.5, 0.2) -- кромка: внешний диск ярче внутреннего
+	local inner = disc("Fill", r * 2 - 1.2, 0.2, 0.78, 0.26)
+	inner.Parent = part
+	local light = Instance.new("PointLight")
+	light.Color = col
+	light.Brightness = 1.6
+	light.Range = r * 2 + 8
+	light.Shadows = false
+	light.Parent = part
+	-- искры поднимаются над кругом (вписанный квадрат, чтобы не вылетали за круг)
+	local emitterPart = Instance.new("Part")
+	emitterPart.Name = "Sparks"
+	emitterPart.Anchored = true
+	emitterPart.CanCollide = false
+	emitterPart.CanQuery = false
+	emitterPart.CanTouch = false
+	emitterPart.Transparency = 1
+	emitterPart.Size = Vector3.new(r * 1.4, 0.2, r * 1.4)
+	emitterPart.CFrame = CFrame.new(pos + Vector3.new(0, 0.4, 0))
+	emitterPart.Parent = part
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Color = ColorSequence.new(col)
+	emitter.LightEmission = 1
+	emitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 0) })
+	emitter.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.2, 0.3), NumberSequenceKeypoint.new(1, 1) })
+	emitter.Lifetime = NumberRange.new(2.5, 4)
+	emitter.Speed = NumberRange.new(1, 2.5)
+	emitter.Rate = math.max(4, r * 0.9)
+	emitter.EmissionDirection = Enum.NormalId.Top
+	emitter.Shape = Enum.ParticleEmitterShape.Box
+	emitter.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
+	emitter.Drag = 0.5
+	emitter.Parent = emitterPart
+	-- метка в HUD
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(200, 44)
-	gui.StudsOffset = Vector3.new(0, h / 2 + 3, 0)
+	gui.StudsOffset = Vector3.new(0, 7, 0)
 	gui.AlwaysOnTop = true
-	gui.MaxDistance = 1500
+	gui.MaxDistance = 2000
 	gui.Parent = part
 	local text = Instance.new("TextLabel")
+	text.Name = "Label"
 	text.Size = UDim2.fromScale(1, 1)
 	text.BackgroundTransparency = 1
 	text.Font = Enum.Font.GothamBold
 	text.TextScaled = true
-	text.TextColor3 = (color or Color3.fromRGB(120, 220, 255)):Lerp(Color3.new(1, 1, 1), 0.35)
+	text.TextColor3 = col:Lerp(Color3.new(1, 1, 1), 0.4)
 	text.TextStrokeTransparency = 0.3
-	text.Text = label
+	text.Text = "◆ " .. label
 	text.Parent = gui
+	part:SetAttribute("BaseText", "◆ " .. label)
+	CollectionService:AddTag(part, "MissionZone")
 	part.Parent = objects
 	return part
 end
@@ -369,8 +415,11 @@ local function makeSiteMarker(state: State, enabled: boolean)
 	label.TextScaled = true
 	label.TextColor3 = Color3.fromRGB(255, 220, 90)
 	label.TextStrokeTransparency = 0.3
-	label.Text = "Место шатра"
+	label.Name = "Label"
+	label.Text = "◆ Место шатра"
 	label.Parent = gui
+	part:SetAttribute("BaseText", "◆ Место шатра")
+	CollectionService:AddTag(part, "MissionZone")
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Установить шатёр"
 	prompt.ObjectText = "Шатёр"
@@ -416,7 +465,9 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		moveTeam(anchor)
 	end
 	-- место миссии отмечено высоким маяком: команда идёт к нему сама (телепорта нет)
-	makeBeacon(anchor, PLACE_LABELS[kind] or PLACE_LABELS.classic, Config.PlaceBeacon.Color, Config.PlaceBeacon.Height)
+	if kind ~= "build" then -- у «build» место шатра отмечает собственный круг (makeSiteMarker)
+		makeBeacon(anchor, PLACE_LABELS[kind] or PLACE_LABELS.classic, Config.PlaceBeacon.Color, Config.PlaceBeacon.Radius)
+	end
 	if kind == "scout" then
 		for i, pos in districtPoints(def.anchor, def.points or 3, nil, def.radius) do
 			table.insert(state.points, { pos = pos, part = makeBeacon(pos, string.format("Точка %d", i)), done = false })
@@ -562,7 +613,7 @@ function MissionService.update(dt: number): string?
 		for _, pt in state.points do
 			if not pt.done then
 				for _, pos in ups do
-					if flatDist(pos, pt.pos) < 10 then
+					if flatDist(pos, pt.pos) < Config.ScoutPointRadius then
 						pt.done = true
 						pt.part:Destroy()
 						notify("Точка обследована", 2)
