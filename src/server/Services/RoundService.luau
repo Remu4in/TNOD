@@ -42,6 +42,8 @@ local killUnits: { [string]: number } = {} -- монеты за убийство
 local killEarned: { [Player]: number } = {} -- сколько монет за убийства игрок уже получил за эту ночь (потолок WaveMath.killCap)
 local roundSeed = 1 -- семя бросков прогрессии (WaveMath.roll): одно на раунд, чтобы рост по волнам был воспроизводим
 local dayVotes: { [Player]: boolean } = {} -- голоса «завершить день»
+local skipRequested = false -- тестовый стенд «Пропустить волну»: сейчас идёт ночь — завершить её как выполненную; днём — сразу начать ночь
+local pendingNight: number? = nil -- тестовый стенд «Выбор волны»: какой должна быть следующая ночь (применяется, когда текущая закончится)
 
 -- Голоса: считаем среди игроков, которые сейчас в игре; атрибуты для HUD (DayVotes / DayVoteNeed)
 local function countVotes(): (number, number)
@@ -62,7 +64,8 @@ local function waitDayVote(seconds: number): boolean
 	local endsAt = os.clock() + seconds
 	while os.clock() < endsAt and not gameOver do
 		local votes, need = countVotes()
-		if need > 0 and votes >= need then
+		if (need > 0 and votes >= need) or skipRequested then
+			skipRequested = false
 			return true
 		end
 		task.wait(0.25)
@@ -317,8 +320,20 @@ local function loadouts(): { { string } }
 	return list
 end
 
+-- Следующая ночь — nightNumber: счётчик волны ставим на одну меньше (night() прибавит единицу), атрибут Wave нужен брифингу генерала;
+-- если по номеру ночи нужна другая локация, она подгружается так же, как в начале дня
+local function applyNextNight(nightNumber: number)
+	wave = nightNumber - 1
+	ReplicatedStorage:SetAttribute("Wave", wave)
+	local want = locationFor(nightNumber)
+	if want ~= locationIndex then
+		loadLocation(want)
+	end
+end
+
 local function night()
 	wave += 1
+	skipRequested = false
 	ReplicatedStorage:SetAttribute("Wave", wave)
 	BarricadeService.setOpen(false)
 	BuildingService.closeShop() -- магазин на ночь закрыт, оставшихся внутри выталкивает на улицу
@@ -355,6 +370,12 @@ local function night()
 		local left = ZombieService.remaining()
 		ReplicatedStorage:SetAttribute("ZombiesLeft", left)
 		local missionState = MissionService.update(0.25)
+		if skipRequested then
+			-- тестовый стенд: честно завершаем ночь, как будто миссия выполнена (награды и рейтинг ниже — как за пройденную)
+			skipRequested = false
+			missionDone = true
+			break
+		end
 		if missionState == "done" then
 			missionDone = true
 			break
@@ -401,6 +422,11 @@ local function night()
 			PerkService.openOffers()
 		end
 	end
+	if pendingNight then
+		local n = pendingNight
+		pendingNight = nil
+		applyNextNight(n)
+	end
 end
 
 local function finishRound()
@@ -431,6 +457,31 @@ local function finishRound()
 		)
 	end
 	task.wait(Config.Round.GameOverTime)
+end
+
+-- Тестовые стенды (только Studio, init.server): «Пропустить волну» — ночью завершает текущую ночь как выполненную, днём сразу начинает ночь
+function RoundService.skip()
+	local phase = ReplicatedStorage:GetAttribute("Phase")
+	if phase == "Night" or phase == "Day" then
+		skipRequested = true
+	end
+end
+
+-- Тестовые стенды: «Выбор волны» — следующей будет ночь nightNumber (1…#Config.Missions). Днём — сразу; ночью — после конца текущей
+-- (её награды считаются по её номеру, поэтому счётчик не трогаем). Вместе со «Пропустить волну» ночь можно сменить сразу.
+function RoundService.setNextNight(nightNumber: number): boolean
+	local phase = ReplicatedStorage:GetAttribute("Phase")
+	if nightNumber % 1 ~= 0 or nightNumber < 1 or nightNumber > #Config.Missions then
+		return false
+	end
+	if phase == "Day" then
+		applyNextNight(nightNumber)
+		return true
+	elseif phase == "Night" then
+		pendingNight = nightNumber
+		return true
+	end
+	return false
 end
 
 function RoundService.onAllDown()

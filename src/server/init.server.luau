@@ -14,6 +14,7 @@ local ZombieService = require(Services:WaitForChild("ZombieService"))
 local WeaponService = require(Services:WaitForChild("WeaponService"))
 local DataService = require(Services:WaitForChild("DataService"))
 local RoundService = require(Services:WaitForChild("RoundService"))
+local RateLimit = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("RateLimit"))
 local ScoreService = require(Services:WaitForChild("ScoreService"))
 local RatingService = require(Services:WaitForChild("RatingService"))
 local PerkService = require(Services:WaitForChild("PerkService"))
@@ -32,13 +33,13 @@ if scs and not scs:FindFirstChild("Health") then
 	stub.Parent = scs
 end
 
--- Тестовые стенды у спавна: оружие бесплатно (меню), вызов волны мутантов, особых, уборка.
--- Только в Studio: на живом сервере любой игрок отменял бы ночь и брал оружие бесплатно, даже если флаг забыли выключить.
+-- Тестовые стенды у спавна: оружие бесплатно (меню), вызов волны мутантов, особых, «Пропустить волну» и «Выбор волны».
+-- Только в Studio: на живом сервере любой игрок пропускал бы ночи и брал оружие бесплатно, даже если флаг забыли выключить.
 local testStandsOn = Config.TestStands and RunService:IsStudio()
 
 local function buildTestStands(sp: Vector3)
 	local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
-	local function pad(name: string, offset: Vector3, color: Color3, label: string, action: string, onTrigger: (Player) -> ())
+	local function pad(name: string, offset: Vector3, color: Color3, label: string, action: string, onTrigger: (Player) -> ()): Part
 		local part = Instance.new("Part")
 		part.Name = name
 		part.Anchored = true
@@ -69,6 +70,7 @@ local function buildTestStands(sp: Vector3)
 		prompt.RequiresLineOfSight = false
 		prompt.Parent = part
 		prompt.Triggered:Connect(onTrigger)
+		return part
 	end
 	ShopService.addPoint("Тестовый стенд", Vector3.new(sp.X - 12, sp.Y, sp.Z + 8), 16, true, false, false)
 	pad("TestShop", Vector3.new(-12, 0, 8), Color3.fromRGB(255, 170, 40), "ОРУЖИЕ (тест)", "Открыть меню", function(player)
@@ -84,8 +86,29 @@ local function buildTestStands(sp: Vector3)
 	pad("TestSpecial", Vector3.new(4, 0, 8), Color3.fromRGB(150, 60, 200), "ОСОБЫЕ ЗОМБИ", "Вызвать особых", function()
 		ZombieService.enqueue(waves["Особые"])
 	end)
-	pad("TestClear", Vector3.new(12, 0, 8), Color3.fromRGB(70, 160, 90), "ОТМЕНИТЬ ВОЛНУ (ДЕНЬ)", "Убрать мутантов, включить день", function()
-		ZombieService.clearAll()
+	-- ночью честно завершает текущую ночь (как будто миссия выполнена: награды, рейтинг), днём сразу начинает ночь
+	pad("TestSkip", Vector3.new(12, 0, 8), Color3.fromRGB(70, 160, 90), "СКИП ВОЛНЫ", "Пропустить волну", function()
+		RoundService.skip()
+	end)
+	-- открывает окно выбора ночи 1…20 (клиент: TestStandController); выбранную ночь присылают событием TestSetWave
+	local pickPad = pad("TestPick", Vector3.new(20, 0, 8), Color3.fromRGB(70, 130, 220), "ВЫБОР ВОЛНЫ", "Выбрать ночь", function(player)
+		Remotes.get("TestPickWave"):FireClient(player, #Config.Missions)
+	end)
+	Remotes.get("TestSetWave").OnServerEvent:Connect(function(player: Player, nightNumber: unknown)
+		-- клиент недоверенный: тип, целое число в пределах ночей, частота, и игрок должен стоять у стенда
+		if typeof(nightNumber) ~= "number" or nightNumber ~= nightNumber or nightNumber % 1 ~= 0 or nightNumber < 1 or nightNumber > #Config.Missions then
+			return
+		end
+		if not RateLimit.allow(player, "TestSetWave", 1) then
+			return
+		end
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if not root or (root.Position - pickPad.Position).Magnitude > 40 then
+			return
+		end
+		if RoundService.setNextNight(nightNumber) then
+			Remotes.get("Notify"):FireClient(player, string.format("Следующая ночь: %d. Чтобы начать её сразу — «Скип волны»", nightNumber), 5)
+		end
 	end)
 end
 
