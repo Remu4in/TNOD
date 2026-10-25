@@ -6,7 +6,11 @@
 -- Мутанты целятся только в игроков (ZombieService ищет цель среди Players), солдат не трогают.
 
 local PathfindingService = game:GetService("PathfindingService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local RateLimit = require(Shared:WaitForChild("RateLimit"))
 
 local SoldierService = {}
 
@@ -50,6 +54,9 @@ type Soldier = {
 	partner: Soldier?,
 	useAlt: boolean, -- в стойке играет второй вариант
 	pathBusy: boolean, -- путь считается в отдельном потоке: солдат стоит в паузе
+	talkUntil: number, -- до этого времени солдат разговаривает: стоит и смотрит на собеседника
+	talkTarget: BasePart?,
+	lastLine: number, -- номер последней сказанной реплики (подряд не повторяется)
 }
 
 local soldiers: { Soldier } = {}
@@ -92,10 +99,11 @@ local function playEmote(s: Soldier)
 	end
 end
 
-local function faceYaw(s: Soldier, yaw: number, dt: number)
+local function faceYaw(s: Soldier, yaw: number, dt: number, rate: number?)
 	local _, current, _ = s.root.CFrame:ToOrientation()
 	local diff = (yaw - current + math.pi) % (2 * math.pi) - math.pi
-	local step = math.clamp(diff, -dt * 1.6, dt * 1.6)
+	local maxStep = dt * (rate or 1.6)
+	local step = math.clamp(diff, -maxStep, maxStep)
 	s.root.CFrame = CFrame.new(s.root.Position) * CFrame.Angles(0, current + step, 0)
 end
 
@@ -164,6 +172,21 @@ local function setMoving(s: Soldier, moving: boolean)
 end
 
 local function step(s: Soldier, now: number, dt: number)
+	if now < s.talkUntil then
+		-- разговор: стоит и поворачивается к собеседнику
+		setMoving(s, false)
+		local t = s.talkTarget
+		if t and t.Parent then
+			local to = t.Position - s.root.Position
+			faceYaw(s, math.atan2(-to.X, -to.Z), dt, 6)
+		end
+		return
+	elseif s.talkUntil > 0 then
+		s.talkUntil = 0
+		s.talkTarget = nil
+		s.state = "pause"
+		s.nextAt = now + 1
+	end
 	if s.mode == "patrol" then
 		if s.state == "pause" then
 			setMoving(s, false)
@@ -297,6 +320,98 @@ local function removeLegacyJoints(model: Model)
 	end
 end
 
+-- Пузырь с репликой над головой солдата (виден всем поблизости)
+local function showBubble(s: Soldier, text: string)
+	local head = s.model:FindFirstChild("Head") :: BasePart?
+	if not head then
+		return
+	end
+	local old = head:FindFirstChild("TalkBubble")
+	if old then
+		old:Destroy()
+	end
+	local cfg = Config.SoldierTalk
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "TalkBubble"
+	gui.Size = UDim2.fromOffset(260, 64)
+	gui.StudsOffset = Vector3.new(0, 2.6, 0)
+	gui.MaxDistance = 70
+	gui.AlwaysOnTop = true
+	gui.Adornee = head
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundColor3 = Color3.fromRGB(20, 22, 18)
+	label.BackgroundTransparency = 0.2
+	label.TextColor3 = Color3.fromRGB(240, 235, 215)
+	label.Font = Enum.Font.GothamMedium
+	label.TextScaled = true
+	label.TextWrapped = true
+	label.Text = text
+	label.Parent = gui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = label
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 8), UDim.new(0, 8)
+	pad.PaddingTop, pad.PaddingBottom = UDim.new(0, 4), UDim.new(0, 4)
+	pad.Parent = label
+	gui.Parent = head
+	task.delay(cfg.bubbleTime, function()
+		if gui.Parent then
+			gui:Destroy()
+		end
+	end)
+end
+
+-- E на солдате: он останавливается, поворачивается к игроку и говорит случайную реплику (подряд не повторяется)
+local function talk(s: Soldier, player: Player)
+	local cfg = Config.SoldierTalk
+	local now = os.clock()
+	local char = player.Character
+	local pRoot = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local hp = char and char:FindFirstChildOfClass("Humanoid")
+	if not pRoot or not hp or hp.Health <= 0 or player:GetAttribute("Downed") == true then
+		return
+	end
+	if (pRoot.Position - s.root.Position).Magnitude > cfg.distance + 4 then
+		return
+	end
+	if now < s.talkUntil + cfg.soldierCooldown then
+		return
+	end
+	if not RateLimit.allow(player, "SoldierTalk", cfg.playerInterval) then
+		return
+	end
+	local count = #cfg.lines
+	local pick = math.random(1, count)
+	if count > 1 and pick == s.lastLine then
+		pick = pick % count + 1
+	end
+	s.lastLine = pick
+	s.talkUntil = now + cfg.bubbleTime
+	s.talkTarget = pRoot
+	s.hum:MoveTo(s.root.Position)
+	s.waypoints = {}
+	s.state = "pause"
+	showBubble(s, cfg.lines[pick])
+	if rng:NextNumber() < 0.5 then
+		playEmote(s)
+	end
+end
+
+local function addTalkPrompt(s: Soldier)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Поговорить"
+	prompt.ObjectText = "Солдат"
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = Config.SoldierTalk.distance
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = s.root
+	prompt.Triggered:Connect(function(player: Player)
+		talk(s, player)
+	end)
+end
+
 function SoldierService.init()
 	local folder = workspace:FindFirstChild("Soldiers")
 	if not folder then
@@ -338,6 +453,7 @@ function SoldierService.init()
 				idle = loadTrack(animator, set.idle, true), walk = loadTrack(animator, set.walk, true), emotes = emotes,
 				nextAt = os.clock() + rng:NextNumber(0, 4), state = "pause", waypoints = {}, wpIndex = 1,
 				lastPos = root.Position, stuckSince = os.clock(), targetYaw = yaw, partner = nil, pathBusy = false,
+				talkUntil = 0, talkTarget = nil, lastLine = 0,
 				idleAlt = loadTrack(animator, set.idleAlt, true), useAlt = rng:NextNumber() < 0.5,
 			}
 			local startIdle = if s.useAlt and s.idleAlt then s.idleAlt else s.idle
@@ -345,6 +461,7 @@ function SoldierService.init()
 				startIdle:Play()
 				startIdle.TimePosition = rng:NextNumber(0, 1)
 			end
+			addTalkPrompt(s)
 			table.insert(list, s)
 		end
 	end
