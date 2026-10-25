@@ -11,6 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local MeleeAnim = require(Shared:WaitForChild("MeleeAnim"))
+local Rewind = require(Shared:WaitForChild("Rewind"))
 
 local ViewModel = {}
 
@@ -52,7 +53,8 @@ type Rig = {
 	aimY: number, -- высота линии прицеливания над рукоятью
 	pistol: boolean,
 	melee: boolean, -- холодное оружие: одна рука держит рукоять, положение берём из Tool.Grip (его двигают взмахи и осмотр, FxController)
-	drawStart: number,
+	drawU: number, -- прогресс доставания 0…1 (набирается по кадрам, чтобы R мог его ускорить, а не обрывать скачком)
+	drawBoost: boolean,
 }
 
 local rig: Rig? = nil
@@ -64,6 +66,7 @@ local pos, posVel = Vector3.zero, Vector3.zero
 local rot, rotVel = Vector3.zero, Vector3.zero
 local bobPhase = 0
 local reload: { started: number, duration: number }? = nil
+local inspectState: Rewind.State? = nil -- осмотр огнестрела (F): отдельно от доставания, с реверсом (Config.Inspect)
 local lastMouse = Vector2.zero
 
 local function smooth(k: number): number
@@ -173,6 +176,7 @@ local function destroyRig()
 		rig = nil
 	end
 	reload = nil
+	inspectState = nil
 end
 
 -- Собираем копию деталей оружия из Tool: положение каждой детали относительно рукояти берём из её Weld (C0)
@@ -287,7 +291,8 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 		aimY = maxY,
 		pistol = pistol,
 		melee = melee,
-		drawStart = os.clock(),
+		drawU = 0,
+		drawBoost = false,
 	}
 	return rig_
 end
@@ -320,19 +325,42 @@ function ViewModel.isReloading(): boolean
 	return reload ~= nil
 end
 
--- F у огнестрела: повторить доставание (осмотр, передёргивание затвора) — как осмотр ножа; R прерывает (cancelDraw) и начинает перезарядку
-function ViewModel.replayDraw()
+-- Идёт ли доставание (осмотр F в это время не запускается: он отдельно от доставания)
+function ViewModel.isDrawing(): boolean
 	local r = rig
-	if r and not r.melee and not reload then
-		r.drawStart = os.clock()
-		r.drawVariant = r.draw.variants[math.random(1, #r.draw.variants)]
+	return r ~= nil and r.drawU < 1
+end
+
+-- F у огнестрела: осмотр (Config.Inspect.gun) — короткий цикл без доставания; повторное нажатие — реверс и заново (Rewind)
+function ViewModel.inspect()
+	local r = rig
+	if not r or r.melee or reload or r.drawU < 1 or player:GetAttribute("ADS") == true then
+		return
+	end
+	local s = inspectState
+	if s and s.active then
+		Rewind.press(s)
+	else
+		s = Rewind.new(Config.Inspect.gun.time, Config.Inspect.reverseSpeed)
+		Rewind.press(s)
+		inspectState = s
 	end
 end
 
-function ViewModel.cancelDraw()
+function ViewModel.inspectRelease()
+	if inspectState then
+		Rewind.release(inspectState)
+	end
+end
+
+-- R, прицел, бег: осмотр плавно едет назад до стойки; доставание, если ещё идёт, доигрывается ускоренно (без скачка в стойку)
+function ViewModel.cancelInspect()
+	if inspectState then
+		Rewind.cancel(inspectState)
+	end
 	local r = rig
 	if r and not r.melee then
-		r.drawStart = os.clock() - r.draw.time * 2
+		r.drawBoost = true
 	end
 end
 
@@ -369,6 +397,7 @@ end
 function ViewModel.reload(duration: number)
 	if rig then
 		reload = { started = os.clock(), duration = math.max(duration, 0.6) }
+		ViewModel.cancelInspect() -- осмотр плавно уходит назад, пока начинается перезарядка
 	end
 end
 
@@ -461,9 +490,27 @@ local function update(dt: number)
 		stance = HIP + Vector3.new(-0.18, -0.32, 0.12)
 		stanceRot = Vector3.new(math.rad(-22), math.rad(14), math.rad(-12))
 	end
+	-- осмотр огнестрела (F): оружие приподнимается и поворачивается боком к камере, качается, возвращается; прицел и бег его отменяют
+	local insp = inspectState
+	if insp then
+		if ads or sprint then
+			Rewind.cancel(insp)
+		end
+		local iu = Rewind.step(insp, dt)
+		if iu then
+			local ic = Config.Inspect.gun
+			local env = smooth(iu / ic.inRatio) * (1 - smooth((iu - (1 - ic.outRatio)) / ic.outRatio))
+			local wave = math.sin(2 * math.pi * iu)
+			stance += (ic.pos + Vector3.new(0, ic.sway.Z * wave, 0)) * env
+			stanceRot += Vector3.new(math.rad(ic.rot.X + ic.sway.X * wave), math.rad(ic.rot.Y + ic.sway.Y * wave), math.rad(ic.rot.Z)) * env
+		else
+			inspectState = nil
+		end
+	end
 	-- доставание: из начального положения (снизу или из-за спины) в стойку, осмотр, передёргивание (Config.DrawAnim)
 	local da = r.draw
-	local du = (now - r.drawStart) / da.time
+	r.drawU += dt / da.time * (if r.drawBoost then 5 else 1)
+	local du = r.drawU
 	local away = 1 - smooth(du / da.rise)
 	local variant = r.drawVariant
 	stance += variant.pos * away

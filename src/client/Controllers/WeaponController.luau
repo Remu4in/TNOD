@@ -285,19 +285,23 @@ function WeaponController.start()
 
 	ContextActionService:BindAction("Reload", function(_, state)
 		if state == Enum.UserInputState.Begin then
-			FxController.cancelInspect(true) -- R прерывает осмотр оружия (F снова запускает)
-			ViewModel.cancelDraw()
+			FxController.cancelInspect(true) -- R: осмотр плавно едет назад (Rewind), затем перезарядка; F снова запускает
+			ViewModel.cancelInspect()
 			Remotes.get("Reload"):FireServer()
 		end
 		return Enum.ContextActionResult.Sink
 	end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonX)
 	ContextActionService:SetTitle("Reload", "R")
 
-	-- F — осмотр холодного оружия (нож, катана, керамбит, бабочка) и повтор доставания у огнестрела (осмотр, затвор); Pass: та же клавиша «Разобрать» у баррикады продолжает работать
+	-- F — осмотр оружия (отдельно от доставания): у холодного — флипы (MeleeAnim.INSPECT), у огнестрела — короткий цикл (Config.Inspect);
+	-- повторяется, пока держат F; повторное нажатие и R — реверс (Rewind). Pass: та же клавиша «Разобрать» у баррикады продолжает работать
 	ContextActionService:BindAction("InspectWeapon", function(_, state)
 		if state == Enum.UserInputState.Begin then
 			FxController.inspect()
-			ViewModel.replayDraw()
+			ViewModel.inspect()
+		elseif state == Enum.UserInputState.End then
+			FxController.inspectRelease()
+			ViewModel.inspectRelease()
 		end
 		return Enum.ContextActionResult.Pass
 	end, false, Enum.KeyCode.F)

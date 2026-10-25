@@ -12,6 +12,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local WeaponSfx = require(Shared:WaitForChild("WeaponSfx"))
 local MeleeAnim = require(Shared:WaitForChild("MeleeAnim"))
+local Rewind = require(Shared:WaitForChild("Rewind"))
 local ViewModel = require(script.Parent:WaitForChild("ViewModelController"))
 
 local FxController = {}
@@ -483,22 +484,18 @@ end
 
 -- Осмотр холодного оружия (клавиша F): оружие двигается по MeleeAnim.INSPECT, части модели — вокруг шарниров
 type InspectPart = { weld: Weld, base: CFrame, pivot: Vector3, key: string }
-local inspecting: { tool: Tool, started: number, time: number, frame: (number, Vector3?) -> MeleeAnim.InspectFrame, baseGrip: CFrame, parts: { InspectPart }, hinge: Vector3? }? = nil
+local inspecting: { tool: Tool, rw: Rewind.State, frame: (number, Vector3?) -> MeleeAnim.InspectFrame, baseGrip: CFrame, parts: { InspectPart }, hinge: Vector3? }? = nil
 
--- Плавный возврат оружия в руку после прерванного осмотра (как в CS2: F — осмотр, R — отмена, F — снова)
-local returning: { tool: Tool, from: CFrame, to: CFrame, started: number }? = nil
-local RETURN_TIME = 0.14
-
--- smooth: вернуть оружие плавно (R, смена оружия) или мгновенно (перезапуск осмотра клавишей F)
+-- smooth = true (R): осмотр плавно едет назад до нейтральной позы и заканчивается (Rewind); false (смена оружия, удар): сразу в руку
 function FxController.cancelInspect(smooth: boolean?)
 	local i = inspecting
 	if i then
+		if smooth and i.tool.Parent and i.rw.active then
+			Rewind.cancel(i.rw)
+			return
+		end
 		if i.tool.Parent then
-			if smooth then
-				returning = { tool = i.tool, from = i.tool.Grip, to = i.baseGrip, started = os.clock() }
-			else
-				i.tool.Grip = i.baseGrip
-			end
+			i.tool.Grip = i.baseGrip
 		end
 		for _, p in i.parts do
 			if p.weld.Parent then
@@ -509,22 +506,34 @@ function FxController.cancelInspect(smooth: boolean?)
 	end
 end
 
+-- Отпустили F: осмотр доигрывает текущий проход и не повторяется
+function FxController.inspectRelease()
+	local i = inspecting
+	if i then
+		Rewind.release(i.rw)
+	end
+end
+
+-- F: запуск осмотра; при повторных нажатиях — реверс и заново (во время возврата — разворот вперёд из текущей позы)
 function FxController.inspect()
 	local tool = toolOf(player.Character)
 	if not tool or tool:GetAttribute("Melee") ~= true or swing then
 		return
+	end
+	if ViewModel.isDrawing() then
+		return -- оружие ещё достаётся: осмотр отдельно от доставания
 	end
 	local id = tostring(tool:GetAttribute("WeaponId"))
 	local def = MeleeAnim.INSPECT[id]
 	if not def then
 		return
 	end
-	-- F во время осмотра перезапускает его с начала; идущий возврат после R сразу заканчивается
-	FxController.cancelInspect(false)
-	if returning then
-		returning.tool.Grip = returning.to
-		returning = nil
+	local cur = inspecting
+	if cur and cur.tool == tool then
+		Rewind.press(cur.rw)
+		return
 	end
+	FxController.cancelInspect(false)
 	local handle = handleOf(tool)
 	local parts: { InspectPart } = {}
 	local keys = def.frame(0.5, nil).parts
@@ -556,7 +565,9 @@ function FxController.inspect()
 			end
 		end
 	end
-	inspecting = { tool = tool, started = os.clock(), time = def.time, frame = def.frame, baseGrip = tool.Grip, parts = parts, hinge = hinge }
+	local rw = Rewind.new(def.time, Config.Inspect.reverseSpeed)
+	Rewind.press(rw)
+	inspecting = { tool = tool, rw = rw, frame = def.frame, baseGrip = tool.Grip, parts = parts, hinge = hinge }
 end
 
 -- Покадровое применение отдачи и взмаха -----------------------------------
@@ -627,28 +638,14 @@ function FxController.start()
 			end
 		end
 
-		-- плавный возврат после отмены осмотра
-		local ret = returning
-		if ret then
-			local k = (os.clock() - ret.started) / RETURN_TIME
-			if k >= 1 or not ret.tool.Parent then
-				if ret.tool.Parent then
-					ret.tool.Grip = ret.to
-				end
-				returning = nil
-			else
-				ret.tool.Grip = ret.from:Lerp(ret.to, k)
-			end
-		end
-
-		-- осмотр ближнего оружия
+		-- осмотр ближнего оружия (вперёд, повтор, пока держат F, и реверс при прерывании — Rewind)
 		local live = CFrame.identity
 		local ins = inspecting
 		if ins then
 			local active = toolOf(player.Character)
-			local u = (os.clock() - ins.started) / ins.time
-			if active ~= ins.tool or u >= 1 or swing then
-				FxController.cancelInspect(active == ins.tool and u < 1)
+			local u = if active == ins.tool and not swing then Rewind.step(ins.rw, dt) else nil
+			if not u then
+				FxController.cancelInspect(false)
 			else
 				local frame = ins.frame(u, ins.hinge)
 				live = frame.hand or frame.grip

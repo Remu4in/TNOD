@@ -5,6 +5,7 @@
 local WaveMath = require("../src/shared/WaveMath")
 local Ballistics = require("../src/shared/Ballistics")
 local RateLimit = require("../src/shared/RateLimit")
+local Rewind = require("../src/shared/Rewind")
 
 local Tuning = {
 	StartCounts = { 20, 30, 35, 40 },
@@ -467,6 +468,46 @@ test("RateLimit: после forget снова разрешено, нулевой
 	check(RateLimit.allow(p, "Z", 0), "интервал 0, первый")
 	check(RateLimit.allow(p, "Z", 0), "интервал 0, второй")
 	RateLimit.forget(p)
+end)
+
+test("Rewind: проход вперёд, возврат при повторном нажатии и запуск заново", function()
+	local s = Rewind.new(1, 4)
+	Rewind.press(s)
+	local u = Rewind.step(s, 0.5)
+	check(u ~= nil and math.abs((u :: number) - 0.5) < 1e-6, "полпути вперёд")
+	Rewind.press(s) -- второе нажатие: возврат с последующим повтором
+	u = Rewind.step(s, 0.1)
+	check(u ~= nil and (u :: number) < 0.5 and (u :: number) > 0, "едет назад, без скачка")
+	u = Rewind.step(s, 0.2) -- до нуля, дальше разворот вперёд
+	check(s.active and s.dir == 1, "после возврата идёт заново")
+	Rewind.release(s)
+	local guard = 0
+	while Rewind.step(s, 0.1) ~= nil and guard < 100 do
+		guard += 1
+	end
+	check(not s.active, "доиграл и закончил")
+end)
+
+test("Rewind: отмена едет назад и заканчивается, нажатие во время возврата разворачивает", function()
+	local s = Rewind.new(2, 4)
+	Rewind.press(s)
+	Rewind.release(s)
+	Rewind.step(s, 1)
+	Rewind.cancel(s)
+	local u = Rewind.step(s, 0.1)
+	check(u ~= nil and (u :: number) < 0.5, "возврат")
+	Rewind.press(s)
+	check(s.dir == 1 and s.active, "разворот вперёд из текущей позы")
+	Rewind.cancel(s)
+	check(Rewind.step(s, 10) == nil and not s.active, "возврат закончился")
+end)
+
+test("Rewind: пока держат, проход повторяется", function()
+	local s = Rewind.new(1, 4)
+	Rewind.press(s)
+	Rewind.step(s, 0.9)
+	local u = Rewind.step(s, 0.3)
+	check(s.active and u ~= nil and (u :: number) < 0.5, "второй круг")
 end)
 
 print(string.format("\nИТОГО: %d тестов, упало %d", total, failed))

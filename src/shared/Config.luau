@@ -752,6 +752,16 @@ Config.DrawAnim = {
 	lmg = { time = 1.4, rise = 0.7, variants = { { pos = Vector3.new(1.1, -0.3, 1.0), rot = Vector3.new(-18, 70, -40) } } },
 } :: { [string]: DrawAnimDef }
 
+-- Осмотр оружия (клавиша F), отдельно от доставания: короткий цикл, повторяется, пока держат F. При прерывании (R, повторное F, прицел)
+-- анимация едет назад по тем же кадрам в reverseSpeed раз быстрее (Rewind), а не прокручивается до конца и не прыгает.
+-- gun — огнестрел: time — один проход, с; pos — смещение оружия (вправо/вверх/назад, студы), rot — поворот (тангаж, рыскание, крен, градусы),
+-- sway — качание рысканием/креном (градусы) и подъём (студы) в середине прохода; in/out — доли прохода на подъём и опускание.
+-- Холодное оружие осматривается по MeleeAnim.INSPECT (флипы ножей), здесь для него только скорость возврата.
+Config.Inspect = {
+	reverseSpeed = 4,
+	gun = { time = 1.3, pos = Vector3.new(-0.12, 0.08, 0.22), rot = Vector3.new(8, -42, 38), sway = Vector3.new(10, 14, 0.04), inRatio = 0.25, outRatio = 0.25 },
+}
+
 -- Стиль доставания по оружию: холодное — melee, пулемёт — lmg, снайперка — rifle, остальное — по папке модели (пистолеты и револьверы — pistol)
 local DRAW_BY_CLASS = { Pistols = "pistol", Revolvers = "pistol", SMG = "smg", Shotguns = "shotgun", Rifles = "rifle", Carbines = "rifle" }
 local WeaponDraw: { [string]: string } = {}
