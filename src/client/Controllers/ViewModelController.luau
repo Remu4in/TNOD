@@ -23,6 +23,7 @@ local DRAW_TIME = 0.4
 local MELEE_HAND = Vector3.new(0.6, -0.7, -1.3) -- где кисть с холодным оружием относительно камеры
 local DEFAULT_HAND = Vector3.new(0.02, -0.17, 0.12) -- где правая кисть на оружии (система рукояти), если нет записи в Config.WeaponHands
 local PISTOL_LEFT = Vector3.new(-0.24, -0.11, 0) -- левая рука у пистолета: смещение от правой кисти
+local SCOPE_FOV = 30 -- маска прицела появляется, когда поле зрения сузилось до этого (камера уже «приблизила» картинку)
 
 type GunPart = { part: BasePart, rel: CFrame, isMag: boolean, weld: Weld }
 
@@ -48,6 +49,7 @@ type Rig = {
 
 local rig: Rig? = nil
 local container: Model? = nil
+local scopeGui: ScreenGui? = nil
 
 -- пружины (положение и поворот оружия относительно «стойки»)
 local pos, posVel = Vector3.zero, Vector3.zero
@@ -91,7 +93,73 @@ local function skinColor(): Color3
 	return if bc then bc.RightArmColor3 else SKIN_FALLBACK
 end
 
+-- Оптический прицел: тёмная маска с круглым окном и перекрестием на весь экран (создаётся один раз, включается по требованию)
+local function setScope(on: boolean)
+	if not on then
+		if scopeGui then
+			scopeGui.Enabled = false
+		end
+		return
+	end
+	if not scopeGui or not scopeGui.Parent then
+		local playerGui = player:FindFirstChildOfClass("PlayerGui")
+		if not playerGui then
+			return
+		end
+		local gui = Instance.new("ScreenGui")
+		gui.Name = "NotdScope"
+		gui.IgnoreGuiInset = true
+		gui.ResetOnSpawn = false
+		gui.DisplayOrder = -10 -- под HUD: патроны и прицел остаются видны
+		gui.Enabled = false
+		-- квадрат по меньшей стороне экрана; чёрная обводка огромной толщины закрывает всё снаружи круга
+		local lens = Instance.new("Frame")
+		lens.Name = "Lens"
+		lens.AnchorPoint = Vector2.new(0.5, 0.5)
+		lens.Position = UDim2.fromScale(0.5, 0.5)
+		lens.Size = UDim2.fromScale(0.92, 0.92)
+		lens.BackgroundTransparency = 1
+		lens.Parent = gui
+		local ratio = Instance.new("UIAspectRatioConstraint")
+		ratio.AspectRatio = 1
+		ratio.AspectType = Enum.AspectType.FitWithinMaxSize
+		ratio.Parent = lens
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0.5, 0)
+		corner.Parent = lens
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.new(0, 0, 0)
+		stroke.Thickness = 3000
+		stroke.Parent = lens
+		-- перекрестие: тонкие линии с просветом в центре и точка
+		local function line(size: UDim2, anchor: Vector2)
+			local f = Instance.new("Frame")
+			f.AnchorPoint = anchor
+			f.Position = UDim2.fromScale(0.5, 0.5)
+			f.Size = size
+			f.BackgroundColor3 = Color3.new(0, 0, 0)
+			f.BorderSizePixel = 0
+			f.Parent = lens
+		end
+		line(UDim2.new(0.46, 0, 0, 2), Vector2.new(1.08, 0.5))
+		line(UDim2.new(0.46, 0, 0, 2), Vector2.new(-0.08, 0.5))
+		line(UDim2.new(0, 2, 0.46, 0), Vector2.new(0.5, 1.08))
+		line(UDim2.new(0, 2, 0.46, 0), Vector2.new(0.5, -0.08))
+		local dot = Instance.new("Frame")
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.Position = UDim2.fromScale(0.5, 0.5)
+		dot.Size = UDim2.fromOffset(4, 4)
+		dot.BackgroundColor3 = Color3.fromRGB(220, 40, 40)
+		dot.BorderSizePixel = 0
+		dot.Parent = lens
+		gui.Parent = playerGui
+		scopeGui = gui
+	end
+	(scopeGui :: ScreenGui).Enabled = true
+end
+
 local function destroyRig()
+	setScope(false)
 	if rig then
 		rig.model:Destroy()
 		rig = nil
@@ -307,6 +375,9 @@ local function update(dt: number)
 	local speed = if root then Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude else 0
 	local ads = player:GetAttribute("ADS") == true
 	local sprint = player:GetAttribute("Sprinting") == true
+	-- снайперский прицел: когда картинка приблизилась, ствол и руки не нужны — виден только прицел
+	local scoped = ads and Config.ScopedWeapons[id] == true and camera.FieldOfView < SCOPE_FOV
+	setScope(scoped)
 
 	-- «запаздывание» оружия за поворотом камеры
 	local md = UserInputService:GetMouseDelta()
@@ -364,6 +435,18 @@ local function update(dt: number)
 			gp.part.Transparency = 0
 		end
 	end
+
+	if scoped then
+		for _, gp in r.parts do
+			gp.part.Transparency = 1
+		end
+		for _, p in { r.rForearm, r.rHand, r.lForearm, r.lHand } do
+			p.Transparency = 1
+		end
+		return
+	end
+	r.rForearm.Transparency = 0
+	r.rHand.Transparency = 0
 
 	-- кисти: правая на рукояти, левая на цевье (или магазине во время перезарядки)
 	local tiltDown = CFrame.Angles(math.rad(-18), 0, 0)

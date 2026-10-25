@@ -613,6 +613,9 @@ local WeaponAim: { [string]: Ballistics.Aim } = {
 }
 Config.WeaponAim = WeaponAim
 
+-- Оружие с оптическим прицелом: при прицеливании ствол и руки скрываются, на экране маска прицела с перекрестием (ViewModelController)
+Config.ScopedWeapons = { Sniper = true } :: { [string]: boolean }
+
 -- Взмах ближнего боя: стиль анимации, длительность (сек.) и сила тряски камеры при попадании
 local MeleeFx: { [string]: MeleeFxDef } = {
 	Knife = { style = "stab", time = 0.26, shake = 1.6 },
