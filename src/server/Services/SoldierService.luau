@@ -270,6 +270,33 @@ local function attachLooseParts(model: Model)
 	end
 end
 
+-- «Белые» солдаты (R6 в защитных костюмах) пришли с устаревшими суставами Snap между торсом и ногами/головой: они жёстко держат
+-- конечности поверх Motor6D, и анимация ходьбы не двигает ноги. Убираем такой сустав, если ту же пару деталей уже соединяет Motor6D.
+local function removeLegacyJoints(model: Model)
+	local motors: { [BasePart]: { [BasePart]: boolean } } = {}
+	for _, d in model:GetDescendants() do
+		if d:IsA("Motor6D") and d.Part0 and d.Part1 then
+			motors[d.Part0] = motors[d.Part0] or {}
+			motors[d.Part0][d.Part1] = true
+			motors[d.Part1] = motors[d.Part1] or {}
+			motors[d.Part1][d.Part0] = true
+		end
+	end
+	local removed = 0
+	for _, d in model:GetDescendants() do
+		if d:IsA("JointInstance") and not d:IsA("Motor6D") then
+			local a, b = d.Part0, d.Part1
+			if a and b and motors[a] and motors[a][b] then
+				d:Destroy()
+				removed += 1
+			end
+		end
+	end
+	if removed > 0 then
+		model:SetAttribute("LegacyJointsRemoved", removed)
+	end
+end
+
 function SoldierService.init()
 	local folder = workspace:FindFirstChild("Soldiers")
 	if not folder then
@@ -286,6 +313,7 @@ function SoldierService.init()
 			hum.MaxHealth = math.huge
 			hum.Health = math.huge
 			hum.WalkSpeed = 7
+			removeLegacyJoints(model)
 			attachLooseParts(model) -- пока модель якорная и всё на своих местах
 			for _, d in model:GetDescendants() do
 				if d:IsA("BasePart") then
