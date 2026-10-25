@@ -320,6 +320,22 @@ function ViewModel.isReloading(): boolean
 	return reload ~= nil
 end
 
+-- F у огнестрела: повторить доставание (осмотр, передёргивание затвора) — как осмотр ножа; R прерывает (cancelDraw) и начинает перезарядку
+function ViewModel.replayDraw()
+	local r = rig
+	if r and not r.melee and not reload then
+		r.drawStart = os.clock()
+		r.drawVariant = r.draw.variants[math.random(1, #r.draw.variants)]
+	end
+end
+
+function ViewModel.cancelDraw()
+	local r = rig
+	if r and not r.melee then
+		r.drawStart = os.clock() - r.draw.time * 2
+	end
+end
+
 -- Дуло в мире (для вспышки, гильз, трассеров): из deck-а viewmodel, а не из скрытого оружия в руках персонажа
 function ViewModel.handleCFrame(tool: Tool): CFrame?
 	local r = rig
