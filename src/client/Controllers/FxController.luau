@@ -622,7 +622,7 @@ function FxController.start()
 				FxController.cancelInspect(active == ins.tool and u < 1)
 			else
 				local frame = ins.frame(u)
-				live = frame.grip
+				live = frame.hand or frame.grip
 				ins.tool.Grip = ins.baseGrip * frame.grip:Inverse()
 				for _, part in ins.parts do
 					local rot = frame.parts and frame.parts[part.key]

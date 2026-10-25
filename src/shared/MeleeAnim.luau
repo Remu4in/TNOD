@@ -9,7 +9,9 @@ local Config = require(script.Parent:WaitForChild("Config"))
 local MeleeAnim = {}
 
 export type Pose = { t: number, cf: CFrame }
-export type InspectFrame = { grip: CFrame, parts: { [string]: CFrame }? } -- parts: префикс имени детали → поворот в системе рукояти (вокруг pivot)
+-- grip — поза оружия; hand — поза кисти от первого лица (по умолчанию как у оружия): у ножа и керамбита оружие крутится само, а кисть остаётся на месте;
+-- parts: префикс имени детали → поворот в системе рукояти (вокруг pivot)
+export type InspectFrame = { grip: CFrame, hand: CFrame?, parts: { [string]: CFrame }? }
 
 local CF, ANG = CFrame.new, CFrame.Angles
 local rad = math.rad
@@ -132,7 +134,8 @@ local function knife(u: number): InspectFrame
 	local k = math.clamp((u - 0.16) / 0.64, 0, 1)
 	local toss = math.sin(math.pi * k) -- подброс и возврат
 	local spin = ease(k) * math.pi * 6 -- три оборота вокруг оси лезвия
-	return { grip = CF(0.02, 1.1 * toss - 0.18 * dip, 0.05 * toss) * CFrame.fromAxisAngle(axis, spin) }
+	-- нож крутится в воздухе после броска, кисть только приседает и раскрывается (иначе вместе с ножом по оси крутилась бы и рука)
+	return { grip = CF(0.02, 1.1 * toss - 0.18 * dip, 0.05 * toss) * CFrame.fromAxisAngle(axis, spin), hand = CF(0.02, -0.18 * dip, 0) }
 end
 
 -- Катана: поднять, повернуть плоскостью к камере, повести остриём и вернуть
@@ -148,7 +151,9 @@ local function karambit(u: number): InspectFrame
 	local lift = bell(u * 1.1)
 	local spin = ease((u - 0.1) / 0.7) * math.pi * 4
 	local twist = ease((u - 0.2) / 0.3) - ease((u - 0.8) / 0.2)
-	return { grip = CF(0.05 * lift, 0.3 * lift, -0.1 * lift) * ANG(spin, 0, 0) * ANG(0, rad(35) * twist, rad(-20) * twist) }
+	local pos = CF(0.05 * lift, 0.3 * lift, -0.1 * lift)
+	-- вращается оружие на пальце, а кисть только поднимается (без оборотов)
+	return { grip = pos * ANG(spin, 0, 0) * ANG(0, rad(35) * twist, rad(-20) * twist), hand = pos }
 end
 
 -- Бабочка: классический флип балисонга. Рукояти вращаются вокруг шарнира у основания клинка (две половинки в разные стороны:
