@@ -80,7 +80,8 @@ local function addLibraryParts(tool: Tool, handle: BasePart, def: Config.WeaponM
 	local shift = CFrame.new((def.grip or Vector3.zero)) * (def.rot or CFrame.identity)
 	local added = 0
 	for _, src in model:GetChildren() do
-		if src:IsA("MeshPart") then
+		-- быстрозарядник револьвера (Speedloader) лежит в модели отдельной деталью и в кадре «висел в воздухе» рядом со стволом: не берём
+		if src:IsA("MeshPart") and not string.find(src.Name, "^Speedloader") then
 			local part = src:Clone()
 			part.Size = src.Size * scale
 			part.Anchored = false

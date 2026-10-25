@@ -485,7 +485,9 @@ Config.WeaponModels = {
 	SMG = { ref = "SMG/MP5", length = 2.2 },
 	Shotgun = { ref = "Shotguns/Mossberg500", length = 3.3 },
 	Rifle = { ref = "Rifles/AK12", length = 3.2 },
-	-- LMG и Sniper: подходящих моделей в паках нет (нет пака пулемётов и снайперок) — остаются сгенерированные из WeaponVisuals
+	-- Sniper: сгенерированная модель была размытой (текстура низкого разрешения), пока вместо неё карабин Mini14: оптику даёт маска прицела
+	-- (Config.ScopedWeapons). LMG: подходящей модели в паках нет — остаётся сгенерированная из WeaponVisuals
+	Sniper = { ref = "Carbines/Mini14", length = 4.2 },
 	Knife = { ref = "Melee/CombatKnife", length = 2.1 },
 	Bat = { ref = "Melee/BaseballBat", length = 3.0 },
 	Machete = { ref = "Melee/StandardMachete", length = 2.5 },
