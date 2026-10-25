@@ -11,7 +11,7 @@ local NAMES = {
 	"Melee", -- клиент → сервер: (direction: Vector3) — взмах оружием ближнего боя
 	"Sprint", -- клиент → сервер: (on: boolean) — хочу спринтовать (энергию считает сервер)
 	"Dodge", -- клиент → сервер: (kind: "slide" | "roll") — подкат или кувырок (энергию, паузу и неуязвимость считает сервер)
-	"MeleeFx", -- сервер → всем: (attacker: Player, weaponId: string) — звук взмаха
+	"MeleeFx", -- сервер → всем: (attacker: Player, weaponId: string, comboIndex: number) — звук и анимация взмаха, номер удара серии
 	"HitFeedback", -- сервер → стрелку: (position: Vector3, damage: number, killed: boolean, headshot: boolean)
 	"ShotFx", -- сервер → всем: (shooter: Player, origin: Vector3, hits: {Vector3}, weaponId: string)
 	"ReloadFx", -- сервер → всем: (player: Player, weaponId: string) — звук перезарядки

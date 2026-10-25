@@ -700,6 +700,15 @@ meleeFx("Karambit", "swipe", 0.2, 1.2)
 meleeFx("Balisong", "stab", 0.24, 1.4)
 meleeFx("Crowbar", "smash", 0.38, 2.6)
 meleeFx("Sledge", "heavy", 0.95, 6.0)
+-- Комбо на ЛКМ: серия ударов разными позами (MeleeAnim.STYLES), если следующий удар начат не позже window секунд после начала предыдущего
+-- (window больше интервала 1/fireRate оружия); после последнего удара серия идёт заново. time — длительность взмаха; удар по зомби сервер
+-- применяет в долю MeleeAnim.HIT[style] от неё. Урон и темп (fireRate) не меняются. Катана: справа, слева, снизу. Бита: справа, слева.
+export type ComboStep = { style: string, time: number }
+Config.MeleeCombo = {
+	Katana = { window = 0.9, steps = { { style = "katana", time = 0.3 }, { style = "katanaL", time = 0.3 }, { style = "katanaUp", time = 0.34 } } },
+	Bat = { window = 1.3, steps = { { style = "side", time = 0.5 }, { style = "sideL", time = 0.5 } } },
+} :: { [string]: { window: number, steps: { ComboStep } } }
+
 if Config.WeaponModels.Karambit then
 	Config.WeaponModels.Karambit.grip = Vector3.new(0, -0.47, 0.78) * (MELEE_LENGTH.Karambit / 1.13) + Vector3.new(0, 0.1, -0.5) -- кольцо у кисти, но лезвие выдвинуто вперёд, чтобы не пряталось за кулаком
 end

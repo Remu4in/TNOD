@@ -434,34 +434,51 @@ local function setArmPose(char: Model, pose: CFrame?)
 	end
 end
 
+-- Серия ударов у себя: номер считаем тем же правилом, что и сервер (MeleeAnim.nextIndex, окно Config.MeleeCombo), от своего времени нажатия
+local localCombo: { index: number, at: number, weaponId: string }? = nil
+
 function FxController.onLocalSwing(tool: Tool, weaponId: string)
-	local fx = Config.MeleeFx[weaponId]
-	if not fx or not MeleeAnim.STYLES[fx.style] then
+	if not Config.MeleeFx[weaponId] then
+		return
+	end
+	local now = os.clock()
+	local last = localCombo
+	local prev, since = 0, math.huge
+	if last and last.weaponId == weaponId then
+		prev, since = last.index, now - last.at
+	end
+	local index = MeleeAnim.nextIndex(weaponId, prev, since)
+	localCombo = { index = index, at = now, weaponId = weaponId }
+	local style, duration = MeleeAnim.stepAt(weaponId, index)
+	if not MeleeAnim.STYLES[style] then
 		return
 	end
 	FxController.cancelInspect()
 	if swing then
 		swing.tool.Grip = swing.baseGrip
 	end
-	swing = { tool = tool, style = fx.style, started = os.clock(), duration = fx.time, baseGrip = tool.Grip }
+	swing = { tool = tool, style = style, started = now, duration = duration, baseGrip = tool.Grip }
 	-- короткий «подаёт плечом» вперёд, а в момент попадания — толчок своего стиля (по MeleeAnim.HIT, как у сервера)
 	kickCamera(-0.6, 0.6, 1.2)
-	local cam = MeleeAnim.CAM[fx.style]
+	local cam = MeleeAnim.CAM[style]
 	if cam then
-		task.delay(fx.time * (MeleeAnim.HIT[fx.style] or 0.5), function()
+		task.delay(duration * (MeleeAnim.HIT[style] or 0.5), function()
 			kickCamera(cam[1], cam[2], cam[3])
 		end)
 	end
 end
 
--- Чужой взмах: сервер сообщил, что attacker замахнулся оружием weaponId — двигаем ему руку по стилю
-function FxController.onRemoteSwing(attacker: Player, weaponId: string)
-	local fx = Config.MeleeFx[weaponId]
+-- Чужой взмах: сервер сообщил, что attacker замахнулся оружием weaponId (удар серии с номером index) — двигаем ему руку по стилю
+function FxController.onRemoteSwing(attacker: Player, weaponId: string, index: number?)
 	local char = attacker.Character
-	if not fx or not char or not MeleeAnim.STYLES[fx.style] then
+	if not char or not Config.MeleeFx[weaponId] then
 		return
 	end
-	remoteSwings[char] = { style = fx.style, started = os.clock(), duration = fx.time }
+	local style, duration = MeleeAnim.stepAt(weaponId, if typeof(index) == "number" then index else 1)
+	if not MeleeAnim.STYLES[style] then
+		return
+	end
+	remoteSwings[char] = { style = style, started = os.clock(), duration = duration }
 end
 
 -- Осмотр холодного оружия (клавиша F): оружие двигается по MeleeAnim.INSPECT, части модели — вокруг шарниров

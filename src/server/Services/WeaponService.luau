@@ -449,6 +449,9 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 	end
 end
 
+-- Серия ударов (Config.MeleeCombo): номер последнего удара и время его начала у каждого игрока. Номер считает сервер, клиенту не доверяем.
+local comboState: { [Player]: { index: number, at: number, weaponId: string } } = {}
+
 -- Ближний бой: клиент присылает только направление взгляда; сектор, дальность, видимость и урон считает сервер.
 local function onMelee(player: Player, direction: unknown)
 	if typeof(direction) ~= "Vector3" then
@@ -482,9 +485,16 @@ local function onMelee(player: Player, direction: unknown)
 	end
 	st.lastShot = now
 	-- звук/анимация взмаха идут сразу, а удар по зомби — в момент попадания в анимации (у топора и кувалды это после замаха)
-	Remotes.get("MeleeFx"):FireAllClients(player, weaponId)
-	local fx = Config.MeleeFx[weaponId]
-	local hitDelay = if fx then fx.time * (MeleeAnim.HIT[fx.style] or 0.5) else 0
+	local last = comboState[player]
+	local prev, since = 0, math.huge
+	if last and last.weaponId == weaponId then
+		prev, since = last.index, now - last.at
+	end
+	local comboIndex = MeleeAnim.nextIndex(weaponId, prev, since)
+	comboState[player] = { index = comboIndex, at = now, weaponId = weaponId }
+	Remotes.get("MeleeFx"):FireAllClients(player, weaponId, comboIndex)
+	local style, swingTime = MeleeAnim.stepAt(weaponId, comboIndex)
+	local hitDelay = if Config.MeleeFx[weaponId] then swingTime * (MeleeAnim.HIT[style] or 0.5) else 0
 
 	local function strike()
 		local head2 = player.Character and player.Character:FindFirstChild("Head") :: BasePart?
@@ -908,6 +918,7 @@ function WeaponService.init(map: Types.MapInfo)
 	Players.PlayerRemoving:Connect(function(player)
 		owned[player] = nil
 		RateLimit.forget(player)
+		comboState[player] = nil
 	end)
 end
 

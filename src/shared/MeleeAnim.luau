@@ -87,6 +87,32 @@ MeleeAnim.STYLES = {
 	},
 } :: { [string]: { Pose } }
 
+-- Зеркальная поза (удар с другой стороны): отражение относительно плоскости X = 0
+local function mirror(cf: CFrame): CFrame
+	local x, y, z, r11, r12, r13, r21, r22, r23, r31, r32, r33 = cf:GetComponents()
+	return CFrame.new(-x, y, z, r11, -r12, -r13, -r21, r22, r23, -r31, r32, r33)
+end
+
+local function mirrored(keys: { Pose }): { Pose }
+	local out: { Pose } = {}
+	for _, k in keys do
+		table.insert(out, { t = k.t, cf = mirror(k.cf) })
+	end
+	return out
+end
+
+-- Удары комбо (Config.MeleeCombo). Катана: 1 — справа (katana), 2 — слева (katanaL, зеркало), 3 — снизу вверх (katanaUp).
+-- Бита: 1 — справа (side), 2 — слева (sideL, зеркало). Время ключа попадания у зеркальных такое же, как у исходных.
+MeleeAnim.STYLES.katanaL = mirrored(MeleeAnim.STYLES.katana)
+MeleeAnim.STYLES.sideL = mirrored(MeleeAnim.STYLES.side)
+MeleeAnim.STYLES.katanaUp = {
+	{ t = 0, cf = CFrame.identity },
+	{ t = 0.25, cf = CF(0.45, -0.7, -0.2) * ANG(-2.3, -0.3, -0.4) }, -- клинок вниз-вперёд у правого бедра
+	{ t = 0.5, cf = CF(-0.3, 0.4, -0.9) * ANG(-1.0, 0.5, 0.5) }, -- проходит вверх через цель
+	{ t = 0.7, cf = CF(-0.4, 0.8, -0.5) * ANG(0.2, 0.6, 0.6) }, -- клинок над левым плечом
+	{ t = 1, cf = CFrame.identity },
+}
+
 -- Толчок камеры в момент попадания (градусы: наклон, рыскание, крен — как у FxController.kickCamera): у каждого стиля свой
 MeleeAnim.CAM = {
 	stab = { 0.8, 0.4, 0.8 }, slash = { 0.9, 2.2, 2.2 }, smash = { 2.6, 0.4, 0.8 }, chop = { 2.4, 1.2, 1.6 }, side = { 0.6, 3.0, 2.6 },
@@ -98,6 +124,29 @@ MeleeAnim.live = CFrame.identity
 
 -- Доля времени взмаха, в которую удар попадает по цели (сервер применяет урон в этот момент)
 MeleeAnim.HIT = { stab = 0.5, slash = 0.55, smash = 0.6, chop = 0.62, side = 0.55, heavy = 0.74, katana = 0.5, swipe = 0.55 } :: { [string]: number }
+MeleeAnim.HIT.katanaL, MeleeAnim.HIT.katanaUp, MeleeAnim.HIT.sideL = 0.5, 0.5, 0.55
+MeleeAnim.CAM.katanaL, MeleeAnim.CAM.katanaUp, MeleeAnim.CAM.sideL = { 0.6, -2.6, -2.8 }, { 2.2, 0.8, 1.2 }, { 0.6, -3.0, -2.6 }
+
+-- Комбо: стиль и длительность удара с номером index (серия — Config.MeleeCombo; нет серии — единственный взмах Config.MeleeFx)
+function MeleeAnim.stepAt(weaponId: string, index: number): (string, number)
+	local combo = Config.MeleeCombo[weaponId]
+	local step = if combo then combo.steps[index] else nil
+	if step then
+		return step.style, step.time
+	end
+	local fx = Config.MeleeFx[weaponId]
+	return if fx then fx.style else "stab", if fx then fx.time else 0.3
+end
+
+-- Какой по счёту удар серии: prev — номер предыдущего удара этого игрока этим оружием (0 — нет), since — секунд с начала предыдущего.
+-- Серия продолжается, если следующий удар в окне Config.MeleeCombo[..].window; после последнего удара — заново с первого.
+function MeleeAnim.nextIndex(weaponId: string, prev: number, since: number): number
+	local combo = Config.MeleeCombo[weaponId]
+	if combo and prev >= 1 and prev < #combo.steps and since <= combo.window then
+		return prev + 1
+	end
+	return 1
+end
 
 function MeleeAnim.poseAt(style: string, u: number): CFrame
 	local keys = MeleeAnim.STYLES[style]
