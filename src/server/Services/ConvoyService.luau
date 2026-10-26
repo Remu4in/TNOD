@@ -1,7 +1,9 @@
 --!strict
--- Конвой (миссия escort): грузовик Transport Truck (1000 HP) едет по маршруту (контрольные точки района, затем остановка на дороге у места шатра)
--- в сопровождении двух военных (300 HP, ~50 урона в секунду по зомби каждый). Зомби атакуют конвой наравне с игроками
--- (ZombieService.registerTarget). Погиб грузовик — миссия провалена. Грузовик двигается кинематически (CFrame), его нельзя толкнуть.
+-- Конвой (миссия escort): бронетранспортёр APC (Config.Convoy.Model, 1000 HP) едет по маршруту (контрольные точки района, затем остановка на дороге
+-- у места шатра) в сопровождении двух военных (слабых: Config.Convoy.Soldier*). Зомби атакуют конвой наравне с игроками
+-- (ZombieService.registerTarget). Погиб — миссия провалена. Машина настоящая физическая (детали сварены, не заякорены, сервер — владелец физики):
+-- её ведут AlignPosition/AlignOrientation к точке, которую каждый кадр считает код (кинематически, по маршруту). Клиенты плавно интерполируют
+-- физику, поэтому нет рывков, как у заякоренной модели, которую двигали PivotTo с частотой сети (~20 Гц).
 -- Едет только по дорогам (Workspace.Roads): весь маршрут считается один раз при старте (RoadRoute, A* по клеткам дороги), прямой линии
 -- через здания не бывает; точка, до которой дорогой не добраться, пропускается, не добраться до остановки — конвой не стартует.
 
@@ -31,6 +33,9 @@ type State = {
 	arrived: boolean,
 	failed: boolean,
 	heading: Vector3,
+	kpos: Vector3, -- расчётное положение машины на маршруте (физическая модель следует за ним)
+	yaw: number, -- поворот модели вокруг Y, чтобы её перед (колёса FL/FR) смотрел по курсу
+	target: Part, -- невидимая точка, к которой притягивается машина (AlignPosition/AlignOrientation)
 	curSpeed: number, -- текущая скорость: плавно разгоняется и тормозит (ожидание игрока, поворот)
 	phase: number, -- фаза покачивания кузова
 	roll: number, -- крен на повороте (сглаженный)
@@ -131,36 +136,115 @@ local function damageTruck(amount: number)
 	end
 end
 
-local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?, number)
+-- Поза модели: перед смотрит по heading (yaw — поправка, если перед модели не вдоль её -Z)
+local function poseFor(at: Vector3, heading: Vector3, yaw: number): CFrame
+	return CFrame.lookAt(at, at + heading) * CFrame.Angles(0, yaw, 0)
+end
+
+-- Где перед модели (по колёсам FL/FR против RL/RR) в системе pivot → поворот вокруг Y, который совмещает его с -Z
+local function frontYaw(model: Model): number
+	local pv = model:GetPivot()
+	local front, rear, nf, nr = Vector3.zero, Vector3.zero, 0, 0
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			local rel = pv:PointToObjectSpace(d.Position)
+			if d.Name == "FL" or d.Name == "FR" then
+				front, nf = front + rel, nf + 1
+			elseif d.Name == "RL" or d.Name == "RR" then
+				rear, nr = rear + rel, nr + 1
+			end
+		end
+	end
+	if nf == 0 or nr == 0 then
+		return 0
+	end
+	local f = front / nf - rear / nr
+	f = Vector3.new(f.X, 0, f.Z)
+	if f.Magnitude < 0.1 then
+		return 0
+	end
+	f = f.Unit
+	return math.atan2(f.X, -f.Z)
+end
+
+-- Физическая машина: все детали сварены с корпусом и не заякорены (кроме корпуса — Massless), корпус следует за невидимой точкой
+local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?, number, number, Part?)
 	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("Vehicles")
-	local template = lib and lib:FindFirstChild("TransportTruck")
+	local template = lib and (lib:FindFirstChild(C.Model) or lib:FindFirstChild("TransportTruck"))
 	if not template then
-		warn("[ConvoyService] нет ServerStorage.Assets.Vehicles.TransportTruck")
-		return nil, nil, 0
+		warn("[ConvoyService] нет ServerStorage.Assets.Vehicles." .. C.Model)
+		return nil, nil, 0, 0, nil
 	end
 	local truck = template:Clone() :: Model
 	truck.Name = "ConvoyTruck"
 	local biggest: BasePart? = nil
 	for _, d in truck:GetDescendants() do
+		if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ClickDetector") or (d:IsA("BasePart") and d.Name == "Regen Button") then
+			d:Destroy()
+		end
+	end
+	for _, d in truck:GetDescendants() do
 		if d:IsA("BasePart") then
-			d.Anchored = true
-			d.CanCollide = true
 			if not biggest or d.Size.Magnitude > biggest.Size.Magnitude then
 				biggest = d
 			end
-		elseif d:IsA("Script") or d:IsA("LocalScript") or d:IsA("VehicleSeat") or d:IsA("Seat") then
-			if d:IsA("Script") or d:IsA("LocalScript") then
-				d:Destroy()
-			end
+		elseif d:IsA("VehicleSeat") or d:IsA("Seat") then
+			d.Disabled = true -- в конвое не ездят
 		end
 	end
 	if not biggest then
 		truck:Destroy()
-		return nil, nil, 0
+		return nil, nil, 0, 0, nil
 	end
 	local cf, size = truck:GetBoundingBox()
 	local bottom = truck:GetPivot().Position.Y - (cf.Position.Y - size.Y / 2)
-	truck:PivotTo(CFrame.lookAt(spawn, spawn + heading))
+	local yaw = frontYaw(truck)
+	truck:PivotTo(poseFor(spawn + Vector3.new(0, bottom, 0), heading, yaw))
+	for _, d in truck:GetDescendants() do
+		if d:IsA("BasePart") and d ~= biggest then
+			local w = Instance.new("WeldConstraint")
+			w.Part0 = biggest
+			w.Part1 = d
+			w.Parent = d
+		end
+	end
+	for _, d in truck:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = false
+			d.Massless = d ~= biggest
+		end
+	end
+	local target = Instance.new("Part")
+	target.Name = "ConvoyTarget"
+	target.Anchored = true
+	target.CanCollide = false
+	target.CanQuery = false
+	target.CanTouch = false
+	target.Transparency = 1
+	target.Size = Vector3.one
+	target.CFrame = truck:GetPivot()
+	target.Parent = folder
+	local a1 = Instance.new("Attachment")
+	a1.Parent = target
+	local a0 = Instance.new("Attachment")
+	a0.CFrame = biggest.CFrame:ToObjectSpace(truck:GetPivot())
+	a0.Parent = biggest
+	truck.Parent = folder
+	local mass = math.max(biggest.AssemblyMass, 1)
+	local ap = Instance.new("AlignPosition")
+	ap.Attachment0, ap.Attachment1 = a0, a1
+	ap.ApplyAtCenterOfMass = false
+	ap.MaxForce = mass * C.PhysForce
+	ap.MaxVelocity = 60
+	ap.Responsiveness = 40
+	ap.Parent = biggest
+	local ao = Instance.new("AlignOrientation")
+	ao.Attachment0, ao.Attachment1 = a0, a1
+	ao.MaxTorque = mass * C.PhysForce * 40
+	ao.MaxAngularVelocity = 8
+	ao.Responsiveness = 30
+	ao.Parent = biggest
+	biggest:SetNetworkOwner(nil)
 	-- мотор грузовика: тихий зацикленный звук, слышен всем рядом
 	local engine = Instance.new("Sound")
 	engine.Name = "ConvoyEngine"
@@ -173,8 +257,7 @@ local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?,
 	engine.RollOffMaxDistance = 90
 	engine.Parent = biggest
 	engine:Play()
-	truck.Parent = folder
-	return truck, biggest, bottom
+	return truck, biggest, bottom, yaw, target
 end
 
 local function buildEscort(offset: Vector3, spawn: Vector3, index: number): Escort?
@@ -293,6 +376,12 @@ local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3)
 	return best
 end
 
+-- Смещение сопровождающего в мире: X — вправо от курса, Z — назад
+local function escortWorldOffset(heading: Vector3, offset: Vector3): Vector3
+	local right = Vector3.new(-heading.Z, 0, heading.X)
+	return right * offset.X - heading * offset.Z
+end
+
 -- Старт: route — точки по порядку, finalStop — где остановиться; spawn — начальная зона (точка появления игроков): колонна стартует отсюда
 -- и первым отрезком едет к ближайшей дороге. speed — скорость миссии (иначе Config.Convoy.TruckSpeed). true — запущен.
 function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vector3, speed: number?): boolean
@@ -315,8 +404,8 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	folder.Name = "Convoy"
 	folder.Parent = workspace
 	local gy = ground(begin.X, begin.Z, {}) or begin.Y
-	local truck, root, bottom = buildTruck(Vector3.new(begin.X, gy + 0, begin.Z), heading)
-	if not truck or not root then
+	local truck, root, bottom, yaw, target = buildTruck(Vector3.new(begin.X, gy, begin.Z), heading)
+	if not truck or not root or not target then
 		ConvoyService.finish()
 		return false
 	end
@@ -324,7 +413,7 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	local v = speed or C.TruckSpeed
 	print(string.format("[ConvoyService] маршрут по дорогам: %d студов, %d точек, в пути около %d с при скорости %.1f", length, #waypoints, length / v, v))
 	local state: State = {
-		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, waypoints = waypoints, wpIndex = 2, length = length,
+		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, kpos = Vector3.new(begin.X, gy, begin.Z), yaw = yaw, target = target, waypoints = waypoints, wpIndex = 2, length = length,
 		escorts = {}, bar = makeBar(root), arrived = false, failed = false, heading = heading, speed = v, held = false, curSpeed = 0, phase = 0, roll = 0, gy = nil,
 	}
 	truck:SetAttribute("Hp", C.TruckHp)
@@ -332,9 +421,11 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	truck:SetAttribute("Speed", v)
 	ZombieService.registerTarget(truck, root, damageTruck)
 	for i = 1, 2 do
-		-- смещение в системе грузовика: по бокам (за пределами кузова) и чуть позади
-		local offset = Vector3.new(if i == 1 then -11 else 11, 0, 10)
-		local e = buildEscort(offset, truck:GetPivot():PointToWorldSpace(offset) - Vector3.new(0, 0, 0), i)
+		-- смещение: X — вбок от курса (за пределами кузова), Z — назад; считаем по размеру машины
+		local _, bsize = truck:GetBoundingBox()
+		local width, len = math.min(bsize.X, bsize.Z), math.max(bsize.X, bsize.Z)
+		local offset = Vector3.new((if i == 1 then -1 else 1) * (width / 2 + 4), 0, len * 0.3)
+		local e = buildEscort(offset, state.kpos + escortWorldOffset(heading, offset), i)
 		if e then
 			table.insert(state.escorts, e)
 		end
@@ -359,9 +450,8 @@ function ConvoyService.routeInfo(): (number, number)
 end
 
 local function moveTruck(s: State, dt: number)
-	-- от точки привязки модели (pivot), а не от самой большой детали: деталь стоит в стороне от pivot, и грузовик на каждом шаге сдвигался
-	-- ещё и на это смещение (ехал примерно вдвое быстрее заданной скорости)
-	local pos = s.truck:GetPivot().Position
+	-- едем по расчётному положению (kpos): физическая машина следует за ним с небольшой задержкой, сравнивать с её положением нельзя
+	local pos = s.kpos
 	local wp = s.waypoints[s.wpIndex]
 	if not wp then
 		s.arrived = true
@@ -374,12 +464,9 @@ local function moveTruck(s: State, dt: number)
 	end
 	-- плавный поворот и движение вперёд по отрезку маршрута
 	local want = flat.Unit
-	s.heading = (s.heading + (want - s.heading) * math.min(1, dt * 6))
-	if s.heading.Magnitude < 0.01 then
-		s.heading = want
-	end
 	local prevHeading = s.heading
-	s.heading = s.heading.Unit
+	local blended = s.heading + (want - s.heading) * math.min(1, dt * 6)
+	s.heading = if blended.Magnitude < 0.01 then want else blended.Unit
 	-- скорость: плавный разгон и торможение; в повороте сбрасываем до 55%, чтобы не «заносило»
 	local turn = math.abs(prevHeading.X * s.heading.Z - prevHeading.Z * s.heading.X)
 	local target = if s.held then 0 else s.speed * (1 - math.min(0.45, turn * 8))
@@ -394,7 +481,7 @@ local function moveTruck(s: State, dt: number)
 	end
 	local step = math.min(s.curSpeed * dt, flat.Magnitude)
 	local nx, nz = pos.X + s.heading.X * step, pos.Z + s.heading.Z * step
-	local gyNow = ground(nx, nz, { s.truck, folder :: Instance }) or (pos.Y - s.bottom)
+	local gyNow = ground(nx, nz, { s.truck, folder :: Instance }) or pos.Y
 	local gy = if s.gy then s.gy + (gyNow - s.gy) * math.min(1, dt * 6) else gyNow -- высота земли сглажена: без подпрыгивания на стыках
 	s.gy = gy
 	-- кузов: лёгкая качка по ходу, крен на повороте (чем быстрее и круче — тем заметнее)
@@ -405,8 +492,16 @@ local function moveTruck(s: State, dt: number)
 	local k = math.min(1, s.curSpeed / s.speed)
 	local bob = math.sin(s.phase * 2.2) * 0.05 * k
 	local pitch = math.sin(s.phase * 1.1) * 0.008 * k
-	local at = Vector3.new(nx, gy + bob, nz)
-	s.truck:PivotTo(CFrame.lookAt(at, at + s.heading) * CFrame.Angles(pitch, 0, s.roll))
+	s.kpos = Vector3.new(nx, gy, nz)
+	local at = Vector3.new(nx, gy + s.bottom + bob, nz)
+	local pose = poseFor(at, s.heading, s.yaw) * CFrame.Angles(pitch, 0, s.roll)
+	s.target.CFrame = pose
+	-- физическую машину зажало (стена, ящики) или она улетела: возвращаем на маршрут
+	if (s.truck:GetPivot().Position - at).Magnitude > C.MaxLag then
+		s.truck:PivotTo(pose)
+		s.root.AssemblyLinearVelocity = Vector3.zero
+		s.root.AssemblyAngularVelocity = Vector3.zero
+	end
 end
 
 local function updateEscorts(s: State, dt: number)
@@ -414,7 +509,7 @@ local function updateEscorts(s: State, dt: number)
 	for _, e in s.escorts do
 		if e.alive then
 			-- держимся у грузовика: отстали больше чем на 40 студов или не могут дойти больше 4 с (упёрлись в препятствие) — подтягиваем к колонне
-			local anchorPos = s.root.Position + s.truck:GetPivot():VectorToWorldSpace(e.offset)
+			local anchorPos = s.root.Position + escortWorldOffset(s.heading, e.offset)
 			local gap = (e.root.Position - anchorPos).Magnitude
 			if gap > 7 then
 				if e.farSince == 0 then
@@ -424,7 +519,7 @@ local function updateEscorts(s: State, dt: number)
 				e.farSince = 0
 			end
 			if gap > 40 or (e.farSince > 0 and now - e.farSince > 4) then
-				local near = s.root.Position + s.truck:GetPivot():VectorToWorldSpace(e.offset * 0.6)
+				local near = s.root.Position + escortWorldOffset(s.heading, e.offset * 0.6)
 				e.model:PivotTo(CFrame.new(near + Vector3.new(0, 4, 0)))
 				e.farSince = 0
 			elseif gap > 7 then
