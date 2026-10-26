@@ -2,8 +2,9 @@
 -- Конвой (миссия escort): бронетранспортёр APC (Config.Convoy.Model, 1000 HP) едет по маршруту (контрольные точки района, затем остановка на дороге
 -- у места шатра) в сопровождении двух военных (слабых: Config.Convoy.Soldier*). Зомби атакуют конвой наравне с игроками
 -- (ZombieService.registerTarget). Погиб — миссия провалена. Машина настоящая физическая (детали сварены, не заякорены, сервер — владелец физики):
--- её ведут AlignPosition/AlignOrientation к точке, которую каждый кадр считает код (кинематически, по маршруту). Клиенты плавно интерполируют
--- физику, поэтому нет рывков, как у заякоренной модели, которую двигали PivotTo с частотой сети (~20 Гц).
+-- её скорость (линейная и угловая) каждый кадр задаёт код: едем кинематически по маршруту, а физика несёт машину и подтягивает к расчётной точке.
+-- Клиенты плавно интерполируют физику, поэтому нет рывков, как у заякоренной модели, которую двигали PivotTo с частотой сети (~20 Гц).
+-- (AlignPosition для этого не годился: когда машина стояла и «засыпала», он её не будил, и она оставалась на месте, а точка уезжала.)
 -- Едет только по дорогам (Workspace.Roads): весь маршрут считается один раз при старте (RoadRoute, A* по клеткам дороги), прямой линии
 -- через здания не бывает; точка, до которой дорогой не добраться, пропускается, не добраться до остановки — конвой не стартует.
 
@@ -35,7 +36,7 @@ type State = {
 	heading: Vector3,
 	kpos: Vector3, -- расчётное положение машины на маршруте (физическая модель следует за ним)
 	yaw: number, -- поворот модели вокруг Y, чтобы её перед (колёса FL/FR) смотрел по курсу
-	target: Part, -- невидимая точка, к которой притягивается машина (AlignPosition/AlignOrientation)
+
 	curSpeed: number, -- текущая скорость: плавно разгоняется и тормозит (ожидание игрока, поворот)
 	phase: number, -- фаза покачивания кузова
 	roll: number, -- крен на повороте (сглаженный)
@@ -168,12 +169,12 @@ local function frontYaw(model: Model): number
 end
 
 -- Физическая машина: все детали сварены с корпусом и не заякорены (кроме корпуса — Massless), корпус следует за невидимой точкой
-local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?, number, number, Part?)
+local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?, number, number)
 	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("Vehicles")
 	local template = lib and (lib:FindFirstChild(C.Model) or lib:FindFirstChild("TransportTruck"))
 	if not template then
 		warn("[ConvoyService] нет ServerStorage.Assets.Vehicles." .. C.Model)
-		return nil, nil, 0, 0, nil
+		return nil, nil, 0, 0
 	end
 	local truck = template:Clone() :: Model
 	truck.Name = "ConvoyTruck"
@@ -194,7 +195,7 @@ local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?,
 	end
 	if not biggest then
 		truck:Destroy()
-		return nil, nil, 0, 0, nil
+		return nil, nil, 0, 0
 	end
 	local cf, size = truck:GetBoundingBox()
 	local bottom = truck:GetPivot().Position.Y - (cf.Position.Y - size.Y / 2)
@@ -212,38 +213,14 @@ local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?,
 		if d:IsA("BasePart") then
 			d.Anchored = false
 			d.Massless = d ~= biggest
+			-- не твёрдая: стыки дороги и колёса-коллайдеры давали толчки и неровную скорость (±40%); игроки и зомби проходят сквозь, цели — по расстоянию
+			d.CanCollide = C.Solid
 		end
 	end
-	local target = Instance.new("Part")
-	target.Name = "ConvoyTarget"
-	target.Anchored = true
-	target.CanCollide = false
-	target.CanQuery = false
-	target.CanTouch = false
-	target.Transparency = 1
-	target.Size = Vector3.one
-	target.CFrame = truck:GetPivot()
-	target.Parent = folder
-	local a1 = Instance.new("Attachment")
-	a1.Parent = target
-	local a0 = Instance.new("Attachment")
-	a0.CFrame = biggest.CFrame:ToObjectSpace(truck:GetPivot())
-	a0.Parent = biggest
+	-- точка привязки модели привязана к корпусу: без PrimaryPart GetPivot отставал от физики, и расчёт ошибки «улетал» вместе с машиной
+	biggest.PivotOffset = biggest.CFrame:ToObjectSpace(truck:GetPivot())
+	truck.PrimaryPart = biggest
 	truck.Parent = folder
-	local mass = math.max(biggest.AssemblyMass, 1)
-	local ap = Instance.new("AlignPosition")
-	ap.Attachment0, ap.Attachment1 = a0, a1
-	ap.ApplyAtCenterOfMass = false
-	ap.MaxForce = mass * C.PhysForce
-	ap.MaxVelocity = 60
-	ap.Responsiveness = 40
-	ap.Parent = biggest
-	local ao = Instance.new("AlignOrientation")
-	ao.Attachment0, ao.Attachment1 = a0, a1
-	ao.MaxTorque = mass * C.PhysForce * 40
-	ao.MaxAngularVelocity = 8
-	ao.Responsiveness = 30
-	ao.Parent = biggest
 	biggest:SetNetworkOwner(nil)
 	-- мотор грузовика: тихий зацикленный звук, слышен всем рядом
 	local engine = Instance.new("Sound")
@@ -257,7 +234,7 @@ local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?,
 	engine.RollOffMaxDistance = 90
 	engine.Parent = biggest
 	engine:Play()
-	return truck, biggest, bottom, yaw, target
+	return truck, biggest, bottom, yaw
 end
 
 local function buildEscort(offset: Vector3, spawn: Vector3, index: number): Escort?
@@ -404,8 +381,8 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	folder.Name = "Convoy"
 	folder.Parent = workspace
 	local gy = ground(begin.X, begin.Z, {}) or begin.Y
-	local truck, root, bottom, yaw, target = buildTruck(Vector3.new(begin.X, gy, begin.Z), heading)
-	if not truck or not root or not target then
+	local truck, root, bottom, yaw = buildTruck(Vector3.new(begin.X, gy, begin.Z), heading)
+	if not truck or not root then
 		ConvoyService.finish()
 		return false
 	end
@@ -413,7 +390,7 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	local v = speed or C.TruckSpeed
 	print(string.format("[ConvoyService] маршрут по дорогам: %d студов, %d точек, в пути около %d с при скорости %.1f", length, #waypoints, length / v, v))
 	local state: State = {
-		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, kpos = Vector3.new(begin.X, gy, begin.Z), yaw = yaw, target = target, waypoints = waypoints, wpIndex = 2, length = length,
+		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, kpos = Vector3.new(begin.X, gy, begin.Z), yaw = yaw, waypoints = waypoints, wpIndex = 2, length = length,
 		escorts = {}, bar = makeBar(root), arrived = false, failed = false, heading = heading, speed = v, held = false, curSpeed = 0, phase = 0, roll = 0, gy = nil,
 	}
 	truck:SetAttribute("Hp", C.TruckHp)
@@ -454,7 +431,11 @@ local function moveTruck(s: State, dt: number)
 	local pos = s.kpos
 	local wp = s.waypoints[s.wpIndex]
 	if not wp then
+		-- приехали: машина встаёт на месте намертво
 		s.arrived = true
+		s.root.AssemblyLinearVelocity = Vector3.zero
+		s.root.AssemblyAngularVelocity = Vector3.zero
+		s.root.Anchored = true
 		return
 	end
 	local flat = Vector3.new(wp.X - pos.X, 0, wp.Z - pos.Z)
@@ -470,14 +451,13 @@ local function moveTruck(s: State, dt: number)
 	-- скорость: плавный разгон и торможение; в повороте сбрасываем до 55%, чтобы не «заносило»
 	local turn = math.abs(prevHeading.X * s.heading.Z - prevHeading.Z * s.heading.X)
 	local target = if s.held then 0 else s.speed * (1 - math.min(0.45, turn * 8))
-	if flat.Magnitude < 6 then
+	if s.wpIndex >= #s.waypoints and flat.Magnitude < 8 then -- замедляемся только перед конечной остановкой, а не у каждой точки пути
 		target = math.min(target, s.speed * 0.6)
 	end
 	local rate = if target > s.curSpeed then C.Accel else C.Brake
 	s.curSpeed += math.clamp(target - s.curSpeed, -rate * dt, rate * dt)
 	if s.curSpeed < 0.01 then
 		s.curSpeed = 0
-		return
 	end
 	local step = math.min(s.curSpeed * dt, flat.Magnitude)
 	local nx, nz = pos.X + s.heading.X * step, pos.Z + s.heading.Z * step
@@ -495,11 +475,23 @@ local function moveTruck(s: State, dt: number)
 	s.kpos = Vector3.new(nx, gy, nz)
 	local at = Vector3.new(nx, gy + s.bottom + bob, nz)
 	local pose = poseFor(at, s.heading, s.yaw) * CFrame.Angles(pitch, 0, s.roll)
-	s.target.CFrame = pose
-	-- физическую машину зажало (стена, ящики) или она улетела: возвращаем на маршрут
-	if (s.truck:GetPivot().Position - at).Magnitude > C.MaxLag then
+	local cur = s.truck:GetPivot()
+	local err = at - cur.Position
+	if err.Magnitude > C.MaxLag then
+		-- машину зажало (стена, ящики) или она улетела: возвращаем на маршрут
 		s.truck:PivotTo(pose)
 		s.root.AssemblyLinearVelocity = Vector3.zero
+		s.root.AssemblyAngularVelocity = Vector3.zero
+		return
+	end
+	-- скорость задаёт код каждый кадр (это же будит «уснувшую» физику): вперёд по курсу + подтягивание к расчётной точке; поворот — к расчётной позе
+	local vel = s.heading * s.curSpeed + err * C.FollowGain
+	s.root.AssemblyLinearVelocity = vel
+	local axis, angle = (pose.Rotation * cur.Rotation:Inverse()):ToAxisAngle()
+	-- при нулевом повороте ось не определена (NaN): угловую скорость тогда не трогаем, иначе физика ломается и машина улетает
+	if angle == angle and angle > 1e-4 and axis.X == axis.X and axis.Y == axis.Y and axis.Z == axis.Z then
+		s.root.AssemblyAngularVelocity = axis * math.clamp(angle * C.TurnGain, -3, 3)
+	else
 		s.root.AssemblyAngularVelocity = Vector3.zero
 	end
 end
@@ -508,22 +500,29 @@ local function updateEscorts(s: State, dt: number)
 	local now = os.clock()
 	for _, e in s.escorts do
 		if e.alive then
-			-- держимся у грузовика: отстали больше чем на 40 студов или не могут дойти больше 4 с (упёрлись в препятствие) — подтягиваем к колонне
+			-- держимся у машины на своём месте: скорость ходьбы подстраивается под машину и расстояние (без «туда-обратно»); не могут дойти
+			-- (упёрлись) или отстали — подтягиваем к колонне, ставя на землю, а не роняя сверху
 			local anchorPos = s.root.Position + escortWorldOffset(s.heading, e.offset)
 			local gap = (e.root.Position - anchorPos).Magnitude
-			if gap > 7 then
+			if gap > 12 then
 				if e.farSince == 0 then
 					e.farSince = now
 				end
 			else
 				e.farSince = 0
 			end
-			if gap > 40 or (e.farSince > 0 and now - e.farSince > 4) then
-				local near = s.root.Position + escortWorldOffset(s.heading, e.offset * 0.6)
-				e.model:PivotTo(CFrame.new(near + Vector3.new(0, 4, 0)))
+			if gap > 45 or (e.farSince > 0 and now - e.farSince > 7) then
+				local nearPos = s.root.Position + escortWorldOffset(s.heading, e.offset)
+				local gy = ground(nearPos.X, nearPos.Z, {}) or nearPos.Y
+				e.model:PivotTo(CFrame.new(nearPos.X, gy + 3, nearPos.Z))
+				e.root.AssemblyLinearVelocity = Vector3.zero
 				e.farSince = 0
-			elseif gap > 7 then
+			elseif gap > 2.5 then
+				e.hum.WalkSpeed = math.clamp(s.curSpeed + gap * 1.5, 4, 18)
 				e.hum:MoveTo(anchorPos)
+			else
+				e.hum.WalkSpeed = math.max(s.curSpeed, 1)
+				e.hum:MoveTo(e.root.Position + s.heading * 2) -- на месте: идёт вместе с машиной
 			end
 			-- стреляем по ближайшему зомби в 55 студах
 			local best: { model: Model, root: BasePart }? = nil
