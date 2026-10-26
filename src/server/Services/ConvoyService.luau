@@ -36,6 +36,8 @@ type State = {
 }
 
 local current: State? = nil
+local moveConn: RBXScriptConnection? = nil
+local startMotion: (any) -> () -- задаётся ниже, после moveTruck и updateEscorts
 local folder: Folder? = nil
 local rng = Random.new()
 local C = Config.Convoy
@@ -334,6 +336,7 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 		end
 	end
 	current = state
+	startMotion(state)
 	return true
 end
 
@@ -432,6 +435,21 @@ local function updateEscorts(s: State, dt: number)
 	end
 end
 
+startMotion = function(state: State)
+	if moveConn then
+		moveConn:Disconnect()
+	end
+	moveConn = RunService.Heartbeat:Connect(function(frameDt: number)
+		local s = current
+		if s and s == state and not s.failed then
+			if not s.arrived and not s.held then
+				moveTruck(s, frameDt)
+			end
+			updateEscorts(s, frameDt)
+		end
+	end)
+end
+
 -- Стоит ли колонна, ожидая игроков (для текста миссии)
 function ConvoyService.isHeld(): boolean
 	return current ~= nil and current.held
@@ -448,10 +466,7 @@ function ConvoyService.update(dt: number, playerNear: boolean?): string?
 		return "fail"
 	end
 	s.held = playerNear == false
-	if not s.arrived and not s.held then
-		moveTruck(s, dt)
-	end
-	updateEscorts(s, dt)
+	-- движение и солдаты считаются каждый кадр (moveConn): при шаге раз в 0,25 с грузовик ехал рывками
 	ZombieService.moveAnchor(s.root.Position)
 	if s.arrived then
 		return "arrived"
@@ -460,6 +475,10 @@ function ConvoyService.update(dt: number, playerNear: boolean?): string?
 end
 
 function ConvoyService.finish()
+	if moveConn then
+		moveConn:Disconnect()
+		moveConn = nil
+	end
 	local s = current
 	if s then
 		ZombieService.unregisterTarget(s.truck)
