@@ -31,6 +31,10 @@ type State = {
 	arrived: boolean,
 	failed: boolean,
 	heading: Vector3,
+	curSpeed: number, -- текущая скорость: плавно разгоняется и тормозит (ожидание игрока, поворот)
+	phase: number, -- фаза покачивания кузова
+	roll: number, -- крен на повороте (сглаженный)
+	gy: number?, -- сглаженная высота земли
 	speed: number, -- студов в секунду (у миссии своя: Config.Missions[n].convoySpeed, иначе Config.Convoy.TruckSpeed)
 	held: boolean, -- рядом нет живого игрока: грузовик стоит
 }
@@ -162,11 +166,11 @@ local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?,
 	engine.Name = "ConvoyEngine"
 	engine.SoundId = "rbxassetid://520998094"
 	engine.Looped = true
-	engine.Volume = 0.12
+	engine.Volume = C.EngineVolume
 	engine.PlaybackSpeed = 0.7
 	engine.RollOffMode = Enum.RollOffMode.InverseTapered
 	engine.RollOffMinDistance = 15
-	engine.RollOffMaxDistance = 140
+	engine.RollOffMaxDistance = 90
 	engine.Parent = biggest
 	engine:Play()
 	truck.Parent = folder
@@ -321,7 +325,7 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	print(string.format("[ConvoyService] маршрут по дорогам: %d студов, %d точек, в пути около %d с при скорости %.1f", length, #waypoints, length / v, v))
 	local state: State = {
 		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, waypoints = waypoints, wpIndex = 2, length = length,
-		escorts = {}, bar = makeBar(root), arrived = false, failed = false, heading = heading, speed = v, held = false,
+		escorts = {}, bar = makeBar(root), arrived = false, failed = false, heading = heading, speed = v, held = false, curSpeed = 0, phase = 0, roll = 0, gy = nil,
 	}
 	truck:SetAttribute("Hp", C.TruckHp)
 	truck:SetAttribute("RouteLength", math.floor(length)) -- для проверок: хватит ли ночи (длина / Speed)
@@ -374,11 +378,35 @@ local function moveTruck(s: State, dt: number)
 	if s.heading.Magnitude < 0.01 then
 		s.heading = want
 	end
+	local prevHeading = s.heading
 	s.heading = s.heading.Unit
-	local step = math.min(s.speed * dt, flat.Magnitude)
+	-- скорость: плавный разгон и торможение; в повороте сбрасываем до 55%, чтобы не «заносило»
+	local turn = math.abs(prevHeading.X * s.heading.Z - prevHeading.Z * s.heading.X)
+	local target = if s.held then 0 else s.speed * (1 - math.min(0.45, turn * 8))
+	if flat.Magnitude < 6 then
+		target = math.min(target, s.speed * 0.6)
+	end
+	local rate = if target > s.curSpeed then C.Accel else C.Brake
+	s.curSpeed += math.clamp(target - s.curSpeed, -rate * dt, rate * dt)
+	if s.curSpeed < 0.01 then
+		s.curSpeed = 0
+		return
+	end
+	local step = math.min(s.curSpeed * dt, flat.Magnitude)
 	local nx, nz = pos.X + s.heading.X * step, pos.Z + s.heading.Z * step
-	local gy = ground(nx, nz, { s.truck, folder :: Instance }) or (pos.Y - s.bottom)
-	s.truck:PivotTo(CFrame.lookAt(Vector3.new(nx, gy, nz), Vector3.new(nx, gy, nz) + s.heading))
+	local gyNow = ground(nx, nz, { s.truck, folder :: Instance }) or (pos.Y - s.bottom)
+	local gy = if s.gy then s.gy + (gyNow - s.gy) * math.min(1, dt * 6) else gyNow -- высота земли сглажена: без подпрыгивания на стыках
+	s.gy = gy
+	-- кузов: лёгкая качка по ходу, крен на повороте (чем быстрее и круче — тем заметнее)
+	s.phase += s.curSpeed * dt * 0.9
+	local cross = prevHeading.X * s.heading.Z - prevHeading.Z * s.heading.X
+	local rollTarget = math.clamp(cross / math.max(dt, 1e-3) * 0.05, -0.05, 0.05) * math.min(1, s.curSpeed / s.speed)
+	s.roll += (rollTarget - s.roll) * math.min(1, dt * 4)
+	local k = math.min(1, s.curSpeed / s.speed)
+	local bob = math.sin(s.phase * 2.2) * 0.05 * k
+	local pitch = math.sin(s.phase * 1.1) * 0.008 * k
+	local at = Vector3.new(nx, gy + bob, nz)
+	s.truck:PivotTo(CFrame.lookAt(at, at + s.heading) * CFrame.Angles(pitch, 0, s.roll))
 end
 
 local function updateEscorts(s: State, dt: number)
@@ -442,8 +470,8 @@ startMotion = function(state: State)
 	moveConn = RunService.Heartbeat:Connect(function(frameDt: number)
 		local s = current
 		if s and s == state and not s.failed then
-			if not s.arrived and not s.held then
-				moveTruck(s, frameDt)
+			if not s.arrived then
+				moveTruck(s, frameDt) -- и в ожидании: плавно тормозит
 			end
 			updateEscorts(s, frameDt)
 		end
