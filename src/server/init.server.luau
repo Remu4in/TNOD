@@ -86,6 +86,12 @@ local function buildTestStands(sp: Vector3)
 	pad("TestSpecial", Vector3.new(4, 0, 8), Color3.fromRGB(150, 60, 200), "ОСОБЫЕ ЗОМБИ", "Вызвать особых", function()
 		ZombieService.enqueue(waves["Особые"])
 	end)
+	-- вызывает босса (по кругу: Качок, Гаргантюа, Повелитель тёмных) — проверить его атаки и полоску здоровья, не дожидаясь 5-й ночи
+	local bossCycle, bossNext = { "BossBuff", "BossGarg", "BossStrong" }, 0
+	pad("TestBoss", Vector3.new(28, 0, 8), Color3.fromRGB(160, 40, 40), "БОСС", "Вызвать босса", function()
+		bossNext = bossNext % #bossCycle + 1
+		ZombieService.enqueue({ bossCycle[bossNext] }, nil, nil, true)
+	end)
 	-- ночью честно завершает текущую ночь (как будто миссия выполнена: награды, рейтинг), днём сразу начинает ночь
 	pad("TestSkip", Vector3.new(12, 0, 8), Color3.fromRGB(70, 160, 90), "СКИП ВОЛНЫ", "Пропустить волну", function()
 		RoundService.skip()

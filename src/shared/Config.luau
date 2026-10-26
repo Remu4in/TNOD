@@ -58,6 +58,11 @@ export type MeleeFxDef = {
 	shake: number,
 }
 
+-- Атаки боссов (ZombieService.startBossSpecial). Прыжок: босс приседает на windup секунд, под игроком красная зона (следует за ним, в последние 0,7 с застывает),
+-- затем прыгает за flight секунд; урон в radius студов. Бросок: босс отрывает кусок земли (windup), бросает в игрока по дуге (flight), на месте падения красный круг
+-- (к центру прозрачнее); урон в radius. cooldown — пауза до следующего такого же; range/minRange — дальность до игрока; first — через сколько секунд после появления можно впервые.
+export type BossJump = { windup: number, flight: number, cooldown: number, range: number, minRange: number, radius: number, damage: number, first: number }
+export type BossRock = { windup: number, flight: number, cooldown: number, range: number, minRange: number, radius: number, damage: number, first: number }
 export type ZombieDef = {
 	id: string,
 	name: string,
@@ -74,6 +79,8 @@ export type ZombieDef = {
 	planksPerHit: number,
 	flask: { range: number, minRange: number, cooldown: number, damage: number, tick: number, radius: number }?, -- химик: бросает колбу с ядом
 	teleport: { cooldown: number, distance: number }?, -- тёмный: появляется рядом с игроком (не ближе distance)
+	jump: BossJump?, -- босс: мощный прыжок на ближайшего игрока
+	rock: BossRock?, -- босс: бросок куска земли по дуге
 }
 
 local Config = {}
@@ -801,55 +808,64 @@ Config.WallBuys = { "Bat", "Machete", "Revolver", "SMG", "Shotgun", "Rifle", "LM
 
 local Zombies: { [string]: ZombieDef } = {
 	Walker = {
-		id = "Walker", name = "Ходок", hp = 60, speed = 14, damage = 15, attackCooldown = 2.2, windup = 0.55, breakCooldown = 1,
+		id = "Walker", name = "Ходок", hp = 30, speed = 14, damage = 15, attackCooldown = 2.2, windup = 0.55, breakCooldown = 1,
 		reward = 50, points = 10, scale = 1, color = Color3.fromRGB(95, 140, 80), planksPerHit = 1,
 	},
 	Runner = {
-		id = "Runner", name = "Бегун", hp = 40, speed = 19, damage = 10, attackCooldown = 1.8, windup = 0.4, breakCooldown = 0.8,
+		id = "Runner", name = "Бегун", hp = 20, speed = 19, damage = 10, attackCooldown = 1.8, windup = 0.4, breakCooldown = 0.8,
 		reward = 60, points = 15, scale = 0.9, color = Color3.fromRGB(150, 160, 70), planksPerHit = 1,
 	},
 	Brute = {
-		id = "Brute", name = "Громила", hp = 600, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
+		id = "Brute", name = "Громила", hp = 300, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 400, points = 100, scale = 1.8, color = Color3.fromRGB(110, 50, 50), planksPerHit = 5,
 	},
 	-- Особые зомби (2026-10-19). Числа черновые: расписание по волнам и баланс — следующий шаг.
 	Military = {
-		id = "Military", name = "Заражённый военный", hp = 180, speed = 13, damage = 22, attackCooldown = 2.2, windup = 0.5, breakCooldown = 1,
+		id = "Military", name = "Заражённый военный", hp = 90, speed = 13, damage = 22, attackCooldown = 2.2, windup = 0.5, breakCooldown = 1,
 		reward = 150, points = 40, scale = 1.05, color = Color3.fromRGB(80, 100, 70), planksPerHit = 2,
 	},
 	Chemist = {
-		id = "Chemist", name = "Химик", hp = 90, speed = 12, damage = 10, attackCooldown = 2.4, windup = 0.5, breakCooldown = 1,
+		id = "Chemist", name = "Химик", hp = 45, speed = 12, damage = 10, attackCooldown = 2.4, windup = 0.5, breakCooldown = 1,
 		reward = 120, points = 35, scale = 1, color = Color3.fromRGB(120, 200, 90), planksPerHit = 1,
 		flask = { range = 40, minRange = 10, cooldown = 5, damage = 20, tick = 4, radius = 7 },
 	},
 	Dark = {
-		id = "Dark", name = "Тёмный", hp = 150, speed = 17, damage = 20, attackCooldown = 2, windup = 0.4, breakCooldown = 0.8,
+		id = "Dark", name = "Тёмный", hp = 75, speed = 17, damage = 20, attackCooldown = 2, windup = 0.4, breakCooldown = 0.8,
 		reward = 140, points = 40, scale = 1, color = Color3.fromRGB(25, 25, 30), planksPerHit = 1,
 		teleport = { cooldown = 7, distance = 18 },
 	},
 	BucketHead = {
-		id = "BucketHead", name = "Бронированный", hp = 300, speed = 12, damage = 18, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
+		id = "BucketHead", name = "Бронированный", hp = 150, speed = 12, damage = 18, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
 		reward = 130, points = 40, scale = 1.15, color = Color3.fromRGB(120, 120, 120), planksPerHit = 2,
 	},
 	Crawler = {
-		id = "Crawler", name = "Ползун", hp = 50, speed = 11, damage = 8, attackCooldown = 1.6, windup = 0.35, breakCooldown = 0.8,
+		id = "Crawler", name = "Ползун", hp = 25, speed = 11, damage = 8, attackCooldown = 1.6, windup = 0.35, breakCooldown = 0.8,
 		reward = 40, points = 12, scale = 0.6, color = Color3.fromRGB(110, 120, 90), planksPerHit = 1,
 	},
 	BossBuff = {
-		id = "BossBuff", name = "Качок", hp = 4000, speed = 11, damage = 50, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
+		id = "BossBuff", name = "Качок", hp = 2667, speed = 11, damage = 50, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 2000, points = 500, scale = 2.0, color = Color3.fromRGB(110, 60, 60), planksPerHit = 6,
+			jump = { windup = 3, flight = 0.9, cooldown = 13, range = 70, minRange = 8, radius = 13, damage = 60, first = 6 },
+			rock = { windup = 1.6, flight = 1.3, cooldown = 9, range = 75, minRange = 14, radius = 8, damage = 40, first = 4 },
 	},
 	BossGarg = {
-		id = "BossGarg", name = "Гаргантюа", hp = 8000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
+		id = "BossGarg", name = "Гаргантюа", hp = 4000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
 		reward = 4000, points = 800, scale = 2.5, color = Color3.fromRGB(70, 100, 60), planksPerHit = 8,
+			jump = { windup = 3, flight = 1.0, cooldown = 12, range = 70, minRange = 8, radius = 15, damage = 90, first = 6 },
+			rock = { windup = 1.8, flight = 1.4, cooldown = 8, range = 75, minRange = 14, radius = 9, damage = 55, first = 4 },
 	},
 	BossStrong = {
-		id = "BossStrong", name = "Повелитель тёмных", hp = 6000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
+		id = "BossStrong", name = "Повелитель тёмных", hp = 3000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
 		reward = 3000, points = 650, scale = 1.7, color = Color3.fromRGB(40, 30, 50), planksPerHit = 6,
+			jump = { windup = 3, flight = 0.8, cooldown = 11, range = 70, minRange = 8, radius = 13, damage = 70, first = 6 },
+			rock = { windup = 1.5, flight = 1.2, cooldown = 8, range = 75, minRange = 14, radius = 8, damage = 45, first = 4 },
 	},
 }
 
 Config.Zombies = Zombies
+-- Здоровье зомби уменьшено (2026-10-27, по просьбе Руслана): у всех вдвое, у босса 5-й ночи (Качок) в 1,5 раза; потом добавим количество, а не жирность.
+-- Множитель здоровья по модели в пуле BucketHead (поверх hp): «с конусом» итого в 4 раза слабее прежнего (150 × 0,5 = 75), «с ведром» — в 3 раза (150 × 0,667 = 100).
+Config.ZombieRigHp = { Z_Cone = 0.5, Z_Bucket = 0.667 } :: { [string]: number }
 
 -- Внешний вид зомби (2026-10-17, v2): готовые модели R15 из Creator Store, собранные из мешей тела (см. assets_ledger).
 -- Позиции — в системе корня (начало — таз, лицо смотрит в -Z). height — рост, pelvis — высота таза над стопами.

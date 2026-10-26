@@ -66,6 +66,22 @@ type Zombie = {
 	poseGen: number, -- растёт при сбросе позы (resetAttack, release): отложенные возвраты поз прошлой жизни не срабатывают
 	jointTweens: { [string]: Tween }, -- активный твин каждого сустава (замах, удар, реакция на попадание)
 	vaultTween: Tween?, -- активный твин корня при перелезании забора
+	bossAct: BossAct?, -- идущая атака босса (прыжок или бросок): босс стоит и не думает, ИИ ведёт stepBossAct
+	nextJump: number, -- когда босс снова может прыгнуть
+	nextRock: number, -- когда босс снова может бросить обломок
+}
+
+-- Атака босса. kind: "jump" (прыжок на игрока) | "rock" (бросок обломка). Фазы: jump — "charge" (3 с, на земле под игроком красная зона) → "air" → посадка;
+-- rock — "rip" (отрывает кусок земли) → бросок (зона падения красным кругом, пока летит) → готово. zone — части красной зоны на земле.
+type BossAct = {
+	kind: string,
+	phase: string,
+	endAt: number, -- конец фазы
+	target: Player,
+	aim: Vector3, -- где зона (центр на земле)
+	zone: { Part },
+	rock: Part?,
+	locked: boolean, -- зона больше не следует за игроком
 }
 
 local map: Types.MapInfo
@@ -383,7 +399,7 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 		end
 	end
 	model:SetAttribute("Rig", true)
-	model:SetAttribute("RigAsset", src.Name)
+	model:SetAttribute("RigAsset", src.Name) -- по нему Config.ZombieRigHp уменьшает здоровье зомби в конусе и в ведре
 	return model
 end
 
@@ -592,6 +608,9 @@ local function acquire(typeId: string): Zombie
 		poseGen = 0,
 		jointTweens = {},
 		vaultTween = nil,
+		bossAct = nil,
+		nextJump = 0,
+		nextRock = 0,
 	}
 end
 
@@ -675,7 +694,10 @@ local function tweenJoint(z: Zombie, name: string, info: TweenInfo, c0: CFrame)
 end
 
 -- Сброс позы (смерть, пул, новая жизнь): твины суставов и перелезания не доигрывают на следующем зомби из пула
+local endBossAct: (Zombie) -> () -- задаётся ниже вместе с атаками босса
+
 local function cancelPose(z: Zombie)
+	endBossAct(z)
 	z.poseGen += 1
 	for _, tween in z.jointTweens do
 		tween:Cancel()
@@ -1085,9 +1107,30 @@ local function flinch(z: Zombie, kind: string, hitName: string, flat: Vector3, p
 	end
 end
 
+-- Полоска здоровья босса сверху экрана (клиент: BossBarController): атрибуты ReplicatedStorage BossName, BossHp, BossMaxHp (боссов несколько — сумма)
+local function refreshBossBar()
+	local hp, maxHp, name = 0, 0, ""
+	for _, a in active do
+		if a.alive and WaveMath.isBossType(a.def.id) then
+			hp += math.max(0, a.hp)
+			maxHp += a.maxHp
+			if name == "" then
+				name = a.def.name
+			end
+		end
+	end
+	local rs = game:GetService("ReplicatedStorage")
+	rs:SetAttribute("BossName", if maxHp > 0 then name else nil)
+	rs:SetAttribute("BossHp", if maxHp > 0 then hp else nil)
+	rs:SetAttribute("BossMaxHp", if maxHp > 0 then maxHp else nil)
+end
+
 local function release(z: Zombie)
 	z.alive = false
 	active[z.model] = nil
+	if WaveMath.isBossType(z.def.id) then
+		refreshBossBar()
+	end
 	cancelPose(z)
 	for _, track in z.tracks do
 		track:Stop(0)
@@ -1329,8 +1372,14 @@ end
 local function spawnOne(typeId: string)
 	local z = acquire(typeId)
 	local spawnPos = pickSpawnPosition()
-	z.maxHp = math.floor(z.def.hp * hpMultiplier + 0.5)
+	local rigMul = Config.ZombieRigHp[tostring(z.model:GetAttribute("RigAsset"))] or 1
+	z.maxHp = math.floor(z.def.hp * hpMultiplier * rigMul + 0.5)
 	z.hp = z.maxHp
+	if WaveMath.isBossType(z.def.id) then
+		local now0 = os.clock()
+		z.nextJump = now0 + ((z.def.jump :: any) and (z.def.jump :: any).first or 0)
+		z.nextRock = now0 + ((z.def.rock :: any) and (z.def.rock :: any).first or 0)
+	end
 	-- сразу охотимся на игрока; к баррикадам идём, только если они закрывают путь к нему (см. Hunt)
 	z.state = "Hunt"
 	z.window = nil
@@ -1355,6 +1404,9 @@ local function spawnOne(typeId: string)
 		z.tracks = loadTracks(z.model, z.animIds)
 	end
 	active[z.model] = z
+	if WaveMath.isBossType(z.def.id) then
+		refreshBossBar()
+	end
 end
 
 local function nearestUpCharacter(pos: Vector3): (Player?, BasePart?, number)
@@ -1413,6 +1465,260 @@ local function hasLineOfSight(z: Zombie, targetRoot: BasePart): boolean
 	return workspace:Raycast(from, targetRoot.Position - from, paramsExcluding(targetRoot.Parent :: Instance)) == nil
 end
 
+-- Атаки босса -----------------------------------------------------------------------------------------------------------
+
+-- Красная зона на земле: три концентрических диска, чем ближе к центру, тем прозрачнее
+local function makeZone(center: Vector3, radius: number): { Part }
+	local parts: { Part } = {}
+	for i, k in { { 1, 0.6 }, { 0.66, 0.76 }, { 0.33, 0.88 } } do
+		local p = Instance.new("Part")
+		p.Name = "BossZone"
+		p.Shape = Enum.PartType.Cylinder
+		p.Size = Vector3.new(0.2, radius * 2 * k[1], radius * 2 * k[1])
+		p.CFrame = CFrame.new(center + Vector3.new(0, 0.15 + i * 0.03, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.CastShadow = false
+		p.Material = Enum.Material.Neon
+		p.Color = Color3.fromRGB(255, 40, 30)
+		p.Transparency = k[2]
+		p.Parent = workspace
+		table.insert(parts, p)
+	end
+	return parts
+end
+
+local function moveZone(zone: { Part }, center: Vector3)
+	for i, p in zone do
+		p.CFrame = CFrame.new(center + Vector3.new(0, 0.15 + i * 0.03, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	end
+end
+
+local function clearZone(zone: { Part })
+	for _, p in zone do
+		p:Destroy()
+	end
+	table.clear(zone)
+end
+
+-- Точка на земле под игроком
+local function groundUnder(char: Model, pos: Vector3): Vector3
+	local hit = workspace:Raycast(pos + Vector3.new(0, 2, 0), Vector3.new(0, -40, 0), paramsExcluding(char))
+	return if hit then hit.Position else Vector3.new(pos.X, pos.Y - 3, pos.Z)
+end
+
+-- Кольцо удара: расширяется и исчезает
+local function shockwave(center: Vector3, radius: number)
+	local ring = Instance.new("Part")
+	ring.Name = "BossShock"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.4, 2, 2)
+	ring.CFrame = CFrame.new(center + Vector3.new(0, 0.4, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.Material = Enum.Material.Neon
+	ring.Color = Color3.fromRGB(255, 120, 60)
+	ring.Transparency = 0.2
+	ring.Parent = workspace
+	local tw = TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.4, radius * 2, radius * 2), Transparency = 1 })
+	tw:Play()
+	tw.Completed:Once(function()
+		ring:Destroy()
+	end)
+end
+
+local function damageInRadius(center: Vector3, radius: number, amount: number)
+	for _, p in PlayerService.upPlayers() do
+		local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if r and Vector3.new(r.Position.X - center.X, 0, r.Position.Z - center.Z).Magnitude <= radius and r.Position.Y - center.Y < 12 then
+			PlayerService.damage(p, amount)
+		end
+	end
+end
+
+-- Обломки при падении камня: несколько кусков разлетаются и падают
+local function debrisBurst(center: Vector3, color: Color3)
+	for _ = 1, 9 do
+		local d = Instance.new("Part")
+		d.Name = "BossDebris"
+		d.Size = Vector3.new(0.6 + math.random() * 0.9, 0.6 + math.random() * 0.7, 0.6 + math.random() * 0.9)
+		d.Material = Enum.Material.Slate
+		d.Color = color
+		d.CanCollide = false
+		d.CanQuery = false
+		d.CanTouch = false
+		d.CFrame = CFrame.new(center + Vector3.new(0, 1, 0)) * CFrame.Angles(math.random() * 6, math.random() * 6, 0)
+		d.Parent = workspace
+		d.AssemblyLinearVelocity = Vector3.new((math.random() - 0.5) * 30, 18 + math.random() * 14, (math.random() - 0.5) * 30)
+		Debris:AddItem(d, 2.5)
+	end
+end
+
+endBossAct = function(z: Zombie)
+	local act = z.bossAct
+	if not act then
+		return
+	end
+	z.bossAct = nil
+	clearZone(act.zone)
+	if act.rock then
+		act.rock:Destroy()
+	end
+end
+
+-- Босс начинает атаку, если есть готовая и игрок в её дальности; true — атака началась (дальше ведёт stepBossAct)
+local function startBossSpecial(z: Zombie, player: Player, targetRoot: BasePart, dist: number, now: number): boolean
+	local jump = z.def.jump
+	local rock = z.def.rock
+	local ready: { string } = {}
+	if jump and now >= z.nextJump and dist >= jump.minRange and dist <= jump.range then
+		table.insert(ready, "jump")
+	end
+	if rock and now >= z.nextRock and dist >= rock.minRange and dist <= rock.range and hasLineOfSight(z, targetRoot) then
+		table.insert(ready, "rock")
+	end
+	if #ready == 0 then
+		return false
+	end
+	local kind = ready[math.random(1, #ready)]
+	local char = player.Character :: Model
+	local aim = groundUnder(char, targetRoot.Position)
+	z.humanoid:MoveTo(z.root.Position)
+	setEyes(z, true)
+	if kind == "jump" then
+		local j = jump :: Config.BossJump
+		z.bossAct = { kind = "jump", phase = "charge", endAt = now + j.windup, target = player, aim = aim, zone = makeZone(aim, j.radius), rock = nil, locked = false }
+		-- присел: корпус наклоняется вперёд и держится (пока не прыгнет)
+		if z.rig then
+			local waist = CFrame.new(z.pivots.Torso)
+			local axis = Vector3.yAxis:Cross(Vector3.new(0, 0, -1))
+			tweenJoint(z, "Torso", TweenInfo.new(j.windup * 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), waist * CFrame.fromAxisAngle(axis.Unit, math.rad(40)) * waist:Inverse() * z.rest.Torso)
+		end
+		armPose(z, -30, j.windup * 0.5)
+	else
+		local r = rock :: Config.BossRock
+		local rockPart = Instance.new("Part")
+		rockPart.Name = "BossRock"
+		rockPart.Size = Vector3.new(5, 4, 5)
+		rockPart.Material = Enum.Material.Slate
+		rockPart.Color = Color3.fromRGB(96, 84, 72)
+		rockPart.Anchored = true
+		rockPart.CanCollide = false
+		rockPart.CanQuery = false
+		rockPart.CanTouch = false
+		local base = groundUnder(z.model, z.root.Position) + z.root.CFrame.LookVector * 3
+		rockPart.CFrame = CFrame.new(base + Vector3.new(0, 1, 0)) * CFrame.Angles(0.4, 0.8, 0.2)
+		rockPart.Parent = workspace
+		debrisBurst(base, Color3.fromRGB(96, 84, 72))
+		z.bossAct = { kind = "rock", phase = "rip", endAt = now + r.windup, target = player, aim = aim, zone = {}, rock = rockPart, locked = false }
+		-- обломок поднимается над головой босса, руки вверх
+		TweenService:Create(rockPart, TweenInfo.new(r.windup * 0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			CFrame = CFrame.new(z.head.Position + Vector3.new(0, 4.5, 0)) * CFrame.Angles(0.8, 1.6, 0.4),
+		}):Play()
+		armPose(z, 150, r.windup * 0.8)
+	end
+	return true
+end
+
+-- Ход идущей атаки (вызывается из think вместо обычного поведения)
+local function stepBossAct(z: Zombie, now: number)
+	local act = z.bossAct :: BossAct
+	local gen = z.gen
+	z.humanoid:MoveTo(z.root.Position)
+	if act.kind == "jump" then
+		local j = z.def.jump :: Config.BossJump
+		if act.phase == "charge" then
+			-- зона следует за игроком, в последние 0,7 с застывает (можно успеть выбежать)
+			if not act.locked then
+				local char = act.target.Character
+				local r = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+				if r and PlayerService.isUp(act.target) then
+					act.aim = groundUnder(char :: Model, r.Position)
+					moveZone(act.zone, act.aim)
+				end
+				if now >= act.endAt - 0.7 then
+					act.locked = true
+				end
+			end
+			if now >= act.endAt then
+				act.phase = "air"
+				local from = z.root.CFrame
+				local to = CFrame.new(act.aim + Vector3.new(0, z.root.Size.Y * 0.5 + 3, 0)) * from.Rotation
+				local apex = CFrame.new((from.Position + to.Position) / 2 + Vector3.new(0, 24, 0)) * from.Rotation
+				cancelWindup(z)
+				if z.rig then
+					tweenJoint(z, "Torso", TweenInfo.new(0.15), z.rest.Torso)
+				end
+				z.root.Anchored = true
+				local half = j.flight / 2
+				local up = TweenService:Create(z.root, TweenInfo.new(half, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = apex })
+				z.vaultTween = up
+				up.Completed:Once(function(state: Enum.PlaybackState)
+					if z.vaultTween ~= up or state ~= Enum.PlaybackState.Completed or z.gen ~= gen then
+						return
+					end
+					local down = TweenService:Create(z.root, TweenInfo.new(half, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { CFrame = to })
+					z.vaultTween = down
+					down.Completed:Once(function(downState: Enum.PlaybackState)
+						if z.vaultTween ~= down or downState ~= Enum.PlaybackState.Completed or z.gen ~= gen or not z.alive then
+							return
+						end
+						z.vaultTween = nil
+						z.root.Anchored = false
+						local center = act.aim
+						clearZone(act.zone)
+						shockwave(center, j.radius)
+						damageInRadius(center, j.radius, j.damage * damageMultiplier)
+						z.model:SetAttribute("SwingAt", os.clock())
+						z.bossAct = nil
+						z.nextJump = os.clock() + j.cooldown
+						z.lastAttack = os.clock()
+						setEyes(z, false)
+					end)
+					down:Play()
+				end)
+				up:Play()
+			end
+		end
+		return
+	end
+	-- бросок обломка
+	local r = z.def.rock :: Config.BossRock
+	if act.phase == "rip" and now >= act.endAt then
+		local char = act.target.Character
+		local tr = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local aim = if tr and PlayerService.isUp(act.target) then groundUnder(char :: Model, tr.Position) else act.aim
+		local rock = act.rock :: Part
+		local from = rock.Position
+		local flight = math.clamp((aim - from).Magnitude / 55, 0.9, r.flight)
+		local zone = makeZone(aim, r.radius)
+		local gravity = Vector3.new(0, -workspace.Gravity, 0)
+		rock.Anchored = false
+		rock.AssemblyLinearVelocity = (aim + Vector3.new(0, 1.5, 0) - from) / flight - 0.5 * gravity * flight
+		rock.AssemblyAngularVelocity = Vector3.new(4, 6, 2)
+		z.bossAct = nil -- босс свободен; обломок и зона живут сами
+		z.nextRock = now + r.cooldown
+		z.lastAttack = now
+		z.model:SetAttribute("SwingAt", os.clock())
+		armPose(z, 0, 0.3)
+		setEyes(z, false)
+		local hazard = hazardGen
+		task.delay(flight, function()
+			rock:Destroy()
+			clearZone(zone)
+			if hazardGen == hazard then
+				shockwave(aim, r.radius)
+				debrisBurst(aim, Color3.fromRGB(96, 84, 72))
+				damageInRadius(aim, r.radius, r.damage * damageMultiplier)
+			end
+		end)
+	end
+end
+
 local function think(z: Zombie, now: number, dt: number)
 	local pos = z.root.Position
 	local reach = 3.5 * z.def.scale + 1.5
@@ -1421,6 +1727,12 @@ local function think(z: Zombie, now: number, dt: number)
 	if z.slowUntil > 0 and now >= z.slowUntil then
 		z.slowUntil = 0
 		z.humanoid.WalkSpeed = z.speed
+	end
+
+	-- атака босса (прыжок, бросок): стоит и ждёт, попадания её не срывают
+	if z.bossAct then
+		stepBossAct(z, now)
+		return
 	end
 
 	-- после попадания зомби на миг замирает (чувствуется удар); замах при этом срывается
@@ -1560,6 +1872,9 @@ local function think(z: Zombie, now: number, dt: number)
 				z.waypoints = nil
 				return
 			end
+		end
+		if (z.def.jump or z.def.rock) and startBossSpecial(z, player, targetRoot, dist, now) then
+			return
 		end
 		local tp = z.def.teleport
 		if tp and now >= z.nextSpecial and dist > tp.distance + 10 then
@@ -1723,6 +2038,9 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 	end
 	z.hp -= amount
 	z.model:SetAttribute("Hp", math.max(0, z.hp))
+	if WaveMath.isBossType(z.def.id) then
+		refreshBossBar()
+	end
 	-- горизонтальное направление удара: из импакта или от стрелка к зомби
 	local flat = Vector3.zero
 	if impact and impact.dir then
@@ -1819,14 +2137,18 @@ function ZombieService.partKind(part: BasePart): string
 end
 
 -- hpMult не указан — множители текущей ночи не меняются (добавка зомби без сброса силы волны)
-function ZombieService.enqueue(types: { string }, hpMult: number?, wave: number?)
+function ZombieService.enqueue(types: { string }, hpMult: number?, wave: number?, front: boolean?)
 	if hpMult then
 		hpMultiplier = hpMult
 		waveNumber = wave or 1
 		damageMultiplier = WaveMath.damageMultiplier(Config.Waves, waveNumber)
 	end
-	for _, t in types do
-		table.insert(queue, t)
+	for i, t in types do
+		if front then
+			table.insert(queue, i, t) -- вне очереди (тестовый стенд босса: поток миссии не пустеет и до конца очереди не дойти)
+		else
+			table.insert(queue, t)
+		end
 	end
 end
 
@@ -1897,7 +2219,8 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 				aliveCap = math.max(4, math.floor(aliveCap * testScale + 0.5)) -- тестовое уменьшение числа зомби касается и бесконечного потока
 			end
 			local n = 0
-			while #queue > 0 and n < Config.Round.SpawnsPerTick and alive < aliveCap do
+			-- босс выходит вне лимита живых (иначе он ждал бы, пока погибнут все обычные)
+			while #queue > 0 and n < Config.Round.SpawnsPerTick and (alive < aliveCap or WaveMath.isBossType(queue[1])) do
 				local typeId = table.remove(queue, 1) :: string
 				-- сломанный тип (например, риг без нужного сустава) пропускаем, а не роняем весь цикл спавна
 				local ok, err = pcall(spawnOne, typeId)

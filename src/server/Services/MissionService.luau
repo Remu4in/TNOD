@@ -26,6 +26,7 @@ local ConvoyService = require(script.Parent:WaitForChild("ConvoyService"))
 local ShopService = require(script.Parent:WaitForChild("ShopService"))
 local RoadRoute = require(script.Parent:WaitForChild("RoadRoute"))
 local VendorService = require(script.Parent:WaitForChild("VendorService"))
+local WeaponService = require(script.Parent:WaitForChild("WeaponService"))
 
 local MissionService = {}
 
@@ -254,6 +255,7 @@ end
 
 -- Мешки с песком (Base.Fort), перекрывающие выезд из начальной зоны: на ночь конвоя (clearSandbags) уносим в ServerStorage, на рассвете возвращаем
 local hiddenSandbags: { { model: Instance, parent: Instance } } = {}
+local resolvedState: any = nil -- миссия, итог которой (награда или разрушение шатра) уже применён
 
 local function setSandbags(removed: boolean)
 	if removed then
@@ -463,8 +465,83 @@ function MissionService.isInstalled(site: number): boolean
 end
 
 -- Новый раунд: убираем установленные шатры, их автоматы и припасы
+-- Шатёр района, разрушенный провалом конвоя: на его месте лежат обломки (до конца раунда)
+local rubbleSites: { [number]: { Instance } } = {}
+
+local function clearRubble()
+	for _, list in rubbleSites do
+		for _, i in list do
+			i:Destroy()
+		end
+	end
+	table.clear(rubbleSites)
+end
+
+-- Провал конвоя: шатёр района убирается (с автоматом, магазином и припасами), на месте — куча обломков
+local function destroyTent(site: number)
+	local rec = installedSites[site]
+	if not rec then
+		return
+	end
+	local center = rec.shop
+	if not center then
+		local f = siteFolder(site)
+		local sp = f and f:GetAttribute("SitePos")
+		center = if typeof(sp) == "Vector3" then sp else MissionService.anchorPosition(site)
+	end
+	for _, name in rec.vending do
+		VendorService.removeVending(name)
+	end
+	for _, i in rec.instances do
+		i:Destroy()
+	end
+	if rec.shop then
+		ShopService.removePointAt(rec.shop)
+	end
+	installedSites[site] = nil
+	local supplies = suppliedSites[site]
+	if supplies then
+		for _, i in supplies do
+			i:Destroy()
+		end
+		suppliedSites[site] = nil
+	end
+	local rubble: { Instance } = {}
+	local rng2 = Random.new(site * 97)
+	for _ = 1, 16 do
+		local p = Instance.new("Part")
+		p.Name = "TentRubble"
+		p.Size = Vector3.new(1 + rng2:NextNumber() * 3, 0.5 + rng2:NextNumber() * 1.6, 1 + rng2:NextNumber() * 3)
+		p.Material = if rng2:NextNumber() < 0.5 then Enum.Material.Concrete else Enum.Material.Wood
+		p.Color = if p.Material == Enum.Material.Wood then Color3.fromRGB(86, 66, 48) else Color3.fromRGB(78, 80, 82)
+		local a, r = rng2:NextNumber() * math.pi * 2, rng2:NextNumber() * 9
+		p.CFrame = CFrame.new(center + Vector3.new(math.cos(a) * r, 0.4 + rng2:NextNumber() * 0.8, math.sin(a) * r)) * CFrame.Angles(rng2:NextNumber() * 0.6, rng2:NextNumber() * 6, rng2:NextNumber() * 0.6)
+		p.Anchored = true
+		p.CanCollide = false
+		p.Parent = workspace
+		table.insert(rubble, p)
+	end
+	local fire = Instance.new("Part")
+	fire.Name = "TentRubbleSmoke"
+	fire.Transparency = 1
+	fire.Anchored = true
+	fire.CanCollide = false
+	fire.Size = Vector3.new(4, 1, 4)
+	fire.CFrame = CFrame.new(center + Vector3.new(0, 1, 0))
+	local smoke = Instance.new("Smoke")
+	smoke.Color = Color3.fromRGB(70, 70, 70)
+	smoke.Size = 6
+	smoke.Opacity = 0.35
+	smoke.RiseVelocity = 6
+	smoke.Parent = fire
+	fire.Parent = workspace
+	table.insert(rubble, fire)
+	rubbleSites[site] = rubble
+end
+
 function MissionService.resetRound()
 	MissionService.finish()
+	clearRubble()
 	for _, rec in installedSites do
 		for _, name in rec.vending do
 			VendorService.removeVending(name)
@@ -836,6 +913,19 @@ function MissionService.update(dt: number): string?
 	-- на каждой ночи: задача выполнена И убито не меньше минимума (считаются только убийства игроков); время ночи — по-прежнему лимит
 	if result == "done" and state.playerKills < state.minKills then
 		result = nil
+	end
+	-- итог конвоя: доехал и миссия выполнена — патроны всем и «район захвачен»; не доехал — шатёр района разрушен, награды нет (Economy.MissionFailShare = 0)
+	if result and kind == "escort" and resolvedState ~= state then
+		resolvedState = state
+		if result == "done" then
+			for _, p in Players:GetPlayers() do
+				WeaponService.refillAll(p)
+			end
+			notify("Район успешно захвачен! Патроны пополнены", 6)
+		else
+			destroyTent(state.site)
+			notify("Конвой не доехал — шатёр района уничтожен", 6)
+		end
 	end
 	text ..= string.format("\nУбито мутантов: %d из %d", math.min(state.playerKills, state.minKills), state.minKills)
 	if text ~= state.lastText then

@@ -172,7 +172,7 @@ function WaveMath.bossCount(t: WaveTuning, wave: number): number
 	if not WaveMath.isBossWave(t, wave) then
 		return 0
 	end
-	return 1 + math.floor(wave / 10)
+	return 1 + math.floor(wave / 20) -- один босс за ночь (на 10-й было двое сразу: Гаргантюа и Повелитель тёмных)
 end
 
 -- Типы боссов волны: i-й босс — следующий в цикле после босса предыдущей 5-й волны

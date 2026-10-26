@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
 local Debris = game:GetService("Debris")
+local PhysicsService = game:GetService("PhysicsService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
@@ -217,6 +218,33 @@ local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?,
 			d.CanCollide = C.Solid
 		end
 	end
+	-- невидимая твёрдая коробка по размеру корпуса: зомби её не проходят (раньше заходили внутрь машины и пропадали из виду), а игроки, земля и
+	-- расчёт движения её не замечают (отдельная группа столкновений: сталкивается только с зомби); лучи пуль её тоже не видят (CanQuery = false)
+	local bcf, bsize = truck:GetBoundingBox()
+	local block = Instance.new("Part")
+	block.Name = "ConvoyBlock"
+	block.Size = bsize
+	block.CFrame = bcf
+	block.Transparency = 1
+	block.Anchored = false
+	block.Massless = true
+	block.CanCollide = true
+	block.CanQuery = false
+	block.CanTouch = false
+	pcall(function()
+		PhysicsService:RegisterCollisionGroup("ConvoyVehicle")
+	end)
+	pcall(function()
+		PhysicsService:CollisionGroupSetCollidable("ConvoyVehicle", "Default", false)
+		PhysicsService:CollisionGroupSetCollidable("ConvoyVehicle", "ConvoyVehicle", false)
+		PhysicsService:CollisionGroupSetCollidable("ConvoyVehicle", "Zombies", true)
+	end)
+	block.CollisionGroup = "ConvoyVehicle"
+	block.Parent = truck
+	local bw = Instance.new("WeldConstraint")
+	bw.Part0 = biggest
+	bw.Part1 = block
+	bw.Parent = block
 	-- точка привязки модели привязана к корпусу: без PrimaryPart GetPivot отставал от физики, и расчёт ошибки «улетал» вместе с машиной
 	biggest.PivotOffset = biggest.CFrame:ToObjectSpace(truck:GetPivot())
 	truck.PrimaryPart = biggest
