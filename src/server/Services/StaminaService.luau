@@ -62,6 +62,11 @@ local function humanoidOf(player: Player): Humanoid?
 	return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+-- Волна тьмы Повелителя: бег отключён (PlayerService.noSprint пишет конец в атрибут): нет спринта, подката и кувырка, энергия не меняется
+local function sprintLocked(player: Player): boolean
+	return workspace:GetServerTimeNow() < ((player:GetAttribute("NoSprintUntil") :: number?) or 0)
+end
+
 local function setSprinting(player: Player, on: boolean)
 	sprinting[player] = on
 	player:SetAttribute("Sprinting", on)
@@ -119,7 +124,7 @@ function StaminaService.init()
 			return
 		end
 		-- начать можно только с достаточным запасом; остановить — всегда
-		wanted[player] = on and (energy[player] or 0) >= P.SprintMinEnergy and PlayerService.isUp(player)
+		wanted[player] = on and (energy[player] or 0) >= P.SprintMinEnergy and PlayerService.isUp(player) and not sprintLocked(player)
 	end)
 
 	-- подкат (только в спринте) и кувырок: сервер проверяет энергию и паузу, у кувырка даёт короткую неуязвимость.
@@ -128,7 +133,7 @@ function StaminaService.init()
 		if (kind ~= "slide" and kind ~= "roll") or not RateLimit.allow(player, "Dodge", 0.1) then
 			return
 		end
-		if not PlayerService.isUp(player) or energy[player] == nil then
+		if not PlayerService.isUp(player) or energy[player] == nil or sprintLocked(player) or PlayerService.isStunned(player) then
 			return
 		end
 		local now = os.clock()
@@ -170,6 +175,13 @@ function StaminaService.init()
 					local h = humanoidOf(player)
 					local moving = h ~= nil and h.MoveDirection.Magnitude > 0.1
 					local active = (wanted[player] or false) and moving and e > 0 and PlayerService.isUp(player)
+					if sprintLocked(player) then
+						wanted[player] = false -- бег отключён: не бежим и энергию не трогаем
+						if sprinting[player] then
+							setSprinting(player, false)
+						end
+						continue
+					end
 					local free = isInfinite(player)
 					player:SetAttribute("InfiniteEnergy", free)
 					if free then

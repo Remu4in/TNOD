@@ -339,7 +339,7 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 	end
 	d = d.Unit
 	-- 2. состояние игрока и оружия
-	if not PlayerService.isUp(player) or isSeated(player) then
+	if not PlayerService.isUp(player) or isSeated(player) or PlayerService.isStunned(player) then -- оглушённый (знак Гаргантюа) не стреляет и не бьёт
 		return
 	end
 	local weaponId = equippedWeapon(player)
@@ -462,7 +462,7 @@ local function onMelee(player: Player, direction: unknown)
 		return
 	end
 	d = d.Unit
-	if not PlayerService.isUp(player) or isSeated(player) then
+	if not PlayerService.isUp(player) or isSeated(player) or PlayerService.isStunned(player) then -- оглушённый (знак Гаргантюа) не стреляет и не бьёт
 		return
 	end
 	local weaponId = equippedWeapon(player)
@@ -867,7 +867,7 @@ function WeaponService.init(map: Types.MapInfo)
 	Remotes.get("BuyWeapon").OnServerEvent:Connect(onShopBuy)
 	Remotes.get("DropWeapon").OnServerEvent:Connect(onDrop)
 	Remotes.get("Reload").OnServerEvent:Connect(function(player: Player)
-		if not RateLimit.allow(player, "Reload", 0.3) then
+		if not RateLimit.allow(player, "Reload", 0.3) or PlayerService.isStunned(player) then
 			return
 		end
 		local weaponId = equippedWeapon(player)

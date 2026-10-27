@@ -264,7 +264,7 @@ local function turretModel(cf: CFrame): (Model?, Vector3)
 end
 
 local function onPlace(player: Player, position: unknown, yawArg: unknown)
-	if typeof(position) ~= "Vector3" or not RateLimit.allow(player, "Place", 0.3) or not PlayerService.isUp(player) then
+	if typeof(position) ~= "Vector3" or not RateLimit.allow(player, "Place", 0.3) or not PlayerService.isUp(player) or PlayerService.isStunned(player) then
 		return
 	end
 	local pos = position :: Vector3

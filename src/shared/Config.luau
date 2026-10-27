@@ -61,8 +61,26 @@ export type MeleeFxDef = {
 -- Атаки боссов (ZombieService.startBossSpecial). Прыжок: босс приседает на windup секунд, под игроком красная зона (следует за ним, в последние 0,7 с застывает),
 -- затем прыгает за flight секунд; урон в radius студов. Бросок: босс отрывает кусок земли (windup), бросает в игрока по дуге (flight), на месте падения красный круг
 -- (к центру прозрачнее); урон в radius. cooldown — пауза до следующего такого же; range/minRange — дальность до игрока; first — через сколько секунд после появления можно впервые.
-export type BossJump = { windup: number, flight: number, cooldown: number, range: number, minRange: number, radius: number, damage: number, first: number }
-export type BossRock = { windup: number, flight: number, cooldown: number, range: number, minRange: number, radius: number, damage: number, first: number }
+export type BossJump = {
+	windup: number, flight: number, cooldown: number, range: number, minRange: number, radius: number, damage: number, first: number,
+	wave: { extra: number, noSprint: number }?, -- после приземления: волна тьмы на extra студов шире radius, без урона, noSprint секунд нельзя бегать (Повелитель тёмных)
+}
+export type BossRock = {
+	windup: number, flight: number, cooldown: number, range: number, minRange: number, radius: number, damage: number, first: number,
+	stun: number?, -- бросок знака (Гаргантюа): попавшего оглушает на столько секунд (нельзя двигаться и стрелять)
+}
+-- Новые атаки боссов (Services/BossAI), у каждой: windup — телеграф (поза, рисунок на земле), cooldown, first — когда можно впервые, range/minRange — дальность до игрока.
+-- slam (Гаргантюа): удар по земле, от точки удара к игроку со скоростью speed ползёт линия растений длиной length и шириной width, живут life секунд;
+--   попавший (кувырок спасает) замедлен в slowMult раз на slowSeconds. crawlers (Гаргантюа): снимает со спины ползуна и кидает в игрока (flight секунд полёта),
+--   приземлившийся ползун живой и атакует; не больше maxAlive брошенных живых. charge (Повелитель тёмных): windup секунд набирает силу, на земле дорожка;
+--   за lockBefore секунд до старта направление фиксируется; бежит прямо на speed студов/с distance студов (стоп у препятствия), урон damage задетому на пути
+--   (шириной width), после — recover секунд стоит. swing: горизонтальный замах, чёрная волна шириной width летит speed студов/с на length студов
+--   и гаснет у любого укрытия; урон damage (кувырок спасает).
+export type BossSlam = { windup: number, cooldown: number, first: number, range: number, minRange: number, length: number, width: number, speed: number, life: number, slowMult: number, slowSeconds: number }
+export type BossCrawlers = { windup: number, flight: number, cooldown: number, first: number, range: number, minRange: number, maxAlive: number }
+export type BossCharge = { windup: number, lockBefore: number, speed: number, distance: number, width: number, damage: number, recover: number, cooldown: number, first: number, range: number, minRange: number }
+export type BossSwing = { windup: number, cooldown: number, first: number, range: number, minRange: number, speed: number, length: number, width: number, damage: number }
+export type BossAttacks = { slam: BossSlam?, crawlers: BossCrawlers?, charge: BossCharge?, swing: BossSwing? }
 export type ZombieDef = {
 	id: string,
 	name: string,
@@ -81,6 +99,7 @@ export type ZombieDef = {
 	teleport: { cooldown: number, distance: number }?, -- тёмный: появляется рядом с игроком (не ближе distance)
 	jump: BossJump?, -- босс: мощный прыжок на ближайшего игрока
 	rock: BossRock?, -- босс: бросок куска земли по дуге
+	attacks: BossAttacks?, -- босс: атаки Services/BossAI (удар по земле, ползун, разбег, чёрный взмах)
 }
 
 local Config = {}
@@ -851,14 +870,22 @@ local Zombies: { [string]: ZombieDef } = {
 	BossGarg = {
 		id = "BossGarg", name = "Гаргантюа", hp = 5000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
 		reward = 4000, points = 800, scale = 2.5, color = Color3.fromRGB(70, 100, 60), planksPerHit = 8,
-			jump = { windup = 3, flight = 1.0, cooldown = 12, range = 70, minRange = 8, radius = 15, damage = 90, first = 6 },
-			rock = { windup = 1.8, flight = 1.4, cooldown = 8, range = 75, minRange = 14, radius = 9, damage = 55, first = 4 },
+			-- (2026-10-28) вместо прыжка и броска камня: удар по земле, ползун со спины, бросок знака (rock со stun), обычный удар
+			rock = { windup = 1.5, flight = 1.4, cooldown = 9, range = 75, minRange = 14, radius = 6, damage = 30, first = 4, stun = 2 },
+			attacks = {
+				slam = { windup = 1.3, cooldown = 10, first = 5, range = 40, minRange = 4, length = 42, width = 4, speed = 32, life = 4.5, slowMult = 0.4, slowSeconds = 3 },
+				crawlers = { windup = 1.5, flight = 1.0, cooldown = 14, first = 8, range = 60, minRange = 12, maxAlive = 6 },
+			},
 	},
 	BossStrong = {
 		id = "BossStrong", name = "Повелитель тёмных", hp = 3000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
 		reward = 3000, points = 650, scale = 1.7, color = Color3.fromRGB(40, 30, 50), planksPerHit = 6,
-			jump = { windup = 3, flight = 0.8, cooldown = 11, range = 70, minRange = 8, radius = 13, damage = 70, first = 6 },
-			rock = { windup = 1.5, flight = 1.2, cooldown = 8, range = 75, minRange = 14, radius = 8, damage = 45, first = 4 },
+			-- (2026-10-28) разбег, чёрный взмах, прыжок с волной тьмы (jump.wave), обычный удар дубинкой
+			jump = { windup = 3, flight = 0.8, cooldown = 11, range = 70, minRange = 8, radius = 13, damage = 70, first = 6, wave = { extra = 10, noSprint = 3 } },
+			attacks = {
+				charge = { windup = 2, lockBefore = 0.7, speed = 48, distance = 70, width = 5, damage = 70, recover = 1.4, cooldown = 14, first = 9, range = 80, minRange = 15 },
+				swing = { windup = 0.9, cooldown = 9, first = 5, range = 60, minRange = 5, speed = 60, length = 55, width = 9, damage = 45 },
+			},
 	},
 }
 

@@ -15,6 +15,7 @@ local WaveMath = require(Shared:WaitForChild("WaveMath"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 local BarricadeService = require(script.Parent:WaitForChild("BarricadeService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
+local BossAI = require(script.Parent:WaitForChild("BossAI"))
 
 local ZombieService = {}
 
@@ -69,6 +70,7 @@ type Zombie = {
 	bossAct: BossAct?, -- идущая атака босса (прыжок или бросок): босс стоит и не думает, ИИ ведёт stepBossAct
 	nextJump: number, -- когда босс снова может прыгнуть
 	nextRock: number, -- когда босс снова может бросить обломок
+	nextAtk: { [string]: number }, -- когда можно снова каждую атаку из def.attacks (BossAI): slam, crawlers, charge, swing
 }
 
 -- Атака босса. kind: "jump" (прыжок на игрока) | "rock" (бросок обломка). Фазы: jump — "charge" (3 с, на земле под игроком красная зона) → "air" → посадка;
@@ -82,6 +84,7 @@ type BossAct = {
 	zone: { Part },
 	rock: Part?,
 	locked: boolean, -- зона больше не следует за игроком
+	data: any?, -- состояние атак BossAI (линия растений, ползун на спине, дорожка разбега)
 }
 
 local map: Types.MapInfo
@@ -696,6 +699,7 @@ local function acquire(typeId: string): Zombie
 		bossAct = nil,
 		nextJump = 0,
 		nextRock = 0,
+		nextAtk = {},
 	}
 end
 
@@ -1476,9 +1480,10 @@ local function pickSpawnPosition(): Vector3
 	return result
 end
 
-local function spawnOne(typeId: string)
+local function spawnOne(typeId: string, atPos: Vector3?): Zombie
 	local z = acquire(typeId)
-	local spawnPos = pickSpawnPosition()
+	z.model:SetAttribute("Thrown", nil) -- метка брошенного ползуна (BossAI) не переходит в следующую жизнь модели из пула
+	local spawnPos = atPos or pickSpawnPosition()
 	local rigMul = Config.ZombieRigHp[tostring(z.model:GetAttribute("RigAsset"))] or 1
 	z.maxHp = math.floor(z.def.hp * hpMultiplier * rigMul + 0.5)
 	z.hp = z.maxHp
@@ -1486,6 +1491,7 @@ local function spawnOne(typeId: string)
 		local now0 = os.clock()
 		z.nextJump = now0 + ((z.def.jump :: any) and (z.def.jump :: any).first or 0)
 		z.nextRock = now0 + ((z.def.rock :: any) and (z.def.rock :: any).first or 0)
+		z.nextAtk = BossAI.firstTimes(z.def, now0)
 	end
 	-- сразу охотимся на игрока; к баррикадам идём, только если они закрывают путь к нему (см. Hunt)
 	z.state = "Hunt"
@@ -1514,6 +1520,7 @@ local function spawnOne(typeId: string)
 	if WaveMath.isBossType(z.def.id) then
 		refreshBossBar()
 	end
+	return z
 end
 
 local function nearestUpCharacter(pos: Vector3): (Player?, BasePart?, number)
@@ -1647,6 +1654,45 @@ local function damageInRadius(center: Vector3, radius: number, amount: number)
 	end
 end
 
+-- Оглушение игроков в радиусе (бросок знака Гаргантюа): кувырок спасает (PlayerService.stun не накладывается на неуязвимого)
+local function stunInRadius(center: Vector3, radius: number, seconds: number)
+	for _, p in PlayerService.upPlayers() do
+		local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if r and Vector3.new(r.Position.X - center.X, 0, r.Position.Z - center.Z).Magnitude <= radius and r.Position.Y - center.Y < 12 then
+			PlayerService.stun(p, seconds)
+		end
+	end
+end
+
+-- Волна тьмы Повелителя после приземления: тёмное кольцо расходится до outer студов, без урона; кто внутри — не может бегать noSprint секунд
+local function darkWave(center: Vector3, outer: number, noSprint: number)
+	local ring = Instance.new("Part")
+	ring.Name = "BossDarkRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.5, 2, 2)
+	ring.CFrame = CFrame.new(center + Vector3.new(0, 0.5, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.CastShadow = false
+	ring.Material = Enum.Material.SmoothPlastic
+	ring.Color = Color3.fromRGB(14, 8, 24)
+	ring.Transparency = 0.2
+	ring.Parent = workspace
+	local tw = TweenService:Create(ring, TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.5, outer * 2, outer * 2), Transparency = 1 })
+	tw:Play()
+	tw.Completed:Once(function()
+		ring:Destroy()
+	end)
+	for _, p in PlayerService.upPlayers() do
+		local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if r and Vector3.new(r.Position.X - center.X, 0, r.Position.Z - center.Z).Magnitude <= outer and r.Position.Y - center.Y < 12 then
+			PlayerService.noSprint(p, noSprint)
+		end
+	end
+end
+
 -- Обломки при падении камня: несколько кусков разлетаются и падают
 local function debrisBurst(center: Vector3, color: Color3)
 	for _ = 1, 9 do
@@ -1675,7 +1721,40 @@ endBossAct = function(z: Zombie)
 	if act.rock then
 		act.rock:Destroy()
 	end
+	if BossAI.isKind(act.kind) then
+		BossAI.cancel(z, act)
+	end
 end
+
+-- Атаки боссов вынесены в BossAI: передаём ему позы, спавн зомби и завершение атаки
+BossAI.init({
+	container = function(): Instance
+		return container
+	end,
+	armPose = armPose,
+	crouchPose = crouchPose,
+	tweenJoint = tweenJoint,
+	setEyes = setEyes,
+	spawnAt = function(typeId: string, pos: Vector3): any?
+		local ok, z = pcall(spawnOne, typeId, pos)
+		return if ok then z else nil
+	end,
+	thrownAlive = function(): number
+		local n = 0
+		for _, z in active do
+			if z.alive and z.model:GetAttribute("Thrown") == true then
+				n += 1
+			end
+		end
+		return n
+	end,
+	damageMult = function(): number
+		return damageMultiplier
+	end,
+	endAct = function(z: any)
+		endBossAct(z)
+	end,
+})
 
 -- Босс начинает атаку, если есть готовая и игрок в её дальности; true — атака началась (дальше ведёт stepBossAct)
 local function startBossSpecial(z: Zombie, player: Player, targetRoot: BasePart, dist: number, now: number): boolean
@@ -1688,10 +1767,18 @@ local function startBossSpecial(z: Zombie, player: Player, targetRoot: BasePart,
 	if rock and now >= z.nextRock and dist >= rock.minRange and dist <= rock.range and hasLineOfSight(z, targetRoot) then
 		table.insert(ready, "rock")
 	end
+	if z.def.attacks then
+		for _, k in BossAI.ready(z, now, dist, hasLineOfSight(z, targetRoot)) do
+			table.insert(ready, k)
+		end
+	end
 	if #ready == 0 then
 		return false
 	end
 	local kind = ready[math.random(1, #ready)]
+	if BossAI.isKind(kind) then
+		return BossAI.begin(z, kind, player, targetRoot, now)
+	end
 	local char = player.Character :: Model
 	local aim = groundUnder(char, targetRoot.Position)
 	z.humanoid:MoveTo(z.root.Position)
@@ -1706,9 +1793,17 @@ local function startBossSpecial(z: Zombie, player: Player, targetRoot: BasePart,
 		local r = rock :: Config.BossRock
 		local rockPart = Instance.new("Part")
 		rockPart.Name = "BossRock"
-		rockPart.Size = Vector3.new(5, 4, 5)
-		rockPart.Material = Enum.Material.Slate
-		rockPart.Color = Color3.fromRGB(96, 84, 72)
+		if r.stun then
+			-- дорожный знак (бросок Гаргантюа): жёлтый ромб, без надписей
+			rockPart.Name = "BossSign"
+			rockPart.Size = Vector3.new(5, 5, 0.4)
+			rockPart.Material = Enum.Material.Metal
+			rockPart.Color = Color3.fromRGB(226, 182, 44)
+		else
+			rockPart.Size = Vector3.new(5, 4, 5)
+			rockPart.Material = Enum.Material.Slate
+			rockPart.Color = Color3.fromRGB(96, 84, 72)
+		end
 		rockPart.Anchored = true
 		rockPart.CanCollide = false
 		rockPart.CanQuery = false
@@ -1731,6 +1826,10 @@ end
 local function stepBossAct(z: Zombie, now: number)
 	local act = z.bossAct :: BossAct
 	local gen = z.gen
+	if BossAI.isKind(act.kind) then
+		BossAI.step(z, act, now) -- новые атаки боссов (удар по земле, ползун, разбег, чёрный взмах) ведёт BossAI
+		return
+	end
 	z.humanoid:MoveTo(z.root.Position)
 	if act.kind == "jump" then
 		local j = z.def.jump :: Config.BossJump
@@ -1775,6 +1874,9 @@ local function stepBossAct(z: Zombie, now: number)
 						clearZone(act.zone)
 						shockwave(center, j.radius)
 						damageInRadius(center, j.radius, j.damage * damageMultiplier)
+						if j.wave then
+							darkWave(center, j.radius + j.wave.extra, j.wave.noSprint) -- Повелитель тёмных: волна тьмы шире удара, без урона
+						end
 						z.model:SetAttribute("SwingAt", os.clock())
 						z.bossAct = nil
 						z.nextJump = os.clock() + j.cooldown
@@ -1825,6 +1927,9 @@ local function stepBossAct(z: Zombie, now: number)
 				shockwave(aim, r.radius)
 				debrisBurst(aim, Color3.fromRGB(96, 84, 72))
 				damageInRadius(aim, r.radius, r.damage * damageMultiplier)
+				if r.stun then
+					stunInRadius(aim, r.radius, r.stun) -- знак Гаргантюа оглушает
+				end
 			end
 		end)
 	end
@@ -1984,7 +2089,7 @@ local function think(z: Zombie, now: number, dt: number)
 				return
 			end
 		end
-		if (z.def.jump or z.def.rock) and startBossSpecial(z, player, targetRoot, dist, now) then
+		if (z.def.jump or z.def.rock or z.def.attacks) and startBossSpecial(z, player, targetRoot, dist, now) then
 			return
 		end
 		local tp = z.def.teleport
@@ -2205,6 +2310,7 @@ end
 function ZombieService.sunrise()
 	table.clear(queue)
 	hazardGen += 1
+	BossAI.clearAll()
 	for model, z in active do
 		if z.alive then
 			local gen = z.gen
@@ -2274,6 +2380,7 @@ end
 function ZombieService.clearAll()
 	table.clear(queue)
 	hazardGen += 1
+	BossAI.clearAll()
 	local list = {}
 	for _, z in active do
 		table.insert(list, z)
@@ -2432,6 +2539,10 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 			local now = os.clock()
 			pathBudget = PATH_BUDGET
 			collectTargets()
+			local okBoss, errBoss = pcall(BossAI.update, now)
+			if not okBoss then
+				warn("[ZombieService] атаки боссов: " .. tostring(errBoss))
+			end
 			table.clear(order)
 			for _, z in active do
 				table.insert(order, z)
