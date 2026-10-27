@@ -505,8 +505,10 @@ local function moveTruck(s: State, dt: number)
 	local pose = poseFor(at, s.heading, s.yaw) * CFrame.Angles(pitch, 0, s.roll)
 	local cur = s.truck:GetPivot()
 	local err = at - cur.Position
-	if err.Magnitude > C.MaxLag then
-		-- машину зажало (стена, ящики) или она улетела: возвращаем на маршрут
+	-- «вверх» кузова держим по мировой оси: накренило больше MaxTilt (уклон, ребро, столкновение) — ставим на колёса по курсу
+	local tilted = cur.UpVector.Y < math.cos(math.rad(C.MaxTilt))
+	if tilted or err.Magnitude > C.MaxLag then
+		-- машину зажало (стена, ящики), она улетела или накренилась: возвращаем на маршрут
 		s.truck:PivotTo(pose)
 		s.root.AssemblyLinearVelocity = Vector3.zero
 		s.root.AssemblyAngularVelocity = Vector3.zero
