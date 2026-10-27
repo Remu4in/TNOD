@@ -1225,6 +1225,8 @@ Config.BaseZone = { locationId = "Custom", minX = -161, maxX = 109, minZ = 300, 
 -- ScoutPointRadius — радиус круга контрольной точки = радиус засчитывания; PlaceBeacon — круг места миссии (подпись зависит от типа миссии)
 Config.ScoutPointRadius = 10
 Config.ScoutPointColor = Color3.fromRGB(80, 200, 255)
+-- Обломки на месте шатра при провале конвоя (MissionService.buildRubble): число деталей по видам и радиус разброса, студы
+Config.Rubble = { Radius = 14, Chunks = 34, Crates = 6, Planks = 12, Barrels = 4, Tires = 5, Cloth = 6 }
 -- Надписи над метками миссий (BillboardGui): мелкие и полупрозрачные, чтобы не закрывали обзор (по просьбе Руслана 2026-10-28 — в 10 раз меньше по площади,
 -- было 200×44 и 240×40 пикселей, дальность 2000 и 1500 студов); дальше MaxDistance надпись не рисуется
 Config.MissionLabel = { Width = 70, Height = 13, MaxDistance = 450, TextTransparency = 0.5, StrokeTransparency = 0.85 }
