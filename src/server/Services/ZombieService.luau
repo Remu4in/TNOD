@@ -348,6 +348,9 @@ local function weldLooseParts(model: Model)
 	end
 end
 
+-- Части тела рига R6, принимающие попадания (partKind): им CanQuery включаем принудительно
+local RIG_HIT_PARTS: { [string]: boolean } = { Head = true, Torso = true, ["Left Arm"] = true, ["Right Arm"] = true, ["Left Leg"] = true, ["Right Leg"] = true }
+
 -- Риг R6 из библиотеки ServerStorage.Assets.Zombies (Config.ZombieRigs): случайная модель из пула типа, живой Humanoid, суставы Motor6D.
 -- Попадания принимают сами части тела (Head, Torso, руки, ноги); корень-невидимка попаданий не принимает.
 local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): Model?
@@ -393,6 +396,9 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 			d.CollisionGroup = COLLISION_GROUP
 			d.Anchored = false
 			d.CanTouch = false
+			if d.Parent == model and RIG_HIT_PARTS[d.Name] then
+				d.CanQuery = true -- у B_Garg в шаблоне Head с CanQuery = false: пули шли сквозь голову и урон по голове не засчитывался
+			end
 			if d.Name == "Handle" then
 				d.CanCollide = false -- аксессуары не мешают
 			end

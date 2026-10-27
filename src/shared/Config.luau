@@ -849,7 +849,7 @@ local Zombies: { [string]: ZombieDef } = {
 			rock = { windup = 1.6, flight = 1.3, cooldown = 9, range = 75, minRange = 14, radius = 8, damage = 40, first = 4 },
 	},
 	BossGarg = {
-		id = "BossGarg", name = "Гаргантюа", hp = 4000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
+		id = "BossGarg", name = "Гаргантюа", hp = 5000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
 		reward = 4000, points = 800, scale = 2.5, color = Color3.fromRGB(70, 100, 60), planksPerHit = 8,
 			jump = { windup = 3, flight = 1.0, cooldown = 12, range = 70, minRange = 8, radius = 15, damage = 90, first = 6 },
 			rock = { windup = 1.8, flight = 1.4, cooldown = 8, range = 75, minRange = 14, radius = 9, damage = 55, first = 4 },
