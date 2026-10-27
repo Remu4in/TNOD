@@ -348,6 +348,62 @@ local function weldLooseParts(model: Model)
 	end
 end
 
+-- Колени. У Качка нога составная: внутри R6-ноги лежат декоративные UpperLeg / LowerLeg / Foot (на сварках). Нижняя часть (голень, стопа и всё ниже колена)
+-- получает сустав Motor6D «Knee<Side>» в ноге, чтобы присед (crouchPose) мог согнуть ногу в колене. Без составной ноги колен нет (присед — только бёдра и корпус).
+-- ThighLen — длина бедра в студах: от неё зависит, насколько опускается корпус.
+local function addKnees(model: Model)
+	for _, side in { "Left", "Right" } do
+		local leg = model:FindFirstChild(side .. " Leg") :: BasePart?
+		if not leg then
+			continue
+		end
+		local upper: BasePart? = nil
+		local lower: BasePart? = nil
+		for _, d in leg:GetDescendants() do
+			if d:IsA("BasePart") then
+				if d.Name:find("UpperLeg") then
+					upper = d
+				elseif d.Name:find("LowerLeg") then
+					lower = d
+				end
+			end
+		end
+		model:SetAttribute("ThighLen", if upper then upper.Size.Y else leg.Size.Y)
+		if not upper or not lower then
+			continue
+		end
+		local kneeY = math.clamp((upper.Position.Y - upper.Size.Y / 2 + lower.Position.Y + lower.Size.Y / 2) / 2, lower.Position.Y, upper.Position.Y)
+		local kneeCf = CFrame.new(lower.Position.X, kneeY, lower.Position.Z)
+		local group: { BasePart } = {}
+		for _, d in leg:GetDescendants() do
+			if d:IsA("BasePart") and d ~= upper and d ~= lower and d.Position.Y < kneeY then
+				table.insert(group, d)
+			end
+		end
+		-- голень: вместо сварки с ногой — сустав в колене
+		for _, c in lower:GetChildren() do
+			if c:IsA("WeldConstraint") then
+				c:Destroy()
+			end
+		end
+		local knee = Instance.new("Motor6D")
+		knee.Name = "Knee" .. side
+		knee.Part0 = leg
+		knee.Part1 = lower
+		knee.C0 = leg.CFrame:ToObjectSpace(kneeCf)
+		knee.C1 = lower.CFrame:ToObjectSpace(kneeCf)
+		knee.Parent = leg
+		-- стопа, шарниры и прочее ниже колена теперь держатся за голень (сохраняют положение)
+		for _, d in group do
+			for _, c in d:GetChildren() do
+				if c:IsA("WeldConstraint") then
+					c.Part0 = lower
+				end
+			end
+		end
+	end
+end
+
 -- Части тела рига R6, принимающие попадания (partKind): им CanQuery включаем принудительно
 local RIG_HIT_PARTS: { [string]: boolean } = { Head = true, Torso = true, ["Left Arm"] = true, ["Right Arm"] = true, ["Left Leg"] = true, ["Right Leg"] = true }
 
@@ -374,6 +430,7 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 	model.Name = "Zombie_" .. def.id
 	model:ScaleTo(if rigDef.absolute then rigDef.scale else rigDef.scale * def.scale)
 	weldLooseParts(model)
+	addKnees(model)
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	humanoid.WalkSpeed = def.speed
 	humanoid.JumpHeight = 3
@@ -547,6 +604,15 @@ local function acquire(typeId: string): Zombie
 			local w = root:FindFirstChild("W_" .. name) :: Weld
 			welds[name] = w
 			rest[name] = w.C0
+		end
+	end
+	if isRig then
+		for _, side in { "Left", "Right" } do
+			local knee = model:FindFirstChild("Knee" .. side, true)
+			if knee and knee:IsA("Motor6D") then
+				welds[side .. "Knee"] = knee
+				rest[side .. "Knee"] = knee.C0
+			end
 		end
 	end
 	local eyes: { BasePart } = {}
@@ -736,6 +802,28 @@ local function armPose(z: Zombie, deg: number, time: number)
 		local pivot = CFrame.new(z.pivots[name])
 		local target = if deg == 0 then z.rest[name] else pivot * CFrame.Angles(math.rad(deg), 0, 0) * pivot:Inverse() * z.rest[name]
 		tweenJoint(z, name, TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), target)
+	end
+end
+
+-- Присед рига: amount 0 — стоит, 1 — полный. Корпус опускается и наклоняется вперёд, бёдра идут вперёд, колени сгибаются назад (если у босса есть
+-- колени, иначе только бёдра и корпус). Бёдра компенсируют наклон корпуса, иначе ноги уезжают назад вместе с ним.
+local function crouchPose(z: Zombie, amount: number, time: number)
+	if not z.rig then
+		return
+	end
+	local info = TweenInfo.new(time, Enum.EasingStyle.Quad, if amount > 0 then Enum.EasingDirection.Out else Enum.EasingDirection.InOut)
+	local knees = z.welds.LeftKnee ~= nil
+	local thighNet = math.rad(if knees then 55 else 30) * amount -- на сколько бедро идёт вперёд от вертикали
+	local lean = math.rad(25) * amount -- наклон корпуса вперёд
+	local thigh = (z.model:GetAttribute("ThighLen") :: number?) or 3
+	local drop = thigh * (1 - math.cos(thighNet)) * (if knees then 1 else 0.7) + 0.4 * amount
+	local waist = CFrame.new(z.pivots.Torso)
+	tweenJoint(z, "Torso", info, CFrame.new(0, -drop, 0) * waist * CFrame.fromAxisAngle(Vector3.new(-1, 0, 0), lean) * waist:Inverse() * z.rest.Torso)
+	for _, side in { "Left", "Right" } do
+		tweenJoint(z, side .. "Leg", info, z.rest[side .. "Leg"] * CFrame.Angles(thighNet + lean, 0, 0))
+		if knees then
+			tweenJoint(z, side .. "Knee", info, z.rest[side .. "Knee"] * CFrame.Angles(-thighNet * 1.2, 0, 0))
+		end
 	end
 end
 
@@ -1611,12 +1699,8 @@ local function startBossSpecial(z: Zombie, player: Player, targetRoot: BasePart,
 	if kind == "jump" then
 		local j = jump :: Config.BossJump
 		z.bossAct = { kind = "jump", phase = "charge", endAt = now + j.windup, target = player, aim = aim, zone = makeZone(aim, j.radius), rock = nil, locked = false }
-		-- присел: корпус наклоняется вперёд и держится (пока не прыгнет)
-		if z.rig then
-			local waist = CFrame.new(z.pivots.Torso)
-			local axis = Vector3.yAxis:Cross(Vector3.new(0, 0, -1))
-			tweenJoint(z, "Torso", TweenInfo.new(j.windup * 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), waist * CFrame.fromAxisAngle(axis.Unit, math.rad(40)) * waist:Inverse() * z.rest.Torso)
-		end
+		-- присел: бёдра вперёд, колени согнуты, корпус опущен и наклонён; держится, пока не прыгнет
+		crouchPose(z, 1, j.windup * 0.45)
 		armPose(z, -30, j.windup * 0.5)
 	else
 		local r = rock :: Config.BossRock
@@ -1669,9 +1753,8 @@ local function stepBossAct(z: Zombie, now: number)
 				local to = CFrame.new(act.aim + Vector3.new(0, z.root.Size.Y * 0.5 + 3, 0)) * from.Rotation
 				local apex = CFrame.new((from.Position + to.Position) / 2 + Vector3.new(0, 24, 0)) * from.Rotation
 				cancelWindup(z)
-				if z.rig then
-					tweenJoint(z, "Torso", TweenInfo.new(0.15), z.rest.Torso)
-				end
+				crouchPose(z, 0, 0.12) -- распрямился и оттолкнулся
+				armPose(z, 70, 0.25)
 				z.root.Anchored = true
 				local half = j.flight / 2
 				local up = TweenService:Create(z.root, TweenInfo.new(half, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = apex })
@@ -1697,6 +1780,15 @@ local function stepBossAct(z: Zombie, now: number)
 						z.nextJump = os.clock() + j.cooldown
 						z.lastAttack = os.clock()
 						setEyes(z, false)
+						-- приземление: короткий присед и подъём
+						crouchPose(z, 0.7, 0.1)
+						armPose(z, 0, 0.4)
+						local pg = z.poseGen
+						task.delay(0.3, function()
+							if z.poseGen == pg and z.gen == gen and z.alive then
+								crouchPose(z, 0, 0.4)
+							end
+						end)
 					end)
 					down:Play()
 				end)
