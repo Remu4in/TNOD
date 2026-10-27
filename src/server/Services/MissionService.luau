@@ -948,7 +948,32 @@ function MissionService.update(dt: number): string?
 	return result
 end
 
+-- Метро: станция лежит высоко над картой (Metro_Spawn, y ≈ 600), и с рассветом команду никто оттуда не забирал (MissionReturnTeam выключен):
+-- игроки оставались внизу. Пока миссия «metro» идёт внутри станции, при её завершении (рассвет, провал, новый раунд) всех, кто внутри,
+-- поднимаем к лестнице наверху (Markers.Metro_EntranceTop).
+local function leaveMetro()
+	local s = current
+	if not s or s.kind ~= "metro" or s.phase ~= "inside" then
+		return
+	end
+	local markers = workspace:FindFirstChild("Markers")
+	local top = markers and markers:FindFirstChild("Metro_EntranceTop") :: BasePart?
+	local metro = workspace:FindFirstChild("Metro")
+	local inner = metro and metro:FindFirstChild("Markers") and metro.Markers:FindFirstChild("Metro_Spawn") :: BasePart?
+	if not top or not inner then
+		return
+	end
+	for _, p in Players:GetPlayers() do
+		local char = p.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if char and root and root.Position.Y > inner.Position.Y - 200 then
+			char:PivotTo(CFrame.new(top.Position + Vector3.new(math.random(-4, 4), 4, math.random(-4, 4))))
+		end
+	end
+end
+
 function MissionService.finish()
+	leaveMetro()
 	ConvoyService.finish()
 	setSandbags(false)
 	if objects then
