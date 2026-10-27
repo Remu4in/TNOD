@@ -2369,6 +2369,11 @@ function ZombieService.enqueue(types: { string }, hpMult: number?, wave: number?
 	end
 end
 
+-- Очередь спавна пустеет (живые остаются): ночь 19 заменяет состав волны на свой поток
+function ZombieService.clearQueue()
+	table.clear(queue)
+end
+
 function ZombieService.remaining(): number
 	local n = #queue
 	for _ in active do

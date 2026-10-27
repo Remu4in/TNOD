@@ -57,6 +57,9 @@ type Soldier = {
 	talkUntil: number, -- до этого времени солдат разговаривает: стоит и смотрит на собеседника
 	talkTarget: BasePart?,
 	lastLine: number, -- номер последней сказанной реплики (подряд не повторяется)
+	dead: boolean, -- «убит» (ночь 19): лежит без ИИ и разговора
+	savedPivot: CFrame?, -- где стоял до «гибели»
+	prompt: ProximityPrompt?, -- подсказка «Поговорить»
 }
 
 local soldiers: { Soldier } = {}
@@ -410,6 +413,7 @@ local function addTalkPrompt(s: Soldier)
 	prompt.Triggered:Connect(function(player: Player)
 		talk(s, player)
 	end)
+	s.prompt = prompt
 end
 
 function SoldierService.init()
@@ -453,7 +457,7 @@ function SoldierService.init()
 				idle = loadTrack(animator, set.idle, true), walk = loadTrack(animator, set.walk, true), emotes = emotes,
 				nextAt = os.clock() + rng:NextNumber(0, 4), state = "pause", waypoints = {}, wpIndex = 1,
 				lastPos = root.Position, stuckSince = os.clock(), targetYaw = yaw, partner = nil, pathBusy = false,
-				talkUntil = 0, talkTarget = nil, lastLine = 0,
+				talkUntil = 0, talkTarget = nil, lastLine = 0, dead = false, savedPivot = nil, prompt = nil,
 				idleAlt = loadTrack(animator, set.idleAlt, true), useAlt = rng:NextNumber() < 0.5,
 			}
 			local startIdle = if s.useAlt and s.idleAlt then s.idleAlt else s.idle
@@ -497,12 +501,86 @@ function SoldierService.init()
 		acc = 0
 		local now = os.clock()
 		for _, s in soldiers do
-			if s.model.Parent then
+			if s.model.Parent and not s.dead then
 				step(s, now, elapsed)
 			end
 		end
 	end)
 	print("[SoldierService] солдат: " .. #soldiers)
+end
+
+-- Ночь 19 («бойня на базе»): доля солдат базы «убита» — лежат на земле без движения и разговора. Берём равномерно по списку (каждого k-го),
+-- чтобы убитые не стояли кучей. reviveDead возвращает всех на места (конец ночи/сброс раунда).
+function SoldierService.setDead(fraction: number)
+	local want = math.floor(#soldiers * fraction + 0.5)
+	if want <= 0 then
+		return
+	end
+	local step = #soldiers / want
+	local marked = 0
+	local nextIndex = 1
+	for i, s in soldiers do
+		if marked < want and i >= nextIndex and not s.dead and s.model.Parent then
+			marked += 1
+			nextIndex = math.floor(1 + marked * step)
+			s.dead = true
+			s.savedPivot = s.model:GetPivot()
+			for _, track in { s.idle, s.idleAlt, s.walk } do
+				if track then
+					track:Stop(0)
+				end
+			end
+			for _, track in s.emotes do
+				track:Stop(0)
+			end
+			s.hum:MoveTo(s.root.Position)
+			if s.prompt then
+				s.prompt.Enabled = false
+			end
+			for _, d in s.model:GetDescendants() do
+				if d:IsA("BasePart") then
+					d.Anchored = true
+				end
+			end
+			-- на спину: корень в положении стоя ≈ 3 студа над землёй, лёжа — около 1
+			local pos = s.root.Position
+			local yaw = select(2, s.root.CFrame:ToOrientation())
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			params.FilterDescendantsInstances = { s.model }
+			local hit = workspace:Raycast(pos, Vector3.new(0, -12, 0), params)
+			local floorY = if hit then hit.Position.Y else pos.Y - 3
+			s.model:PivotTo(CFrame.new(pos.X, floorY + 0.9, pos.Z) * CFrame.Angles(0, yaw + (i * 1.7), 0) * CFrame.Angles(math.rad(-90), 0, 0))
+		end
+	end
+end
+
+function SoldierService.reviveDead()
+	for _, s in soldiers do
+		if s.dead then
+			s.dead = false
+			local saved = s.savedPivot
+			s.savedPivot = nil
+			if saved and s.model.Parent then
+				s.model:PivotTo(saved)
+			end
+			for _, d in s.model:GetDescendants() do
+				if d:IsA("BasePart") then
+					d.Anchored = false
+				end
+			end
+			s.root:SetNetworkOwner(nil)
+			if s.prompt then
+				s.prompt.Enabled = true
+			end
+			local idle = if s.useAlt and s.idleAlt then s.idleAlt else s.idle
+			if idle then
+				idle:Play()
+			end
+			s.state = "pause"
+			s.nextAt = os.clock() + 1
+		end
+	end
 end
 
 SoldierService.attachLooseParts = attachLooseParts

@@ -122,6 +122,17 @@ function BarricadeService.setOpen(open: boolean)
 	end
 end
 
+-- Убрать баррикады в прямоугольнике (x, z) на эту ночь: ночь 19, база. Доски снимаются, следующая ночь (setOpen(false)) ставит их целыми
+function BarricadeService.clearRegion(minX: number, maxX: number, minZ: number, maxZ: number)
+	for _, w in windows do
+		local p = w.outside
+		if p.X >= minX and p.X <= maxX and p.Z >= minZ and p.Z <= maxZ then
+			intact[w.id] = 0
+			refresh(w)
+		end
+	end
+end
+
 function BarricadeService.isOpen(w: Types.Window): boolean
 	return dayMode or intact[w.id] <= 0
 end

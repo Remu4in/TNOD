@@ -27,6 +27,9 @@ local ShopService = require(script.Parent:WaitForChild("ShopService"))
 local RoadRoute = require(script.Parent:WaitForChild("RoadRoute"))
 local VendorService = require(script.Parent:WaitForChild("VendorService"))
 local WeaponService = require(script.Parent:WaitForChild("WeaponService"))
+local DebrisKit = require(script.Parent:WaitForChild("DebrisKit"))
+local BarricadeService = require(script.Parent:WaitForChild("BarricadeService"))
+local BaseBattleService = require(script.Parent:WaitForChild("BaseBattleService"))
 
 local MissionService = {}
 
@@ -478,110 +481,10 @@ local function clearRubble()
 	table.clear(rubbleSites)
 end
 
--- Обломки на месте шатра при провале конвоя (процедурно, палитра docs/world/style_bible.md: бетон, ржавчина, тёмный металл, старое дерево, без крови и надписей):
--- перевёрнутый обгоревший остов грузовика (корпус, кабина, колёса, оторванная дверь), разбросанные ящики и доски, бочки, шины, лоскуты ткани шатра,
--- куски бетона и дерева, копоть на земле, дым и слабый огонь. Всё без столкновений (проход и пути зомби не ломаем), в одной Folder; число деталей — Config.Rubble.
+-- Обломки на месте шатра при провале конвоя: процедурная куча (остов грузовика, ящики, бочки, шины, ткань, бетон, копоть, дым — DebrisKit, числа Config.Rubble).
 -- Убирается при сбросе раунда (clearRubble). Сид по номеру района — картина повторяется.
 local function buildRubble(site: number, center: Vector3): { Instance }
-	local R = Config.Rubble
-	local rng = Random.new(site * 97)
-	local folderR = Instance.new("Folder")
-	folderR.Name = "TentRubble_" .. site
-	local COLORS = {
-		concrete = Color3.fromRGB(96, 98, 102), dark = Color3.fromRGB(58, 60, 64), rust = Color3.fromRGB(92, 58, 44),
-		wood = Color3.fromRGB(86, 66, 48), char = Color3.fromRGB(34, 32, 30), cloth = Color3.fromRGB(78, 82, 60), tire = Color3.fromRGB(28, 28, 30),
-	}
-	local function ground(x: number, z: number): number
-		local g = groundAt(x, z)
-		return if g then g.Y else center.Y
-	end
-	local function part(name: string, size: Vector3, cf: CFrame, color: Color3, material: Enum.Material, shape: Enum.PartType?): Part
-		local p = Instance.new("Part")
-		p.Name = name
-		p.Anchored = true
-		p.CanCollide = false
-		p.CanQuery = false
-		p.CanTouch = false
-		p.CastShadow = false
-		p.Size = size
-		p.CFrame = cf
-		p.Color = color
-		p.Material = material
-		if shape then
-			p.Shape = shape
-		end
-		p.Parent = folderR
-		return p
-	end
-	-- случайная точка в круге (не ближе minR от центра), посаженная на землю; низ детали на земле
-	local function spot(minR: number, maxR: number, height: number, tiltMax: number): CFrame
-		local a, r = rng:NextNumber() * math.pi * 2, minR + rng:NextNumber() * (maxR - minR)
-		local x, z = center.X + math.cos(a) * r, center.Z + math.sin(a) * r
-		local tilt = tiltMax * (rng:NextNumber() - 0.5) * 2
-		return CFrame.new(x, ground(x, z) + height / 2 - 0.1, z) * CFrame.Angles(tilt, rng:NextNumber() * math.pi * 2, tilt * 0.6)
-	end
-	-- копоть: тёмное пятно на земле
-	local sootCf = CFrame.new(center.X, ground(center.X, center.Z) + 0.12, center.Z) * CFrame.Angles(0, 0, math.rad(90))
-	local soot = part("Soot", Vector3.new(0.12, R.Radius * 1.6, R.Radius * 1.6), sootCf, COLORS.char, Enum.Material.Slate, Enum.PartType.Cylinder)
-	soot.Transparency = 0.25
-	-- остов грузовика: корпус завален на бок, кузов, кабина, колёса (часть на остове, часть откатилась), оторванная дверь
-	local hullX, hullZ = center.X + (rng:NextNumber() - 0.5) * 6, center.Z + (rng:NextNumber() - 0.5) * 6
-	local hullPos = Vector3.new(hullX, ground(hullX, hullZ) + 2.6, hullZ)
-	local hullCf = CFrame.new(hullPos) * CFrame.Angles(0, rng:NextNumber() * math.pi * 2, math.rad(78))
-	part("WreckHull", Vector3.new(5.5, 4, 13), hullCf, COLORS.dark, Enum.Material.Metal)
-	part("WreckBed", Vector3.new(5.2, 0.5, 8), hullCf * CFrame.new(0, 2.2, 2), COLORS.rust, Enum.Material.CorrodedMetal)
-	part("WreckCab", Vector3.new(5, 3.4, 4), hullCf * CFrame.new(0.4, 0.4, -5), COLORS.char, Enum.Material.Metal)
-	for k = 1, R.Tires do
-		local cf: CFrame
-		if k <= 3 then
-			cf = hullCf * CFrame.new(if k % 2 == 0 then 3 else -3, -1.2, (k - 2) * 4) * CFrame.Angles(0, 0, math.rad(90))
-		else
-			cf = spot(4, R.Radius, 1.6, 0.3) * CFrame.Angles(0, 0, math.rad(90))
-		end
-		part("Tire", Vector3.new(1.4, 3, 3), cf, COLORS.tire, Enum.Material.Rubber, Enum.PartType.Cylinder)
-	end
-	part("WreckDoor", Vector3.new(0.3, 3, 3.6), spot(4, R.Radius * 0.8, 3, 0.25), COLORS.rust, Enum.Material.CorrodedMetal)
-	-- ящики и россыпь досок
-	for _ = 1, R.Crates do
-		local sz = 2 + rng:NextNumber() * 1.5
-		part("Crate", Vector3.new(sz, sz * 0.9, sz), spot(3, R.Radius, sz * 0.9, 0.35), COLORS.wood, Enum.Material.Wood)
-	end
-	for _ = 1, R.Planks do
-		part("Plank", Vector3.new(0.3, 0.2, 2.5 + rng:NextNumber() * 3), spot(2, R.Radius, 0.2, 0.2), COLORS.wood, Enum.Material.WoodPlanks)
-	end
-	-- бочки: цилиндр Roblox лежит по оси X; стоящая бочка — повёрнута на 90° вокруг Z, лежащая (каждая вторая) — без поворота
-	for k = 1, R.Barrels do
-		local cf = spot(4, R.Radius * 0.9, if k % 2 == 1 then 3 else 2.2, 0.1)
-		if k % 2 == 1 then
-			cf = cf * CFrame.Angles(0, 0, math.rad(90))
-		end
-		part("Barrel", Vector3.new(3, 2.2, 2.2), cf, if k % 2 == 0 then COLORS.rust else COLORS.dark, Enum.Material.Metal, Enum.PartType.Cylinder)
-	end
-	-- лоскуты ткани шатра
-	for _ = 1, R.Cloth do
-		part("Cloth", Vector3.new(3 + rng:NextNumber() * 3, 0.1, 2 + rng:NextNumber() * 2.5), spot(1, R.Radius * 0.9, 0.1, 0.05), COLORS.cloth, Enum.Material.Fabric)
-	end
-	-- куски бетона и дерева
-	for _ = 1, R.Chunks do
-		local size = Vector3.new(0.8 + rng:NextNumber() * 2.6, 0.5 + rng:NextNumber() * 1.5, 0.8 + rng:NextNumber() * 2.6)
-		local concrete = rng:NextNumber() < 0.6
-		part("Chunk", size, spot(0, R.Radius, size.Y, 0.5), if concrete then COLORS.concrete else COLORS.wood, if concrete then Enum.Material.Concrete else Enum.Material.Wood)
-	end
-	-- дым и слабый огонь над остовом
-	local smokePart = part("RubbleSmoke", Vector3.new(4, 1, 4), CFrame.new(hullPos + Vector3.new(0, 2, 0)), COLORS.char, Enum.Material.SmoothPlastic)
-	smokePart.Transparency = 1
-	local smoke = Instance.new("Smoke")
-	smoke.Color = Color3.fromRGB(70, 70, 70)
-	smoke.Size = 8
-	smoke.Opacity = 0.4
-	smoke.RiseVelocity = 7
-	smoke.Parent = smokePart
-	local fire = Instance.new("Fire")
-	fire.Size = 4
-	fire.Heat = 3
-	fire.Parent = smokePart
-	folderR.Parent = workspace
-	return { folderR }
+	return { DebrisKit.build("TentRubble_" .. site, center, site * 97, Config.Rubble) }
 end
 
 -- Провал конвоя: шатёр района (если уже стоял) убирается с автоматом, магазином и припасами; на его месте — обломки (всегда, даже если шатёр
@@ -624,6 +527,7 @@ end
 
 function MissionService.resetRound()
 	MissionService.finish()
+	BaseBattleService.reset()
 	clearRubble()
 	for _, rec in installedSites do
 		for _, name in rec.vending do
@@ -698,6 +602,66 @@ local function makeSiteMarker(state: State, enabled: boolean)
 	state.prompt = prompt
 end
 
+-- Ночь 19, «бойня на базе»: вместо состава волны — Config.BaseBattle.Total зомби потоком со стороны базы (точки появления внутри Config.BaseZone, одновременно
+-- не больше AliveCap), баррикады на базе убраны, защитники у стартовой точки игроков, убитые солдаты и обломки (BaseBattleService)
+local function setupBaseBattle(night: number, comp: WaveMath.Composition, hpMult: number)
+	local B = Config.BaseBattle
+	local Z = Config.BaseZone
+	local total = math.max(10, math.floor(B.Total * (Config.Waves.CountScale or 1) + 0.5))
+	-- состав волны пересчитываем на нужное число (боссов в потоке нет)
+	local normal: WaveMath.Composition = {}
+	local sum = 0
+	for id, n in comp do
+		if not WaveMath.isBossType(id) then
+			normal[id] = n
+			sum += n
+		end
+	end
+	local scaled: WaveMath.Composition = {}
+	local given, biggest = 0, "Walker"
+	for id, n in normal do
+		local k = math.floor(n / math.max(sum, 1) * total)
+		scaled[id] = k
+		given += k
+		if k > (scaled[biggest] or 0) then
+			biggest = id
+		end
+	end
+	scaled[biggest] = (scaled[biggest] or 0) + (total - given) -- остаток от округления — самому частому
+	ZombieService.clearQueue()
+	ZombieService.enqueue(WaveMath.spawnQueue(scaled, rng), hpMult, night)
+	-- точки появления: на земле внутри базы, подальше от ворот (z растёт вглубь базы), не на крышах
+	local points: { Vector3 } = {}
+	local seeded = Random.new(1901)
+	local tries = 0
+	while #points < B.SpawnPoints and tries < 600 do
+		tries += 1
+		local p = groundAt(seeded:NextNumber(Z.minX + 10, Z.maxX - 10), seeded:NextNumber(Z.minZ + 25, Z.maxZ - 10))
+		if p and openSpot(p) then
+			local near = false
+			for _, q in points do
+				if flatDist(p, q) < 16 then
+					near = true
+					break
+				end
+			end
+			if not near then
+				table.insert(points, p)
+			end
+		end
+	end
+	if #points == 0 then
+		warn("[MissionService] ночь 19: на базе не нашлось точек появления — зомби идут кольцом вокруг базы")
+		ZombieService.setAnchor(MissionService.anchorPosition(5))
+	else
+		ZombieService.setAnchor(nil)
+		ZombieService.setSpawnPoints(points)
+	end
+	ZombieService.setAliveCap(B.AliveCap)
+	BarricadeService.clearRegion(Z.minX, Z.maxX, Z.minZ, Z.maxZ)
+	BaseBattleService.start(playerSpawnPosition())
+end
+
 -- Начало ночи: comp/hpMult — состав и здоровье волны (для подпитки бесконечного потока)
 function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult: number, players: number): (boolean, string)
 	MissionService.finish()
@@ -718,6 +682,9 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	}
 	current = state
 	ZombieService.setAnchor(anchor)
+	if def.baseBattle then
+		setupBaseBattle(night, comp, hpMult)
+	end
 	if Config.MissionMoveTeam and kind ~= "escort" then
 		moveTeam(anchor)
 	end
@@ -870,6 +837,9 @@ function MissionService.update(dt: number): string?
 		return nil
 	end
 	topUp(state)
+	if state.def.baseBattle then
+		BaseBattleService.update(os.clock())
+	end
 	local kind = state.kind
 	local text = ""
 	local result: string? = nil
@@ -1003,6 +973,9 @@ function MissionService.update(dt: number): string?
 	elseif kind == "clear" or kind == "classic" then
 		local left = ZombieService.remaining()
 		text = string.format("Осталось зомби: %d", left)
+		if state.def.baseBattle then
+			text ..= string.format("\nСолдаты у точки сбора: %d из %d", BaseBattleService.alive(), Config.BaseBattle.Defenders)
+		end
 		if left == 0 then
 			result = "done"
 		end
@@ -1058,6 +1031,7 @@ end
 
 function MissionService.finish()
 	leaveMetro()
+	BaseBattleService.finish()
 	ConvoyService.finish()
 	setSandbags(false)
 	if objects then

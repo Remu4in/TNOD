@@ -1108,7 +1108,7 @@ Config.Perks = {
 -- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
 -- (сейчас играется как classic). Не указано — classic.
 -- convoySpeed — скорость грузовика этой миссии (студов/с), вместо Config.Convoy.TruckSpeed; clearSandbags — на эту ночь убрать мешки с песком у точки появления игроков (Config.Convoy.Sandbag*)
-export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, clearSandbags: boolean? }
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, clearSandbags: boolean?, baseBattle: boolean?, bossFight: boolean? }
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
 	TruckHp = 1000,
@@ -1258,6 +1258,15 @@ Config.Rubble = { Radius = 14, Chunks = 34, Crates = 6, Planks = 12, Barrels = 4
 -- было 200×44 и 240×40 пикселей, дальность 2000 и 1500 студов); дальше MaxDistance надпись не рисуется
 Config.MissionLabel = { Width = 70, Height = 13, MaxDistance = 450, TextTransparency = 0.5, StrokeTransparency = 0.85 }
 Config.PlaceBeacon = { Radius = 16, Color = Color3.fromRGB(255, 200, 60) }
+-- Ночь 19, «бойня на базе» (BaseBattleService, MissionService.begin): Total зомби одним потоком (одновременно не больше AliveCap) со стороны базы (точки
+-- SpawnPoints внутри Config.BaseZone), баррикады на базе на эту ночь убраны; треть солдат базы лежит убитыми (DeadFraction); у точки появления игроков
+-- Defenders живых солдат (HP из DefenderHp, урон DefenderDps, шаг DefenderInterval, дальность DefenderRange) — зомби их атакуют и могут убить;
+-- по базе Debris.Clusters куч мусора (Wrecks из них — с остовами машин).
+Config.BaseBattle = {
+	Total = 200, AliveCap = 45, SpawnPoints = 14, DeadFraction = 1 / 3,
+	Defenders = 10, DefenderHp = { 200, 250 }, DefenderDps = 30, DefenderInterval = 0.4, DefenderRange = 55, PostRadius = 14,
+	Debris = { Clusters = 16, Radius = 11, Chunks = 16, Crates = 3, Planks = 6, Barrels = 2, Tires = 2, Cloth = 3, Wrecks = 3 },
+}
 Config.Missions = {
 	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
 	[2] = { type = "build", title = "Зачистка зоны и установка шатра", anchor = 1, kills = 15, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
@@ -1279,7 +1288,7 @@ Config.Missions = {
 	[16] = { type = "scout", title = "Разведка территории", anchor = 4, points = 4, planned = "daytime" },
 	[17] = { type = "escort", title = "Установка шатра и конвой", anchor = 4, points = 3, install = true, hint = "Доведите грузовик и установите шатёр у места" },
 	[18] = { type = "metro", title = "Катакомбы: зачистка метро", anchor = 6, kills = 40, hint = "Спуститесь по лестнице у входа в метро и зачистите станцию" },
-	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, planned = "capture" },
+	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, baseBattle = true, hint = "Отбейте базу: мутанты идут со стороны базы, солдаты у точки сбора помогают" },
 	[20] = { type = "classic", title = "Финал: бункер", anchor = 5, planned = "final" },
 } :: { [number]: MissionDef }
 
