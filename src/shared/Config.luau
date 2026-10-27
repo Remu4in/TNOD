@@ -1198,6 +1198,9 @@ Config.BaseZone = { locationId = "Custom", minX = -161, maxX = 109, minZ = 300, 
 -- ScoutPointRadius — радиус круга контрольной точки = радиус засчитывания; PlaceBeacon — круг места миссии (подпись зависит от типа миссии)
 Config.ScoutPointRadius = 10
 Config.ScoutPointColor = Color3.fromRGB(80, 200, 255)
+-- Надписи над метками миссий (BillboardGui): мелкие и полупрозрачные, чтобы не закрывали обзор (по просьбе Руслана 2026-10-28 — в 10 раз меньше по площади,
+-- было 200×44 и 240×40 пикселей, дальность 2000 и 1500 студов); дальше MaxDistance надпись не рисуется
+Config.MissionLabel = { Width = 70, Height = 13, MaxDistance = 450, TextTransparency = 0.5, StrokeTransparency = 0.85 }
 Config.PlaceBeacon = { Radius = 16, Color = Color3.fromRGB(255, 200, 60) }
 Config.Missions = {
 	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },

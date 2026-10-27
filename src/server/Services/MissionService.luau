@@ -355,10 +355,10 @@ local function makeBeacon(pos: Vector3, label: string, color: Color3?, radius: n
 	emitter.Parent = emitterPart
 	-- метка в HUD
 	local gui = Instance.new("BillboardGui")
-	gui.Size = UDim2.fromOffset(200, 44)
+	gui.Size = UDim2.fromOffset(Config.MissionLabel.Width, Config.MissionLabel.Height)
 	gui.StudsOffset = Vector3.new(0, 7, 0)
 	gui.AlwaysOnTop = true
-	gui.MaxDistance = 2000
+	gui.MaxDistance = Config.MissionLabel.MaxDistance
 	gui.Parent = part
 	local text = Instance.new("TextLabel")
 	text.Name = "Label"
@@ -367,7 +367,8 @@ local function makeBeacon(pos: Vector3, label: string, color: Color3?, radius: n
 	text.Font = Enum.Font.GothamBold
 	text.TextScaled = true
 	text.TextColor3 = col:Lerp(Color3.new(1, 1, 1), 0.4)
-	text.TextStrokeTransparency = 0.3
+	text.TextTransparency = Config.MissionLabel.TextTransparency
+	text.TextStrokeTransparency = Config.MissionLabel.StrokeTransparency
 	text.Text = "◆ " .. label
 	text.Parent = gui
 	part:SetAttribute("BaseText", "◆ " .. label)
@@ -576,10 +577,10 @@ local function makeSiteMarker(state: State, enabled: boolean)
 	part.Shape = Enum.PartType.Cylinder
 	part.CFrame = CFrame.new(state.anchor + Vector3.new(0, 0.3, 0)) * CFrame.Angles(0, 0, math.rad(90))
 	local gui = Instance.new("BillboardGui")
-	gui.Size = UDim2.fromOffset(240, 40)
+	gui.Size = UDim2.fromOffset(Config.MissionLabel.Width, Config.MissionLabel.Height)
 	gui.StudsOffset = Vector3.new(0, 10, 0)
 	gui.AlwaysOnTop = true
-	gui.MaxDistance = 1500
+	gui.MaxDistance = Config.MissionLabel.MaxDistance
 	gui.Parent = part
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.fromScale(1, 1)
@@ -587,7 +588,8 @@ local function makeSiteMarker(state: State, enabled: boolean)
 	label.Font = Enum.Font.GothamBold
 	label.TextScaled = true
 	label.TextColor3 = Color3.fromRGB(255, 220, 90)
-	label.TextStrokeTransparency = 0.3
+	label.TextTransparency = Config.MissionLabel.TextTransparency
+	label.TextStrokeTransparency = Config.MissionLabel.StrokeTransparency
 	label.Name = "Label"
 	label.Text = "◆ Место шатра"
 	label.Parent = gui
