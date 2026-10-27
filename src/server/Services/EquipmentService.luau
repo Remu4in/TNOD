@@ -263,13 +263,18 @@ local function turretModel(cf: CFrame): (Model?, Vector3)
 	return m, Vector3.new(0, muzzleY, muzzleZ)
 end
 
-local function onPlace(player: Player, position: unknown)
+local function onPlace(player: Player, position: unknown, yawArg: unknown)
 	if typeof(position) ~= "Vector3" or not RateLimit.allow(player, "Place", 0.3) or not PlayerService.isUp(player) then
 		return
 	end
 	local pos = position :: Vector3
 	if not Validate.finiteVector(pos, 1e5) then
 		return
+	end
+	-- угол поворота (радианы) присылает клиент для превью: число в разумных пределах, иначе — ставим по взгляду игрока, как раньше
+	local yaw: number? = nil
+	if typeof(yawArg) == "number" and yawArg == yawArg and math.abs(yawArg) <= 100 then
+		yaw = yawArg
 	end
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -310,9 +315,14 @@ local function onPlace(player: Player, position: unknown)
 	if not hit or math.abs(hit.Position.Y - root.Position.Y) > 8 then -- не на крышу над собой
 		return
 	end
-	local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
-	look = if look.Magnitude > 0.01 then look.Unit else Vector3.new(0, 0, -1)
-	local cf = CFrame.lookAt(hit.Position, hit.Position + look)
+	local cf: CFrame
+	if yaw then
+		cf = CFrame.new(hit.Position) * CFrame.Angles(0, yaw, 0)
+	else
+		local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+		look = if look.Magnitude > 0.01 then look.Unit else Vector3.new(0, 0, -1)
+		cf = CFrame.lookAt(hit.Position, hit.Position + look)
+	end
 	local model: Model
 	local muzzle = Vector3.zero
 	if kind == "Turret" then
