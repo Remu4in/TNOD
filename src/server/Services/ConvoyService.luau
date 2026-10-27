@@ -50,6 +50,7 @@ local current: State? = nil
 local moveConn: RBXScriptConnection? = nil
 local startMotion: (any) -> () -- задаётся ниже, после moveTruck и updateEscorts
 local folder: Folder? = nil
+local lastOrder: { Vector3 } = {} -- контрольные точки в порядке объезда (после start)
 local rng = Random.new()
 local C = Config.Convoy
 
@@ -318,38 +319,137 @@ local function pathLength(points: { Vector3 }): number
 	return len
 end
 
--- Маршрут от точки выезда: по порядку через контрольные точки (недостижимые пропускаем), в конце — остановка. nil — до остановки не доехать
-local function planFrom(grid: RoadRoute.Grid, start: Vector3, route: { Vector3 }, finalStop: Vector3): { Vector3 }?
-	local waypoints: { Vector3 } = { start }
-	local current = start
-	local function leg(target: Vector3): boolean
-		local path = grid.find(current, target)
-		if not path then
-			return false
-		end
-		for i = 2, #path do
-			table.insert(waypoints, path[i])
-		end
-		current = path[#path]
-		return true
+-- Путь по дорогам между двумя точками с кэшем (поиск A* недешёвый, а перебор порядка точек запрашивает одни и те же отрезки)
+type LegCache = { [string]: { Vector3 }? | boolean }
+local function legPath(grid: RoadRoute.Grid, cache: LegCache, a: Vector3, b: Vector3): { Vector3 }?
+	local key = string.format("%d,%d>%d,%d", math.floor(a.X + 0.5), math.floor(a.Z + 0.5), math.floor(b.X + 0.5), math.floor(b.Z + 0.5))
+	local hit = cache[key]
+	if hit == nil then
+		hit = grid.find(a, b) or false
+		cache[key] = hit
 	end
+	return if hit then hit :: { Vector3 } else nil
+end
+
+local function legLength(path: { Vector3 }?): number
+	return if path then pathLength(path) else math.huge
+end
+
+-- Лучший порядок точек (перебор, их до 6): минимум длины пути start → точки → stop. Каждая точка ровно один раз.
+local function bestOrder(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, pts: { Vector3 }, stop: Vector3): ({ Vector3 }, number)
+	local n = #pts
+	local best: { Vector3 } = table.clone(pts)
+	local bestLen = math.huge
+	local used: { boolean } = {}
+	local cur: { Vector3 } = {}
+	local function walk(from: Vector3, len: number)
+		if len >= bestLen then
+			return
+		end
+		if #cur == n then
+			len += legLength(legPath(grid, cache, from, stop))
+			if len < bestLen then
+				bestLen, best = len, table.clone(cur)
+			end
+			return
+		end
+		for i = 1, n do
+			if not used[i] then
+				used[i] = true
+				table.insert(cur, pts[i])
+				walk(pts[i], len + legLength(legPath(grid, cache, from, pts[i])))
+				table.remove(cur)
+				used[i] = false
+			end
+		end
+	end
+	if n <= 6 then
+		walk(start, 0)
+	else
+		-- много точек: ближайший по пути сосед
+		local from, left, order = start, table.clone(pts), {}
+		while #left > 0 do
+			local bi, bd = 1, math.huge
+			for i, p in left do
+				local d = legLength(legPath(grid, cache, from, p))
+				if d < bd then
+					bi, bd = i, d
+				end
+			end
+			from = table.remove(left, bi) :: Vector3
+			table.insert(order, from)
+		end
+		best = order
+	end
+	return best, bestLen
+end
+
+-- Убирает петли: если путь второй раз проходит ту же точку, всё, что между, вырезаем (круг по тем же дорогам не нужен)
+local function cutLoops(waypoints: { Vector3 }): { Vector3 }
+	local out: { Vector3 } = {}
+	local seen: { [string]: number } = {}
+	for _, p in waypoints do
+		local key = string.format("%d,%d", math.floor(p.X + 0.5), math.floor(p.Z + 0.5))
+		local at = seen[key]
+		if at then
+			for _ = #out, at + 1, -1 do
+				local q = table.remove(out) :: Vector3
+				seen[string.format("%d,%d", math.floor(q.X + 0.5), math.floor(q.Z + 0.5))] = nil
+			end
+		else
+			table.insert(out, p)
+			seen[key] = #out
+		end
+	end
+	return out
+end
+
+-- Маршрут от точки выезда: контрольные точки в лучшем порядке (каждая один раз), в конце — остановка. nil — до остановки не доехать.
+-- Вторым значением — точки в порядке объезда (для подписей меток)
+local function planFrom(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, route: { Vector3 }, finalStop: Vector3): ({ Vector3 }?, { Vector3 })
+	local stop = grid.snap(finalStop, 150)
+	if not stop then
+		return nil, {}
+	end
+	local pts: { Vector3 } = {}
 	for i, p in route do
 		local onRoad = grid.snap(p, 60)
-		if not onRoad or not leg(onRoad) then
+		if onRoad and legPath(grid, cache, start, onRoad) and legPath(grid, cache, onRoad, stop) then
+			table.insert(pts, onRoad)
+		else
 			warn(string.format("[ConvoyService] до контрольной точки %d дорогой не доехать — пропущена", i))
 		end
 	end
-	local stop = grid.snap(finalStop, 150)
-	if not stop or not leg(stop) then
-		return nil
+	if not legPath(grid, cache, start, stop) then
+		return nil, {}
 	end
-	return waypoints
+	local order = bestOrder(grid, cache, start, pts, stop)
+	local waypoints: { Vector3 } = { start }
+	local current = start
+	for _, target in order do
+		local path = legPath(grid, cache, current, target)
+		if path then
+			for i = 2, #path do
+				table.insert(waypoints, path[i])
+			end
+			current = path[#path]
+		end
+	end
+	local last = legPath(grid, cache, current, stop)
+	if not last then
+		return nil, {}
+	end
+	for i = 2, #last do
+		table.insert(waypoints, last[i])
+	end
+	return cutLoops(waypoints), order
 end
 
 -- Выезд из начальной зоны: дорога начинается в десятках студов от точки появления игроков. Берём ближайшую дорогу и ещё несколько вокруг,
 -- из них — ту, с которой путь короче (вместе с прямым отрезком от начальной зоны до неё: до ближайшей дороги порой ехать в разы дальше, чем от другой).
-local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3): { Vector3 }?
+local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3): ({ Vector3 }?, { Vector3 })
 	local grid = RoadRoute.grid()
+	local cache: LegCache = {}
 	local starts: { Vector3 } = {}
 	local function addStart(p: Vector3?)
 		if not p then
@@ -368,17 +468,18 @@ local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3)
 		addStart(grid.snap(spawn + Vector3.new(math.cos(a) * 90, 0, math.sin(a) * 90), 50))
 	end
 	local best: { Vector3 }? = nil
+	local bestOrder: { Vector3 } = {}
 	local bestLen = math.huge
 	for _, s in starts do
-		local plan = planFrom(grid, s, route, finalStop)
+		local plan, order = planFrom(grid, cache, s, route, finalStop)
 		if plan then
 			local len = pathLength(plan) + Vector3.new(s.X - spawn.X, 0, s.Z - spawn.Z).Magnitude
 			if len < bestLen then
-				best, bestLen = plan, len
+				best, bestOrder, bestLen = plan, order, len
 			end
 		end
 	end
-	return best
+	return best, bestOrder
 end
 
 -- Смещение сопровождающего в мире: X — вправо от курса, Z — назад
@@ -391,7 +492,8 @@ end
 -- и первым отрезком едет к ближайшей дороге. speed — скорость миссии (иначе Config.Convoy.TruckSpeed). true — запущен.
 function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vector3, speed: number?): boolean
 	ConvoyService.finish()
-	local waypoints = planRoute(spawn, route, finalStop)
+	local waypoints, order = planRoute(spawn, route, finalStop)
+	lastOrder = order
 	if not waypoints or #waypoints < 2 then
 		warn("[ConvoyService] по дорогам до места шатра не доехать")
 		return false
@@ -438,6 +540,11 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	current = state
 	startMotion(state)
 	return true
+end
+
+-- Контрольные точки в том порядке, в каком колонна их объезжает (для подписей меток)
+function ConvoyService.routeOrder(): { Vector3 }
+	return lastOrder
 end
 
 function ConvoyService.position(): Vector3?

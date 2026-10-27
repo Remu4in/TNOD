@@ -654,21 +654,11 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 			setSandbags(true)
 		end
 		local grid = RoadRoute.grid()
-		local pts = districtPoints(def.anchor, def.points or 3, grid, def.radius)
-		local route: { Vector3 } = {}
-		local from = start
-		while #pts > 0 do
-			local bi, bd = 1, math.huge
-			for i, p in pts do
-				local d = (p - from).Magnitude
-				if d < bd then
-					bi, bd = i, d
-				end
-			end
-			local p = table.remove(pts, bi) :: Vector3
-			table.insert(route, p)
-			from = p
-			makeBeacon(p, string.format("Маршрут %d", #route))
+		-- порядок объезда выбирает ConvoyService (кратчайший по дорогам, каждая точка один раз); метки подписываем после старта
+		local route = districtPoints(def.anchor, def.points or 3, grid, def.radius)
+		local routeBeacons: { BasePart } = {}
+		for _, p in route do
+			table.insert(routeBeacons, makeBeacon(p, "Маршрут"))
 		end
 		local stop = roadStopNear(grid, anchor)
 		local groundStart = groundAt(start.X, start.Z) or start
@@ -679,6 +669,22 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		else
 			ZombieService.setAnchor(groundStart)
 			ZombieService.setAliveCap(Config.Convoy.AliveCap)
+			for i, p in ConvoyService.routeOrder() do
+				local nearest, nd = nil :: BasePart?, math.huge
+				for _, b in routeBeacons do
+					local d = flatDist(b.Position, p)
+					if d < nd then
+						nearest, nd = b, d
+					end
+				end
+				if nearest then
+					nearest:SetAttribute("BaseText", string.format("◆ Маршрут %d", i))
+					table.remove(routeBeacons, table.find(routeBeacons, nearest) :: number)
+				end
+			end
+			for _, b in routeBeacons do -- точки, до которых дорогой не доехать, колонна пропускает: метка не нужна
+				b:Destroy()
+			end
 			if def.install then
 				makeSiteMarker(state, false)
 			end
