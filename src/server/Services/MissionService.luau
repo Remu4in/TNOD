@@ -4,7 +4,7 @@
 --   scout   — разведка: обойти контрольные точки вокруг места шатра (радиус — radius в Config.Missions, по умолчанию Config.ScoutRadius 50–100 студов; поток без конца)
 --   build   — установка шатра: убить N мутантов, затем удерживать «Установить шатёр» у места (поток без конца)
 --   escort  — конвой: грузовик с двумя солдатами объезжает контрольные точки и встаёт на дороге у места шатра (ConvoyService);
---             с install = true после приезда ещё надо установить шатёр
+--             с install = true после приезда ещё надо установить шатёр (иначе шатёр района ставится сам при прибытии)
 --   defend  — защита шатра: продержаться SECONDS секунд рядом (поток без конца)
 --   clear / classic — убить всю волну
 -- Места шатров — ServerStorage.Assets.TentSites.Site_<n> (шатёр + припасы + автомат), шатёр базы (Workspace.Base.Tent) — точка 5.
@@ -862,7 +862,14 @@ function MissionService.update(dt: number): string?
 				result = "fail"
 			elseif status == "arrived" then
 				dropSupplies(state.site)
-				notify("Конвой прибыл — припасы доставлены", 4)
+				if state.def.install then
+					notify("Конвой прибыл — припасы доставлены", 4)
+				else
+					-- без установки руками шатёр ставится сам (если ночью 2 его не ставили, например при пропуске ночи)
+					installTent(state.site)
+					state.installed = true
+					notify("Конвой прибыл — шатёр установлен, припасы доставлены", 4)
+				end
 				if state.def.install then
 					state.phase = "install"
 					if state.prompt then
