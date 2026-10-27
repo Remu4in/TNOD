@@ -1108,7 +1108,7 @@ Config.Perks = {
 -- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
 -- (сейчас играется как classic). Не указано — classic.
 -- convoySpeed — скорость грузовика этой миссии (студов/с), вместо Config.Convoy.TruckSpeed; clearSandbags — на эту ночь убрать мешки с песком у точки появления игроков (Config.Convoy.Sandbag*)
-export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, clearSandbags: boolean?, baseBattle: boolean?, bossFight: boolean? }
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }? }
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
 	TruckHp = 1000,
@@ -1206,6 +1206,10 @@ Config.Briefs = {
 		"Спуститесь по лестнице: внизу вас перенесёт на станцию. Зачистите её: убейте {kills} мутантов. Они лезут из тоннелей со всех сторон — держитесь платформ и укрытий.",
 		"Когда зачистим, вернётесь на базу.",
 	},
+	bossfight = {
+		"Финал, боец. Это не ночь: босс выходит днём, обычных мутантов не будет — только он.",
+		"Держитесь вместе, не стойте на месте: у него хватает приёмов, а кувырок спасает от большинства. Победим его — и город наш.",
+	},
 	classic = {
 		"Уничтожьте всех мутантов этой ночи. Магазин на ночь закрыт — берегите патроны, поднимайте упавших.",
 	},
@@ -1224,6 +1228,7 @@ Config.DayBrief = {
 		clear = "Зачистка: убить всех мутантов ночи",
 		metro = "Метро: спуститься по лестнице и зачистить станцию ({kills} убийств)",
 		classic = "Убить всех мутантов ночи",
+		bossfight = "Финал: босс-файт — убить финального босса",
 	},
 	Tip = {
 		scout = "Мутанты идут со всех сторон без остановки — держитесь вместе.",
@@ -1233,6 +1238,7 @@ Config.DayBrief = {
 		clear = "Магазин на ночь закрыт — купите всё днём.",
 		metro = "Внизу тесно и темно: держитесь платформ и укрытий, берите побольше патронов.",
 		classic = "Магазин на ночь закрыт — купите всё днём и поднимайте упавших.",
+		bossfight = "Бой днём и без обычных зомби: только босс. Запаситесь патронами и аптечками, держитесь вместе.",
 	},
 	Boss = "Ночью придёт босс: {name}.",
 	Here = "на базе",
@@ -1289,7 +1295,9 @@ Config.Missions = {
 	[17] = { type = "escort", title = "Установка шатра и конвой", anchor = 4, points = 3, install = true, hint = "Доведите грузовик и установите шатёр у места" },
 	[18] = { type = "metro", title = "Катакомбы: зачистка метро", anchor = 6, kills = 40, hint = "Спуститесь по лестнице у входа в метро и зачистите станцию" },
 	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, baseBattle = true, hint = "Отбейте базу: мутанты идут со стороны базы, солдаты у точки сбора помогают" },
-	[20] = { type = "classic", title = "Финал: бункер", anchor = 5, planned = "final" },
+	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,
+	-- пока Повелитель тёмных); победа — убит последний босс (RoundService: атрибут Victory и сообщение; титры и награда — после решения Руслана)
+	[20] = { type = "bossfight", title = "Финал: босс-файт", anchor = 5, day = true, bosses = { "BossStrong" }, hint = "Днём, без зомби: убейте финального босса" },
 } :: { [number]: MissionDef }
 
 -- Рейтинговые очки (не монеты): копятся за раунд, идут в профиль и в глобальный лидерборд (RatingService)

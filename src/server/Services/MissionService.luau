@@ -54,6 +54,7 @@ type State = {
 	sitePart: BasePart?,
 	prompt: ProximityPrompt?,
 	installed: boolean,
+	bossIndex: number, -- bossfight: номер вышедшего босса из def.bosses
 }
 
 local current: State? = nil
@@ -64,7 +65,7 @@ local suppliedSites: { [number]: { Instance } } = {}
 
 -- Подписи маяка места миссии по типу
 local PLACE_LABELS: { [string]: string } = {
-	scout = "Район разведки", build = "Место шатра", escort = "Место шатра", defend = "Шатёр: оборона", metro = "Вход в метро", classic = "Зона боя", clear = "Зона боя",
+	scout = "Район разведки", build = "Место шатра", escort = "Место шатра", defend = "Шатёр: оборона", metro = "Вход в метро", classic = "Зона боя", clear = "Зона боя", bossfight = "Арена",
 }
 
 local GROUND_FOLDERS = { "Roads", "Ground", "Grass" }
@@ -671,19 +672,28 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	objects.Name = "MissionObjects"
 	objects.Parent = workspace
 	local kind = def.type
-	local known = { scout = true, defend = true, clear = true, build = true, escort = true, metro = true }
+	local known = { scout = true, defend = true, clear = true, build = true, escort = true, metro = true, bossfight = true }
 	if not known[kind] then
 		kind = "classic"
 	end
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
 		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false,
+		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0,
 	}
 	current = state
 	ZombieService.setAnchor(anchor)
 	if def.baseBattle then
 		setupBaseBattle(night, comp, hpMult)
+	end
+	if kind == "bossfight" then
+		-- финальный босс-файт: вместо состава волны — только боссы из def.bosses по очереди, обычных зомби нет, минимума убийств нет
+		state.minKills = 0
+		ZombieService.clearQueue()
+		local list = def.bosses or { "BossStrong" }
+		state.bossIndex = 1
+		ZombieService.enqueue({ list[1] }, hpMult, night, true)
+		ZombieService.setAliveCap(Config.Round.ZombiesAliveMin)
 	end
 	if Config.MissionMoveTeam and kind ~= "escort" then
 		moveTeam(anchor)
@@ -970,6 +980,19 @@ function MissionService.update(dt: number): string?
 				result = "done"
 			end
 		end
+	elseif kind == "bossfight" then
+		local list = state.def.bosses or { "BossStrong" }
+		local def = Config.Zombies[list[math.max(1, state.bossIndex)]]
+		text = string.format("Убейте босса: %s (%d из %d)", if def then def.name else "?", state.bossIndex, #list)
+		if ZombieService.remaining() == 0 then
+			if state.bossIndex < #list then
+				state.bossIndex += 1
+				ZombieService.enqueue({ list[state.bossIndex] }, state.hpMult, state.night, true)
+				notify("Следующий босс!", 4)
+			else
+				result = "done" -- последний босс убит
+			end
+		end
 	elseif kind == "clear" or kind == "classic" then
 		local left = ZombieService.remaining()
 		text = string.format("Осталось зомби: %d", left)
@@ -997,7 +1020,9 @@ function MissionService.update(dt: number): string?
 			notify("Конвой не доехал — шатёр района уничтожен", 6)
 		end
 	end
-	text ..= string.format("\nУбито мутантов: %d из %d", math.min(state.playerKills, state.minKills), state.minKills)
+	if state.minKills > 0 then
+		text ..= string.format("\nУбито мутантов: %d из %d", math.min(state.playerKills, state.minKills), state.minKills)
+	end
 	if text ~= state.lastText then
 		state.lastText = text
 		ReplicatedStorage:SetAttribute("MissionText", text)

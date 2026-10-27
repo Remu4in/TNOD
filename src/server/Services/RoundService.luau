@@ -341,7 +341,9 @@ local function night()
 		PlayerService.setSpawn(currentMap.nightSpawn) -- ночью (воскрешение командой) появляемся в стартовом укрытии
 	end
 	local bossIds = WaveMath.bossTypes(Config.Waves, wave)
-	setNight(true, #bossIds > 0)
+	-- финал (Config.Missions[20].day): бой днём — свет и небо дневные, но фаза остаётся «Night» (магазин закрыт, миссия идёт)
+	local dayFight = (Config.Missions[wave] or { day = false }).day == true
+	setNight(not dayFight, #bossIds > 0)
 	setPhase("Night", nil)
 	local nightLength = math.min(Config.Round.NightMaxTime, Config.Round.NightMinTime + Config.Round.NightPerWave * (wave - 1))
 	local nightStart = os.clock()
@@ -420,6 +422,12 @@ local function night()
 		end
 		if WaveMath.isBossWave(Config.Waves, wave) and cleared then
 			PerkService.openOffers()
+		end
+		-- победа над финальным боссом (каркас): атрибут для будущих титров и награды, сообщение всем
+		local finalDef = Config.Missions[wave]
+		if finalDef and finalDef.type == "bossfight" and missionDone then
+			ReplicatedStorage:SetAttribute("Victory", wave)
+			notifyAll("ПОБЕДА! Финальный босс повержен. Город наш.", 8)
 		end
 	end
 	if pendingNight then
