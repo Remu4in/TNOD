@@ -296,6 +296,7 @@ end
 -- Украшения боссов (B_Buff, B_Garg) лежат внутри невидимых деталей тела (Torso.Model.…) и ничем не сварены: у B_Buff они падали на землю и
 -- лежали там, а невидимое тело бегало отдельно; у B_Garg были заякорены и висели на месте. Привариваем каждую несваренную деталь
 -- к ближайшей родительской детали (к конечности) в том виде, как они стоят в шаблоне; на физику, столкновения и пули они не влияют.
+-- Если родительской детали нет (конус, ведро, нож лежат прямо в модели), берётся ближайшая сваренная часть тела (голова, рука).
 local function weldLooseParts(model: Model)
 	local welded: { [Instance]: boolean } = {}
 	for _, d in model:GetDescendants() do
@@ -320,6 +321,18 @@ local function weldLooseParts(model: Model)
 			local parent: Instance? = d.Parent
 			while parent and not parent:IsA("BasePart") do
 				parent = parent.Parent
+			end
+			if not parent then
+				-- украшение лежит прямо в модели (конус и ведро, нож Качка, Handle аксессуара): крепим к ближайшей сваренной части тела
+				local bestDist = math.huge
+				for part in welded do
+					if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part ~= d and part:IsDescendantOf(model) then
+						local dist = (part.Position - d.Position).Magnitude
+						if dist < bestDist then
+							parent, bestDist = part, dist
+						end
+					end
+				end
 			end
 			if parent and parent:IsA("BasePart") then
 				local w = Instance.new("WeldConstraint")
