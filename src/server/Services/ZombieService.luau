@@ -475,6 +475,10 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 			end
 		end
 	end
+	if rigDef.noAlertTint then
+		-- setEyes не красит тело в розовое при замахе и во второй фазе; эффекты модели (красные глаза, чёрная аура — ParticleEmitter) не трогаем
+		model:SetAttribute("NoTint", true)
+	end
 	if rigDef.crawl then
 		-- ползун: корпус наклонён вперёд почти до горизонтали и опущен к земле (поворот в системе корня, до чтения суставов)
 		for _, d in model:GetDescendants() do
@@ -850,6 +854,9 @@ local function setEyes(z: Zombie, alert: boolean)
 			eye.Color = if alert then EYE_ALERT else EYE_NORMAL
 		end
 	else
+		if z.model:GetAttribute("NoTint") == true then
+			return -- финальный босс: цвет тела не меняем
+		end
 		for _, d in z.model:GetChildren() do
 			if d:IsA("MeshPart") then
 				d.Color = if alert then TINT_ALERT else (d:GetAttribute("BaseColor") or Color3.new(1, 1, 1))

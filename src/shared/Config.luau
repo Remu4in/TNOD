@@ -999,7 +999,7 @@ Config.ZombieVisuals = ZombieVisuals
 -- Анимации читаются из атрибутов модели Anim_idle / Anim_walk / Anim_run / Anim_attack (записал Baker из Animation-объектов ассета),
 -- чего нет — берётся ZombieAnimDefaults (стандартные R6 Roblox).
 -- absolute — scale задаёт итоговый размер модели (без множителя def.scale); crawl — корпус прижат к земле (ползун)
-export type ZombieRig = { pool: { string }, scale: number, animSpeed: number, useRun: boolean?, tint: Color3?, absolute: boolean?, crawl: boolean? }
+export type ZombieRig = { pool: { string }, scale: number, animSpeed: number, useRun: boolean?, tint: Color3?, absolute: boolean?, crawl: boolean?, noAlertTint: boolean? }
 Config.UseRigZombies = true
 Config.ZombieAnimDefaults = { idle = "180435571", walk = "180426354", run = "180426354" }
 Config.ZombieRigs = {
@@ -1023,7 +1023,7 @@ Config.ZombieRigs = {
 	BossBuff = { pool = { "B_Buff" }, scale = 0.6, absolute = true, animSpeed = 8 },
 	BossGarg = { pool = { "B_Garg" }, scale = 1.8, absolute = true, animSpeed = 6 },
 	BossStrong = { pool = { "B_Strong" }, scale = 0.95, absolute = true, animSpeed = 10 },
-	BossFinal = { pool = { "B_Final" }, scale = 2.4, absolute = true, animSpeed = 14, useRun = true }, -- R15, ассет 5794917487 («Boss-Dark Zombie»), скрипты вычищены
+	BossFinal = { pool = { "B_Final" }, scale = 2.4, absolute = true, animSpeed = 14, useRun = true, noAlertTint = true }, -- R15, ассет 5794917487 («Boss-Dark Zombie»), скрипты вычищены
 } :: { [string]: ZombieRig }
 
 -- Машины: сгенерированные меши (Studio generate_mesh, 2026-10-17), модель стоит основанием на земле, перёд — в -Z.
