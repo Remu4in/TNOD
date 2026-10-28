@@ -37,6 +37,8 @@ local wave = 0
 local locationIndex = 1 -- init.server строит первую локацию из Config.Locations
 local gameOver = false
 local fellAtNight = false
+local finalePending = false -- убит финальный босс: следующий день — финал акта 1 (бункер)
+local finaleDone = false -- акт 1 пройден: раунд кончается поздравлением, а не «все пали»
 local rng = Random.new()
 local killUnits: { [string]: number } = {} -- монеты за убийство в голову по типам на текущую ночь (WaveMath.killUnits)
 local killEarned: { [Player]: number } = {} -- сколько монет за убийства игрок уже получил за эту ночь (потолок WaveMath.killCap)
@@ -223,6 +225,10 @@ end
 local function startRound()
 	gameOver = false
 	fellAtNight = false
+	finalePending = false
+	finaleDone = false
+	ReplicatedStorage:SetAttribute("Victory", nil)
+	ReplicatedStorage:SetAttribute("ActComplete", nil)
 	wave = math.max(0, Config.DebugStartNight - 1)
 	local players = Players:GetPlayers()
 	if locationIndex ~= 1 then
@@ -249,7 +255,7 @@ local function startRound()
 	PlayerService.spawnAll()
 end
 
-local function day(first: boolean)
+local function day(first: boolean, finale: boolean?)
 	local want = locationFor(wave + 1)
 	if want ~= locationIndex then
 		loadLocation(want)
@@ -275,6 +281,28 @@ local function day(first: boolean)
 		p:SetAttribute("VotedDay", false)
 	end
 	countVotes()
+	if finale then
+		-- финал акта 1: день без таймера и без следующей ночи — миссия «зайти в бункер», затем поздравление
+		setPhase("Day", nil)
+		ReplicatedStorage:SetAttribute("NextBriefTitle", "") -- панель «ближайшая ночь» не показываем
+		MissionService.beginFinale()
+		notifyAll("День 20. Босс повержен — зайдите в бункер всей командой!", 7)
+		while not gameOver and not MissionService.finaleReady() do
+			task.wait(0.5)
+		end
+		if not gameOver then
+			MissionService.finish()
+			ReplicatedStorage:SetAttribute("ActComplete", 1)
+			for _, p in Players:GetPlayers() do
+				Remotes.get("Briefing"):FireClient(p, "Командование", Config.Finale.Title, Config.Finale.Lines)
+			end
+			notifyAll(Config.Finale.Title .. " Следующий акт — в разработке.", 12)
+			task.wait(Config.Finale.EndSeconds)
+			finaleDone = true
+			gameOver = true
+		end
+		return
+	end
 	setPhase("Day", t)
 	GeneralService.announceDay()
 	notifyAll(if first then "Закупайтесь в магазине и открывайте здания — вносите монеты у вывесок" else "Рассвет. Мутанты сгорают на солнце — бегите за покупками!", 4)
@@ -427,7 +455,8 @@ local function night()
 		local finalDef = Config.Missions[wave]
 		if finalDef and finalDef.type == "bossfight" and missionDone then
 			ReplicatedStorage:SetAttribute("Victory", wave)
-			notifyAll("ПОБЕДА! Финальный босс повержен. Город наш.", 8)
+			finalePending = true
+			notifyAll("ПОБЕДА! Страж бункера повержен. Остался последний шаг — бункер!", 8)
 		end
 	end
 	if pendingNight then
@@ -443,7 +472,7 @@ local function finishRound()
 	-- ночь, на которой все пали, не засчитывается
 	local reached = math.max(0, if fellAtNight then wave - 1 else wave)
 	ReplicatedStorage:SetAttribute("LastRoundWave", reached)
-	notifyAll(string.format("Все пали. Продержались %d ночей", reached), Config.Round.GameOverTime)
+	notifyAll(if finaleDone then "Акт 1 пройден! Раунд завершён" else string.format("Все пали. Продержались %d ночей", reached), Config.Round.GameOverTime)
 	-- через несколько секунд — итоги по очкам
 	local bestPlayer, bestScore, bestKills = ScoreService.best()
 	if bestPlayer then
@@ -565,7 +594,8 @@ function RoundService.start(map: Types.MapInfo)
 			startRound()
 			local first = true
 			while not gameOver do
-				day(first)
+				day(first, finalePending)
+				finalePending = false
 				first = false
 				if gameOver then
 					break

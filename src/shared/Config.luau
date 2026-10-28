@@ -887,6 +887,19 @@ local Zombies: { [string]: ZombieDef } = {
 				swing = { windup = 0.9, cooldown = 9, first = 5, range = 60, minRange = 5, speed = 60, length = 55, width = 9, damage = 45 },
 			},
 	},
+	-- Финальный босс (ночь/день 20, решение Руслана 2026-10-29: новая модель, ассет 5794917487). Набор атак пока собран из атак боссов 10 и 15 (черновик — боссу
+	-- нужны свои); числа — ориентир: сильнее Повелителя тёмных.
+	BossFinal = {
+		id = "BossFinal", name = "Страж бункера", hp = 6000, speed = 13, damage = 70, attackCooldown = 2.6, windup = 0.8, breakCooldown = 1.4,
+		reward = 5000, points = 1000, scale = 1.9, color = Color3.fromRGB(30, 24, 36), planksPerHit = 7,
+			jump = { windup = 3, flight = 0.8, cooldown = 11, range = 70, minRange = 8, radius = 14, damage = 80, first = 6, wave = { extra = 10, noSprint = 3 } },
+			rock = { windup = 1.5, flight = 1.3, cooldown = 9, range = 75, minRange = 14, radius = 7, damage = 35, first = 4, stun = 2 },
+			attacks = {
+				slam = { windup = 1.3, cooldown = 10, first = 5, range = 40, minRange = 4, length = 42, width = 4, speed = 32, life = 4.5, slowMult = 0.4, slowSeconds = 3 },
+				charge = { windup = 2, lockBefore = 0.7, speed = 48, distance = 70, width = 5, damage = 70, recover = 1.4, cooldown = 14, first = 9, range = 80, minRange = 15 },
+				swing = { windup = 0.9, cooldown = 9, first = 5, range = 60, minRange = 5, speed = 60, length = 55, width = 9, damage = 45 },
+			},
+	},
 }
 
 Config.Zombies = Zombies
@@ -996,6 +1009,7 @@ Config.ZombieRigs = {
 	BossBuff = { pool = { "B_Buff" }, scale = 0.6, absolute = true, animSpeed = 8 },
 	BossGarg = { pool = { "B_Garg" }, scale = 1.8, absolute = true, animSpeed = 6 },
 	BossStrong = { pool = { "B_Strong" }, scale = 0.95, absolute = true, animSpeed = 10 },
+	BossFinal = { pool = { "B_Final" }, scale = 2.4, absolute = true, animSpeed = 14, useRun = true }, -- R15, ассет 5794917487 («Boss-Dark Zombie»), скрипты вычищены
 } :: { [string]: ZombieRig }
 
 -- Машины: сгенерированные меши (Studio generate_mesh, 2026-10-17), модель стоит основанием на земле, перёд — в -Z.
@@ -1273,6 +1287,16 @@ Config.BaseBattle = {
 	Defenders = 10, DefenderHp = { 200, 250 }, DefenderDps = 30, DefenderInterval = 0.4, DefenderRange = 55, PostRadius = 14,
 	Debris = { Clusters = 16, Radius = 11, Chunks = 16, Crates = 3, Planks = 6, Barrels = 2, Tires = 2, Cloth = 3, Wrecks = 3 },
 }
+-- Финал акта 1 (RoundService.day(finale), MissionService.beginFinale): после убийства финального босса начинается день 20 с миссией «зайти в бункер»
+-- (Workspace.Bunker.BunkerEntrance); когда все живые игроки в Radius студов от входа — всем окно поздравления, через EndSeconds раунд заканчивается
+Config.Finale = {
+	Radius = 22, EndSeconds = 25,
+	Title = "Акт 1 пройден!",
+	Lines = {
+		"Вы дошли до бункера и победили Стража. Первый акт закончен: город держится, база цела, а за бронёй бункера — новые вопросы.",
+		"Второй акт — в разработке. Спасибо, что играли: ждите продолжения!",
+	},
+}
 Config.Missions = {
 	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
 	[2] = { type = "build", title = "Зачистка зоны и установка шатра", anchor = 1, kills = 15, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
@@ -1297,7 +1321,7 @@ Config.Missions = {
 	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, baseBattle = true, hint = "Отбейте базу: мутанты идут со стороны базы, солдаты у точки сбора помогают" },
 	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,
 	-- пока Повелитель тёмных); победа — убит последний босс (RoundService: атрибут Victory и сообщение; титры и награда — после решения Руслана)
-	[20] = { type = "bossfight", title = "Финал: босс-файт", anchor = 5, day = true, bosses = { "BossStrong" }, hint = "Днём, без зомби: убейте финального босса" },
+	[20] = { type = "bossfight", title = "Финал: босс-файт", anchor = 5, day = true, bosses = { "BossFinal" }, hint = "Днём, без зомби: убейте финального босса" },
 } :: { [number]: MissionDef }
 
 -- Рейтинговые очки (не монеты): копятся за раунд, идут в профиль и в глобальный лидерборд (RatingService)

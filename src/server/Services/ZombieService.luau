@@ -408,7 +408,11 @@ local function addKnees(model: Model)
 end
 
 -- Части тела рига R6, принимающие попадания (partKind): им CanQuery включаем принудительно
-local RIG_HIT_PARTS: { [string]: boolean } = { Head = true, Torso = true, ["Left Arm"] = true, ["Right Arm"] = true, ["Left Leg"] = true, ["Right Leg"] = true }
+local RIG_HIT_PARTS: { [string]: boolean } = {
+	Head = true, Torso = true, ["Left Arm"] = true, ["Right Arm"] = true, ["Left Leg"] = true, ["Right Leg"] = true,
+	UpperTorso = true, LowerTorso = true, LeftUpperArm = true, RightUpperArm = true, LeftLowerArm = true, RightLowerArm = true, LeftHand = true, RightHand = true,
+	LeftUpperLeg = true, RightUpperLeg = true, LeftLowerLeg = true, RightLowerLeg = true, LeftFoot = true, RightFoot = true,
+}
 
 -- Риг R6 из библиотеки ServerStorage.Assets.Zombies (Config.ZombieRigs): случайная модель из пула типа, живой Humanoid, суставы Motor6D.
 -- Попадания принимают сами части тела (Head, Torso, руки, ноги); корень-невидимка попаданий не принимает.
@@ -590,6 +594,10 @@ local function acquire(typeId: string): Zombie
 	if isRig then
 		-- сустав каждой части находим по тому, какую деталь он держит (имена у ассетов разные: RootJoint / Root Hip)
 		local limbs = { Torso = "Torso", Head = "Head", LeftArm = "Left Arm", RightArm = "Right Arm", LeftLeg = "Left Leg", RightLeg = "Right Leg" }
+		if model:FindFirstChild("LowerTorso") then
+			-- настоящий R15 (финальный босс): «корпус» — корневой сустав HumanoidRootPart → LowerTorso (наклон и присед несут всё тело), руки и ноги — плечи и бёдра
+			limbs = { Torso = "LowerTorso", Head = "Head", LeftArm = "LeftUpperArm", RightArm = "RightUpperArm", LeftLeg = "LeftUpperLeg", RightLeg = "RightUpperLeg" }
+		end
 		for name, partName in limbs do
 			local found: Motor6D? = nil
 			for _, d in model:GetDescendants() do
@@ -611,7 +619,7 @@ local function acquire(typeId: string): Zombie
 	end
 	if isRig then
 		for _, side in { "Left", "Right" } do
-			local knee = model:FindFirstChild("Knee" .. side, true)
+			local knee = model:FindFirstChild("Knee" .. side, true) or model:FindFirstChild(side .. "Knee", true) -- KneeLeft — составная нога Качка, LeftKnee — колено R15
 			if knee and knee:IsA("Motor6D") then
 				welds[side .. "Knee"] = knee
 				rest[side .. "Knee"] = knee.C0

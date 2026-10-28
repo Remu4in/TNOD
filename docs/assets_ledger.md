@@ -68,3 +68,5 @@
 | 3103734903 | Corridor (поиск) | 337 частей, 67×22×23, скриптов нет | кандидат: интерьер/коридор, в `AssetStaging` |
 | 18310180132 | Tunnel-Tube (поиск) | 29 частей, 21×16×28, скриптов нет | кандидат: секция тоннеля, в `AssetStaging` |
 Поиск (`search_asset`) видит только ассеты внутри вселенной проекта, а не весь Creator Store: ID новых ассетов нужно присылать.
+
+| 2026-10-29 | 5794917487 «Boss-Dark Zombie» (R15, автор по метаданным не проверялся) | Финальный босс «Страж бункера» → `ServerStorage.Assets.Zombies.B_Final` | Вставлена только геометрия и суставы (15 Motor6D, 16 Vector3Value рэгдолла, 19 ParticleEmitter). **Удалено 19 скриптов** (Damage Script, Script, Dashjump, Slingshot/PelletScript/FireDamage, Delete, Sound, LocalSound, Animate, RagdollR15 и др.) и все StringValue. Все скрипты прочитаны вручную до чистки: вредоносных признаков нет (ни require, loadstring, Http, Remote, DataStore, Kick, Teleport, обфускации). Id анимаций из Animate перенесены в атрибуты `Anim_idle/walk/run`. Повторное сканирование: 0 скриптов. |

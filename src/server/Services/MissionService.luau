@@ -59,6 +59,7 @@ type State = {
 
 local current: State? = nil
 local objects: Folder? = nil
+local finalePos: Vector3? = nil -- финал акта 1: вход в бункер (MissionService.beginFinale)
 local rng = Random.new()
 local installedSites: { [number]: { instances: { Instance }, shop: Vector3?, vending: { string } } } = {}
 local suppliedSites: { [number]: { Instance } } = {}
@@ -1055,6 +1056,7 @@ local function leaveMetro()
 end
 
 function MissionService.finish()
+	finalePos = nil
 	leaveMetro()
 	BaseBattleService.finish()
 	ConvoyService.finish()
@@ -1069,6 +1071,45 @@ function MissionService.finish()
 	ZombieService.setAliveCap(nil)
 	ZombieService.setStreamMode(false)
 	setStatus("", "", "")
+end
+
+-- Финал акта 1: день 20, миссия «зайти в бункер». Маяк над входом (Workspace.Bunker.BunkerEntrance), радиус — Config.Finale.Radius. Возвращает точку входа
+function MissionService.beginFinale(): Vector3?
+	MissionService.finish()
+	local bunker = workspace:FindFirstChild("Bunker")
+	local entrance = bunker and bunker:FindFirstChild("BunkerEntrance")
+	if not entrance or not entrance:IsA("Model") then
+		warn("[MissionService] нет Workspace.Bunker.BunkerEntrance — финал без бункера")
+		return nil
+	end
+	local cf = entrance:GetBoundingBox()
+	local g = groundAt(cf.Position.X, cf.Position.Z)
+	local pos = if g then g else Vector3.new(cf.Position.X, 0.5, cf.Position.Z)
+	finalePos = pos
+	objects = Instance.new("Folder")
+	objects.Name = "MissionObjects"
+	objects.Parent = workspace
+	makeBeacon(pos, "Бункер", Config.PlaceBeacon.Color, Config.Finale.Radius)
+	setStatus("Финал: бункер", "Босс повержен. Зайдите в бункер всей командой", "finale")
+	return pos
+end
+
+-- Все живые игроки у входа в бункер (хотя бы один жив)
+function MissionService.finaleReady(): boolean
+	local pos = finalePos
+	if not pos then
+		return false
+	end
+	local ups = upPositions()
+	if #ups == 0 then
+		return false
+	end
+	for _, p in ups do
+		if flatDist(p, pos) > Config.Finale.Radius or math.abs(p.Y - pos.Y) > 30 then
+			return false
+		end
+	end
+	return true
 end
 
 -- Рассвет: команда возвращается к магазину
