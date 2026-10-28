@@ -66,7 +66,21 @@ function BossBarController.start()
 	amount.TextStrokeTransparency = 0.5
 	amount.Parent = back
 
+	-- вторая фаза финального босса: подсказка под полоской
+	local hint = Instance.new("TextLabel")
+	hint.Position = UDim2.fromOffset(0, 42)
+	hint.Size = UDim2.new(1, 0, 0, 18)
+	hint.BackgroundTransparency = 1
+	hint.Font = Enum.Font.GothamBold
+	hint.TextSize = 14
+	hint.TextColor3 = Color3.fromRGB(190, 150, 255)
+	hint.TextStrokeTransparency = 0.4
+	hint.Text = "Неуязвим к огнестрелу — бейте холодным оружием"
+	hint.Visible = false
+	hint.Parent = frame
+
 	local function refresh()
+		hint.Visible = ReplicatedStorage:GetAttribute("BossImmune") == true
 		local maxHp = ReplicatedStorage:GetAttribute("BossMaxHp")
 		local hp = ReplicatedStorage:GetAttribute("BossHp")
 		if typeof(maxHp) ~= "number" or typeof(hp) ~= "number" or maxHp <= 0 then
@@ -80,7 +94,7 @@ function BossBarController.start()
 		TweenService:Create(fill, TweenInfo.new(0.15), { Size = UDim2.fromScale(k, 1) }):Play()
 		amount.Text = string.format("%d / %d", math.ceil(hp), math.floor(maxHp))
 	end
-	for _, n in { "BossName", "BossHp", "BossMaxHp" } do
+	for _, n in { "BossName", "BossHp", "BossMaxHp", "BossImmune" } do
 		ReplicatedStorage:GetAttributeChangedSignal(n):Connect(refresh)
 	end
 	refresh()

@@ -27,6 +27,7 @@ export type Ctx = {
 	spawnAt: (typeId: string, pos: Vector3) -> any?, -- зомби по месту (вне очереди и лимита), nil — не вышло
 	thrownAlive: () -> number, -- сколько брошенных ползунов живы
 	damageMult: () -> number, -- множитель урона нынешней волны
+	clonesAlive: () -> number, -- сколько теней финального босса живы
 	endAct: (z: any) -> (), -- закончить атаку босса (чистит зоны и вызывает cancel)
 }
 local ctx: Ctx
@@ -35,7 +36,7 @@ local ctx: Ctx
 type Hazard = { step: (now: number) -> boolean, cleanup: () -> () }
 local hazards: { Hazard } = {}
 
-local KINDS = { "slam", "crawlers", "charge", "swing" }
+local KINDS = { "slam", "crawlers", "charge", "swing", "sea", "comets", "clones", "beam", "slash" }
 local rng = Random.new()
 
 function BossAI.init(c: Ctx)
@@ -93,12 +94,23 @@ function BossAI.ready(z: any, now: number, dist: number, los: boolean): { string
 			local ok = true
 			if kind == "crawlers" then
 				ok = los and ctx.thrownAlive() < d.maxAlive
-			elseif kind == "charge" or kind == "swing" then
+			elseif kind == "charge" or kind == "swing" or kind == "beam" then
 				ok = los
+			elseif kind == "clones" then
+				ok = z.model:GetAttribute("Clone") ~= true and ctx.clonesAlive() == 0 -- тени не зовут новых; новые — когда прежние погибли
+			elseif kind == "slash" then
+				ok = not z.phase2 -- во второй фазе обычных ударов нет, только способности
 			end
 			if ok then
 				table.insert(list, kind)
 			end
+		end
+	end
+	-- обычный порез не должен забивать способности: если готова любая другая, порез выпадает из выбора в 70% случаев
+	if #list > 1 then
+		local i = table.find(list, "slash")
+		if i and rng:NextNumber() < 0.7 then
+			table.remove(list, i)
 		end
 	end
 	return list
@@ -598,6 +610,524 @@ local function stepSwing(z: any, act: any, now: number)
 	end
 end
 
+-- Финальный босс «Страж бункера» (Config.Zombies.BossFinal.attacks) ------------------------------------------------------------
+--   sea    — море тьмы: три волны тьмы одна за другой с паузой gap (1 с), низкие и во всю ширину — уклониться можно только прыжком
+--   comets — комета тьмы: поднимает руки к небу и вызывает серию из count комет; каждая появляется над случайным игроком, висит, затем падает в то место,
+--            где игрок стоял (не преследует), на всю жизнь кометы 3–4 с
+--   clones — раздвоение: 3 прозрачные тени босса (с 1/hpDivisor его здоровья, те же способности, кроме нового раздвоения) «восстают» из земли
+--   beam   — луч тьмы: 5 с преследует одного игрока (его нужно убегать)
+--   slash  — обычная атака: вертикальный, горизонтальный или диагональный взмах рукой — тёмный порез летит вперёд (первая фаза)
+-- Вторая фаза (ZombieService): без обычных ударов, только способности, неуязвим к огнестрелу (бить только холодным).
+
+local DARK = Color3.fromRGB(12, 6, 22)
+local VIOLET = Color3.fromRGB(150, 90, 255)
+
+local function glow(p: Part, range: number)
+	local l = Instance.new("PointLight")
+	l.Color = VIOLET
+	l.Range = range
+	l.Brightness = 1.2
+	l.Shadows = false
+	l.Parent = p
+end
+
+local function hurt(player: Player, amount: number)
+	PlayerService.damage(player, amount * ctx.damageMult()) -- кувырок (неуязвимость) отменяет урон внутри damage
+end
+
+-- Тёмное кольцо удара: расширяется и гаснет
+local function ringBurst(center: Vector3, radius: number)
+	local ring = part("BossDarkRing", Vector3.new(0.5, 2, 2), CFrame.new(center + Vector3.new(0, 0.5, 0)) * CFrame.Angles(0, 0, math.rad(90)), DARK, Enum.Material.SmoothPlastic, 0.2)
+	ring.Shape = Enum.PartType.Cylinder
+	local tw = TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.5, radius * 2, radius * 2), Transparency = 1 })
+	tw:Play()
+	tw.Completed:Once(function()
+		ring:Destroy()
+	end)
+end
+
+-- 1. Море тьмы ---------------------------------------------------------------------------------------------------------------
+
+local function launchSea(z: any, dir: Vector3, d: Config.BossSea)
+	local from = z.root.Position + dir * (3 + z.def.scale)
+	local g = groundPoint(from)
+	local length = math.min(d.length, math.max(6, clearLength(Vector3.new(from.X, g.Y, from.Z), dir, d.length + 2) - 1))
+	local center = Vector3.new(from.X, g.Y + d.height / 2, from.Z)
+	local wave = part("BossSea", Vector3.new(d.width, d.height, 2.5), CFrame.lookAt(center, center + dir), DARK, Enum.Material.SmoothPlastic, 0.2)
+	glow(wave, 16)
+	local flight = length / d.speed
+	TweenService:Create(wave, TweenInfo.new(flight, Enum.EasingStyle.Linear), { CFrame = CFrame.lookAt(center + dir * length, center + dir * (length + 1)) }):Play()
+	local right = Vector3.new(-dir.Z, 0, dir.X)
+	local started = os.clock()
+	local prevF = 0
+	local hit: { [Player]: boolean } = {}
+	local fading = false
+	table.insert(hazards, {
+		step = function(now: number): boolean
+			if not wave.Parent then
+				return false
+			end
+			if fading then
+				return now - started < 0.45
+			end
+			-- ИИ тикает раз в 0,2 с, а волна идёт до 8 студов за тик: проверяем отрезок пути, а не одну точку
+			local curF = (wave.Position - center):Dot(dir)
+			for _, player in PlayerService.upPlayers() do
+				local r = rootOf(player)
+				if r and not hit[player] then
+					local rel = r.Position - center
+					local f, lat = rel:Dot(dir), rel:Dot(right)
+					-- прыжок: ноги выше гребня волны — не задело (стоя корень на ~3 над землёй, гребень — d.height)
+					if f >= prevF - 1.5 and f <= curF + 1.5 and math.abs(lat) <= d.width / 2 and r.Position.Y - g.Y < d.height + 1 then
+						hit[player] = true
+						hurt(player, d.damage)
+					end
+				end
+			end
+			prevF = curF
+			if now - started >= flight then
+				fading = true
+				started = now
+				TweenService:Create(wave, TweenInfo.new(0.4), { Transparency = 1 }):Play()
+			end
+			return true
+		end,
+		cleanup = function()
+			wave:Destroy()
+		end,
+	})
+end
+
+local function beginSea(z: any, player: Player, targetRoot: BasePart, now: number): boolean
+	local d = (z.def.attacks :: any).sea :: Config.BossSea
+	local dir = flatDir(z.root.Position, targetRoot.Position)
+	newAct(z, "sea", now, d.windup, player, { dir = dir, strip = makeStrip(d.width), launched = 0, nextAt = 0 })
+	z.nextAtk.sea = now + d.cooldown
+	z.humanoid:MoveTo(z.root.Position)
+	ctx.setEyes(z, true)
+	ctx.crouchPose(z, 0.5, d.windup * 0.6)
+	ctx.armPose(z, 160, d.windup * 0.8)
+	return true
+end
+
+local function stepSea(z: any, act: any, now: number)
+	local d = (z.def.attacks :: any).sea :: Config.BossSea
+	local data = act.data
+	z.humanoid:MoveTo(z.root.Position)
+	if act.phase == "wind" then
+		if now < act.endAt - 0.3 then
+			local r = rootOf(act.target)
+			if r and PlayerService.isUp(act.target) then
+				data.dir = flatDir(z.root.Position, r.Position)
+			end
+		else
+			data.strip.Transparency = 0.3
+		end
+		face(z, data.dir)
+		placeStrip(data.strip, z.root.Position + data.dir * (3 + z.def.scale), data.dir, d.length)
+		if now >= act.endAt then
+			data.strip:Destroy()
+			data.strip = nil
+			act.phase = "waves"
+			data.nextAt = now
+			ctx.armPose(z, -20, 0.12)
+			ctx.crouchPose(z, 0.2, 0.2)
+		end
+	elseif act.phase == "waves" then
+		if now >= data.nextAt then
+			launchSea(z, data.dir, d)
+			data.launched += 1
+			data.nextAt = now + d.gap
+			z.model:SetAttribute("SwingAt", os.clock())
+			if data.launched >= d.waves then
+				act.phase = "recover"
+				act.endAt = now + 0.9
+			end
+		end
+	elseif now >= act.endAt then
+		ctx.armPose(z, 0, 0.4)
+		ctx.crouchPose(z, 0, 0.4)
+		ctx.setEyes(z, false)
+		z.lastAttack = now
+		ctx.endAct(z)
+	end
+end
+
+-- 2. Комета тьмы ---------------------------------------------------------------------------------------------------------------
+
+local function spawnComet(d: Config.BossComets, victim: Player)
+	local r = rootOf(victim)
+	if not r then
+		return
+	end
+	local spot = groundPoint(r.Position) -- кометa падает туда, где игрок стоял сейчас, и не преследует
+	local hover = d.hover + rng:NextNumber() -- вся жизнь кометы: 0,4 + hover + fall = 3–4 с
+	local zone = part("CometZone", Vector3.new(0.15, d.radius * 2, d.radius * 2), CFrame.new(spot + Vector3.new(0, 0.2, 0)) * CFrame.Angles(0, 0, math.rad(90)), Color3.fromRGB(150, 40, 200), Enum.Material.Neon, 0.65)
+	zone.Shape = Enum.PartType.Cylinder
+	local ball = part("BossComet", Vector3.new(4.5, 4.5, 4.5), CFrame.new(spot + Vector3.new(0, d.height + 14, 0)), Color3.fromRGB(60, 20, 110), Enum.Material.Neon, 0.1)
+	ball.Shape = Enum.PartType.Ball
+	glow(ball, 18)
+	TweenService:Create(ball, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = CFrame.new(spot + Vector3.new(0, d.height, 0)) }):Play()
+	local born = os.clock()
+	local falling = false
+	table.insert(hazards, {
+		step = function(now: number): boolean
+			local t = now - born
+			if not falling and t >= 0.4 + hover then
+				falling = true
+				TweenService:Create(ball, TweenInfo.new(d.fall, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { CFrame = CFrame.new(spot + Vector3.new(0, 2, 0)) }):Play()
+			elseif falling and t >= 0.4 + hover + d.fall then
+				for _, p in PlayerService.upPlayers() do
+					local pr = rootOf(p)
+					if pr and Vector3.new(pr.Position.X - spot.X, 0, pr.Position.Z - spot.Z).Magnitude <= d.radius and math.abs(pr.Position.Y - spot.Y) < 8 then
+						hurt(p, d.damage)
+					end
+				end
+				ringBurst(spot, d.radius)
+				return false
+			end
+			return true
+		end,
+		cleanup = function()
+			zone:Destroy()
+			ball:Destroy()
+		end,
+	})
+end
+
+local function beginComets(z: any, player: Player, _targetRoot: BasePart, now: number): boolean
+	local d = (z.def.attacks :: any).comets :: Config.BossComets
+	newAct(z, "comets", now, d.windup, player, { spawned = 0, nextAt = 0 })
+	z.nextAtk.comets = now + d.cooldown
+	z.humanoid:MoveTo(z.root.Position)
+	ctx.setEyes(z, true)
+	ctx.armPose(z, 178, d.windup * 0.8) -- руки к небу
+	return true
+end
+
+local function stepComets(z: any, act: any, now: number)
+	local d = (z.def.attacks :: any).comets :: Config.BossComets
+	local data = act.data
+	z.humanoid:MoveTo(z.root.Position)
+	if act.phase == "wind" then
+		if now >= act.endAt then
+			act.phase = "rain"
+			data.nextAt = now
+		end
+	elseif act.phase == "rain" then
+		while data.spawned < d.count and now >= data.nextAt do
+			local ups = PlayerService.upPlayers()
+			if #ups > 0 then
+				spawnComet(d, ups[rng:NextInteger(1, #ups)])
+			end
+			data.spawned += 1
+			data.nextAt += d.interval
+		end
+		if data.spawned >= d.count then
+			act.phase = "recover"
+			act.endAt = now + 1
+		end
+	elseif now >= act.endAt then
+		ctx.armPose(z, 0, 0.5)
+		ctx.setEyes(z, false)
+		z.lastAttack = now
+		ctx.endAct(z)
+	end
+end
+
+-- 3. Раздвоение ----------------------------------------------------------------------------------------------------------------
+
+local function beginClones(z: any, player: Player, _targetRoot: BasePart, now: number): boolean
+	local d = (z.def.attacks :: any).clones :: Config.BossClones
+	local spots: { Vector3 } = {}
+	local discs: { Part } = {}
+	local base = rng:NextNumber() * math.pi * 2
+	for i = 1, d.count do
+		local a = base + (i - 1) / d.count * math.pi * 2
+		local p = groundPoint(z.root.Position + Vector3.new(math.cos(a) * 13, 0, math.sin(a) * 13))
+		table.insert(spots, p)
+		local disc = part("CloneShadow", Vector3.new(0.2, 9, 9), CFrame.new(p + Vector3.new(0, 0.2, 0)) * CFrame.Angles(0, 0, math.rad(90)), DARK, Enum.Material.SmoothPlastic, 0.6)
+		disc.Shape = Enum.PartType.Cylinder
+		table.insert(discs, disc)
+	end
+	newAct(z, "clones", now, d.windup, player, { spots = spots, discs = discs })
+	z.nextAtk.clones = now + d.cooldown
+	z.humanoid:MoveTo(z.root.Position)
+	ctx.setEyes(z, true)
+	ctx.armPose(z, 100, d.windup * 0.7) -- руки в стороны: зовёт тени
+	ctx.crouchPose(z, 0.3, d.windup * 0.6)
+	return true
+end
+
+local function riseClone(z: any, c: any, spot: Vector3, d: Config.BossClones)
+	local final = c.root.CFrame
+	c.model:SetAttribute("Clone", true)
+	c.maxHp = math.max(1, math.floor(z.maxHp / d.hpDivisor))
+	c.hp = c.maxHp
+	c.model:SetAttribute("Hp", c.hp)
+	c.model:SetAttribute("MaxHp", c.maxHp)
+	c.vaultLockUntil = os.clock() + d.rise + 0.3
+	c.root.Anchored = true
+	c.root.CFrame = final - Vector3.new(0, 7, 0)
+	-- тень «восстаёт»: из чёрного силуэта под землёй поднимается и становится полупрозрачной копией
+	for _, p in c.model:GetDescendants() do
+		if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+			p.Transparency = 1
+			TweenService:Create(p, TweenInfo.new(d.rise, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = d.alpha }):Play()
+		end
+	end
+	local gen = c.gen
+	local tween = TweenService:Create(c.root, TweenInfo.new(d.rise, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = final })
+	c.vaultTween = tween
+	tween.Completed:Once(function(state: Enum.PlaybackState)
+		if c.vaultTween ~= tween or state ~= Enum.PlaybackState.Completed or c.gen ~= gen then
+			return
+		end
+		c.vaultTween = nil
+		c.root.Anchored = false
+	end)
+	tween:Play()
+	ringBurst(spot, 7)
+end
+
+local function stepClones(z: any, act: any, now: number)
+	local d = (z.def.attacks :: any).clones :: Config.BossClones
+	local data = act.data
+	z.humanoid:MoveTo(z.root.Position)
+	if act.phase == "wind" then
+		if now >= act.endAt then
+			for _, spot in data.spots do
+				local c = ctx.spawnAt(z.def.id, spot + Vector3.new(0, 4, 0))
+				if c then
+					riseClone(z, c, spot, d)
+				end
+			end
+			for _, disc in data.discs do
+				disc:Destroy()
+			end
+			table.clear(data.discs)
+			act.phase = "recover"
+			act.endAt = now + 0.8
+			z.model:SetAttribute("SwingAt", os.clock())
+		end
+	elseif now >= act.endAt then
+		ctx.armPose(z, 0, 0.4)
+		ctx.crouchPose(z, 0, 0.4)
+		ctx.setEyes(z, false)
+		z.lastAttack = now
+		ctx.endAct(z)
+	end
+end
+
+-- 4. Луч тьмы ------------------------------------------------------------------------------------------------------------------
+
+local function beginBeam(z: any, player: Player, targetRoot: BasePart, now: number): boolean
+	local d = (z.def.attacks :: any).beam :: Config.BossBeam
+	newAct(z, "beam", now, d.windup, player, { strip = makeStrip(0.8), beam = nil, disc = nil, pos = Vector3.zero, last = now, lastDmg = 0, endsAt = 0 })
+	z.nextAtk.beam = now + d.cooldown
+	z.humanoid:MoveTo(z.root.Position)
+	ctx.setEyes(z, true)
+	ctx.armPose(z, 95, d.windup * 0.8) -- обе руки вперёд: наводит
+	return true
+end
+
+local function beamOrigin(z: any): Vector3
+	return z.root.Position + Vector3.new(0, 1.5, 0)
+end
+
+local function endBeam(z: any, act: any, now: number)
+	local data = act.data
+	for _, k in { "beam", "disc", "strip" } do
+		local p = data[k] :: Part?
+		if p then
+			p:Destroy()
+			data[k] = nil
+		end
+	end
+	ctx.armPose(z, 0, 0.5)
+	act.phase = "recover"
+	act.endAt = now + 0.8
+	z.lastAttack = now
+end
+
+local function stepBeam(z: any, act: any, now: number)
+	local d = (z.def.attacks :: any).beam :: Config.BossBeam
+	local data = act.data
+	z.humanoid:MoveTo(z.root.Position)
+	local tr = rootOf(act.target)
+	local alive = tr ~= nil and PlayerService.isUp(act.target)
+	if act.phase == "wind" then
+		if alive then
+			local dir = flatDir(z.root.Position, (tr :: BasePart).Position)
+			face(z, dir)
+			placeStrip(data.strip, beamOrigin(z), dir, math.min(d.range, (Vector3.new((tr :: BasePart).Position.X, 0, (tr :: BasePart).Position.Z) - Vector3.new(z.root.Position.X, 0, z.root.Position.Z)).Magnitude))
+		end
+		if now >= act.endAt then
+			data.strip:Destroy()
+			data.strip = nil
+			local start = if alive then groundPoint((tr :: BasePart).Position) else groundPoint(z.root.Position + z.root.CFrame.LookVector * 20)
+			data.pos = start
+			data.last = now
+			data.lastDmg = now
+			data.endsAt = now + d.duration
+			local beam = part("BossBeam", Vector3.new(1, 1, 1), CFrame.new(start), Color3.fromRGB(110, 40, 200), Enum.Material.Neon, 0.15)
+			glow(beam, 14)
+			data.beam = beam
+			local disc = part("BossBeamSpot", Vector3.new(0.2, d.radius * 2, d.radius * 2), CFrame.new(start + Vector3.new(0, 0.25, 0)) * CFrame.Angles(0, 0, math.rad(90)), Color3.fromRGB(150, 50, 220), Enum.Material.Neon, 0.4)
+			disc.Shape = Enum.PartType.Cylinder
+			data.disc = disc
+			act.phase = "beam"
+			z.model:SetAttribute("SwingAt", os.clock())
+		end
+	elseif act.phase == "beam" then
+		local dt = math.max(0, now - data.last)
+		data.last = now
+		if alive then
+			local goal = groundPoint((tr :: BasePart).Position)
+			local delta = Vector3.new(goal.X - data.pos.X, 0, goal.Z - data.pos.Z)
+			local step = math.min(delta.Magnitude, d.chaseSpeed * dt) -- догоняет игрока медленнее его бега: убегать можно
+			if delta.Magnitude > 0.01 then
+				data.pos = Vector3.new(data.pos.X, goal.Y, data.pos.Z) + delta.Unit * step
+			end
+		end
+		face(z, flatDir(z.root.Position, data.pos))
+		local from = beamOrigin(z)
+		local tip = data.pos + Vector3.new(0, 0.8, 0)
+		local len = (tip - from).Magnitude
+		local beam = data.beam :: Part
+		TweenService:Create(beam, TweenInfo.new(0.2, Enum.EasingStyle.Linear), { Size = Vector3.new(0.9, 0.9, len), CFrame = CFrame.lookAt(from, tip) * CFrame.new(0, 0, -len / 2) }):Play()
+		TweenService:Create(data.disc :: Part, TweenInfo.new(0.2, Enum.EasingStyle.Linear), { CFrame = CFrame.new(data.pos + Vector3.new(0, 0.25, 0)) * CFrame.Angles(0, 0, math.rad(90)) }):Play()
+		if now - data.lastDmg >= d.tick then
+			data.lastDmg = now
+			for _, p in PlayerService.upPlayers() do
+				local pr = rootOf(p)
+				if pr and Vector3.new(pr.Position.X - data.pos.X, 0, pr.Position.Z - data.pos.Z).Magnitude <= d.radius and math.abs(pr.Position.Y - data.pos.Y) < 6 then
+					hurt(p, d.damage)
+				end
+			end
+		end
+		if now >= data.endsAt then
+			endBeam(z, act, now)
+		end
+	elseif now >= act.endAt then
+		ctx.setEyes(z, false)
+		ctx.endAct(z)
+	end
+end
+
+-- 6. Обычная атака: тёмный порез ----------------------------------------------------------------------------------------------
+
+local STYLES = { "v", "h", "d" } -- вертикальный, горизонтальный, диагональный
+
+local function launchCut(z: any, dir: Vector3, style: string, d: Config.BossSlash)
+	local from = z.root.Position + dir * (2 + z.def.scale)
+	local g = groundPoint(from)
+	local y = g.Y + 4
+	local origin = Vector3.new(from.X, y, from.Z)
+	local length = math.min(d.length, math.max(3, clearLength(Vector3.new(origin.X, g.Y, origin.Z), dir, d.length + 1) - 0.5))
+	local size = if style == "v" then Vector3.new(0.35, d.size, 2.2) else Vector3.new(d.size, 0.35, 2.2)
+	local tilt = if style == "d" then math.rad(45) else 0
+	local cut = part("BossCut", size, CFrame.lookAt(origin, origin + dir) * CFrame.Angles(0, 0, tilt), DARK, Enum.Material.SmoothPlastic, 0.1)
+	glow(cut, 10)
+	local flight = length / d.speed
+	TweenService:Create(cut, TweenInfo.new(flight, Enum.EasingStyle.Linear), { CFrame = CFrame.lookAt(origin + dir * length, origin + dir * (length + 1)) * CFrame.Angles(0, 0, tilt) }):Play()
+	local right = Vector3.new(-dir.Z, 0, dir.X)
+	-- половина охвата: по горизонтали / по вертикали (у вертикального пореза узкий и высокий, у горизонтального широкий и плоский, у диагонального — оба)
+	local halfLat = if style == "v" then 1.6 else d.size / 2
+	local halfVert = if style == "v" then d.size / 2 elseif style == "h" then 1.8 else d.size * 0.35
+	local started = os.clock()
+	local prevF = 0
+	local hit: { [Player]: boolean } = {}
+	local fading = false
+	table.insert(hazards, {
+		step = function(now: number): boolean
+			if not cut.Parent then
+				return false
+			end
+			if fading then
+				return now - started < 0.25
+			end
+			local curF = (cut.Position - origin):Dot(dir)
+			for _, player in PlayerService.upPlayers() do
+				local r = rootOf(player)
+				if r and not hit[player] then
+					local rel = r.Position - origin
+					local f, lat = rel:Dot(dir), rel:Dot(right)
+					if f >= prevF - 1.5 and f <= curF + 1.5 and math.abs(lat) <= halfLat + 1 and math.abs(r.Position.Y - y) <= halfVert + 1 then
+						hit[player] = true
+						hurt(player, d.damage)
+					end
+				end
+			end
+			prevF = curF
+			if now - started >= flight then
+				fading = true
+				started = now
+				TweenService:Create(cut, TweenInfo.new(0.2), { Transparency = 1 }):Play()
+			end
+			return true
+		end,
+		cleanup = function()
+			cut:Destroy()
+		end,
+	})
+end
+
+local function beginSlash(z: any, player: Player, targetRoot: BasePart, now: number): boolean
+	local d = (z.def.attacks :: any).slash :: Config.BossSlash
+	local dir = flatDir(z.root.Position, targetRoot.Position)
+	local style = STYLES[rng:NextInteger(1, #STYLES)]
+	newAct(z, "slash", now, d.windup, player, { dir = dir, style = style })
+	z.nextAtk.slash = now + d.cooldown
+	z.humanoid:MoveTo(z.root.Position)
+	ctx.setEyes(z, true)
+	-- замах рукой, как мечом: сверху вниз / сбоку / наискось (поза ломается на ударе)
+	if style == "v" then
+		ctx.armPose(z, 165, d.windup * 0.9)
+	elseif style == "h" then
+		twist(z, 60, d.windup * 0.9)
+		ctx.armPose(z, 90, d.windup * 0.9)
+	else
+		twist(z, 40, d.windup * 0.9)
+		ctx.armPose(z, 135, d.windup * 0.9)
+	end
+	return true
+end
+
+local function stepSlash(z: any, act: any, now: number)
+	local d = (z.def.attacks :: any).slash :: Config.BossSlash
+	local data = act.data
+	z.humanoid:MoveTo(z.root.Position)
+	if act.phase == "wind" then
+		local r = rootOf(act.target)
+		if r and PlayerService.isUp(act.target) and now < act.endAt - 0.15 then
+			data.dir = flatDir(z.root.Position, r.Position)
+		end
+		face(z, data.dir)
+		if now >= act.endAt then
+			-- удар: рука идёт вниз/в сторону, в воздухе остаётся порез
+			if data.style == "v" then
+				ctx.armPose(z, -15, 0.1)
+			elseif data.style == "h" then
+				twist(z, -60, 0.1)
+			else
+				twist(z, -40, 0.1)
+				ctx.armPose(z, 20, 0.1)
+			end
+			launchCut(z, data.dir, data.style, d)
+			z.model:SetAttribute("SwingAt", os.clock())
+			z.lastAttack = now
+			act.phase = "recover"
+			act.endAt = now + 0.35
+		end
+	elseif now >= act.endAt then
+		twist(z, 0, 0.25)
+		ctx.armPose(z, 0, 0.25)
+		ctx.setEyes(z, false)
+		ctx.endAct(z)
+	end
+end
+
 -- Вход ---------------------------------------------------------------------------------------------------------------------
 
 -- Начать атаку kind; false — не вышло (босс остаётся свободным)
@@ -610,6 +1140,16 @@ function BossAI.begin(z: any, kind: string, player: Player, targetRoot: BasePart
 		return beginCharge(z, player, targetRoot, now)
 	elseif kind == "swing" then
 		return beginSwing(z, player, targetRoot, now)
+	elseif kind == "sea" then
+		return beginSea(z, player, targetRoot, now)
+	elseif kind == "comets" then
+		return beginComets(z, player, targetRoot, now)
+	elseif kind == "clones" then
+		return beginClones(z, player, targetRoot, now)
+	elseif kind == "beam" then
+		return beginBeam(z, player, targetRoot, now)
+	elseif kind == "slash" then
+		return beginSlash(z, player, targetRoot, now)
 	end
 	return false
 end
@@ -624,6 +1164,16 @@ function BossAI.step(z: any, act: any, now: number)
 		stepCharge(z, act, now)
 	elseif kind == "swing" then
 		stepSwing(z, act, now)
+	elseif kind == "sea" then
+		stepSea(z, act, now)
+	elseif kind == "comets" then
+		stepComets(z, act, now)
+	elseif kind == "clones" then
+		stepClones(z, act, now)
+	elseif kind == "beam" then
+		stepBeam(z, act, now)
+	elseif kind == "slash" then
+		stepSlash(z, act, now)
 	end
 end
 
@@ -633,9 +1183,18 @@ function BossAI.cancel(z: any, act: any)
 	if not data then
 		return
 	end
-	local strip = data.strip :: Part?
-	if strip then
-		strip:Destroy()
+	for _, k in { "strip", "beam", "disc" } do
+		local p = data[k] :: Part?
+		if p then
+			p:Destroy()
+			data[k] = nil
+		end
+	end
+	if data.discs then
+		for _, disc in data.discs do
+			disc:Destroy()
+		end
+		table.clear(data.discs)
 	end
 	releaseCrawler(data)
 	if act.kind == "charge" then

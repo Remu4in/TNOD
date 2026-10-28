@@ -70,6 +70,7 @@ type Zombie = {
 	bossAct: BossAct?, -- идущая атака босса (прыжок или бросок): босс стоит и не думает, ИИ ведёт stepBossAct
 	nextJump: number, -- когда босс снова может прыгнуть
 	nextRock: number, -- когда босс снова может бросить обломок
+	phase2: boolean, -- финальный босс во второй фазе: только способности, неуязвим к огнестрелу (принимает лишь удары Impact.melee)
 	nextAtk: { [string]: number }, -- когда можно снова каждую атаку из def.attacks (BossAI): slam, crawlers, charge, swing
 }
 
@@ -467,6 +468,7 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 				d.CanCollide = false -- аксессуары не мешают
 			end
 			d:SetAttribute("BaseColor", d.Color) -- цвет «в покое» для подсветки замаха
+			d:SetAttribute("BaseTransparency", d.Transparency) -- прозрачность «в покое»: тени финального босса возвращаются к ней при повторном использовании модели
 			if rigDef.tint and d.Name ~= "HumanoidRootPart" and d.Name ~= "Handle" then
 				d.Color = rigDef.tint
 				d:SetAttribute("BaseColor", rigDef.tint)
@@ -708,6 +710,7 @@ local function acquire(typeId: string): Zombie
 		nextJump = 0,
 		nextRock = 0,
 		nextAtk = {},
+		phase2 = false,
 	}
 end
 
@@ -1229,8 +1232,10 @@ end
 -- Полоска здоровья босса сверху экрана (клиент: BossBarController): атрибуты ReplicatedStorage BossName, BossHp, BossMaxHp (боссов несколько — сумма)
 local function refreshBossBar()
 	local hp, maxHp, name = 0, 0, ""
+	local immune = false
 	for _, a in active do
-		if a.alive and WaveMath.isBossType(a.def.id) then
+		if a.alive and WaveMath.isBossType(a.def.id) and a.model:GetAttribute("Clone") ~= true then -- тени финального босса в полоску не входят
+			immune = immune or a.phase2
 			hp += math.max(0, a.hp)
 			maxHp += a.maxHp
 			if name == "" then
@@ -1242,6 +1247,7 @@ local function refreshBossBar()
 	rs:SetAttribute("BossName", if maxHp > 0 then name else nil)
 	rs:SetAttribute("BossHp", if maxHp > 0 then hp else nil)
 	rs:SetAttribute("BossMaxHp", if maxHp > 0 then maxHp else nil)
+	rs:SetAttribute("BossImmune", if immune then true else nil) -- вторая фаза: бить только холодным оружием
 end
 
 local function release(z: Zombie)
@@ -1491,6 +1497,20 @@ end
 local function spawnOne(typeId: string, atPos: Vector3?): Zombie
 	local z = acquire(typeId)
 	z.model:SetAttribute("Thrown", nil) -- метка брошенного ползуна (BossAI) не переходит в следующую жизнь модели из пула
+	if z.model:GetAttribute("Clone") then
+		-- модель была тенью финального босса: возвращаем прозрачность и снимаем метку
+		z.model:SetAttribute("Clone", nil)
+		for _, d in z.model:GetDescendants() do
+			if d:IsA("BasePart") then
+				local base = d:GetAttribute("BaseTransparency")
+				if typeof(base) == "number" then
+					d.Transparency = base
+				end
+			end
+		end
+	end
+	z.phase2 = false
+	z.model:SetAttribute("Phase2", nil)
 	local spawnPos = atPos or pickSpawnPosition()
 	local rigMul = Config.ZombieRigHp[tostring(z.model:GetAttribute("RigAsset"))] or 1
 	z.maxHp = math.floor(z.def.hp * hpMultiplier * rigMul + 0.5)
@@ -1758,6 +1778,15 @@ BossAI.init({
 	end,
 	damageMult = function(): number
 		return damageMultiplier
+	end,
+	clonesAlive = function(): number
+		local n = 0
+		for _, w in active do
+			if w.alive and w.model:GetAttribute("Clone") == true then
+				n += 1
+			end
+		end
+		return n
 	end,
 	endAct = function(z: any)
 		endBossAct(z)
@@ -2111,7 +2140,8 @@ local function think(z: Zombie, now: number, dt: number)
 			z.nextSpecial = now + fl.cooldown
 			z.throwing = true
 			startWindup(z, player, now)
-		elseif dist <= reach and now - z.lastAttack >= z.def.attackCooldown then
+		elseif dist <= reach and now - z.lastAttack >= z.def.attackCooldown and not (z.def.attacks and (z.def.attacks :: any).slash) then
+			-- (у финального босса обычного удара нет: его заменяет порез в BossAI)
 			startWindup(z, player, now)
 		end
 	end
@@ -2252,6 +2282,7 @@ export type Impact = {
 	part: BasePart?, -- часть тела, в которую попали (для реакции: голова, корпус, рука, нога)
 	heavy: boolean?, -- тяжёлый удар (дробь, кувалда, топор): смерть с оторванными конечностями
 	power: number? , -- сила удара для анимации реакции (1 — обычная)
+	melee: boolean?, -- удар холодным оружием (по боссу во второй фазе проходит только он)
 }
 
 -- Урон по зомби (только сервер). Возвращает: нанесён ли урон, убит ли.
@@ -2260,8 +2291,27 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 	if not z or not z.alive then
 		return false, false
 	end
+	if z.phase2 and not (impact and impact.melee) then
+		return false, false -- вторая фаза финального босса: огнестрел, турели, проволока и машины не берут
+	end
 	z.hp -= amount
 	z.model:SetAttribute("Hp", math.max(0, z.hp))
+	local ph = z.def.phase2
+	if ph and not z.phase2 and z.hp > 0 and z.hp <= z.maxHp * ph.hpFraction and z.model:GetAttribute("Clone") ~= true then
+		-- вторая фаза: рёв (руки к небу), с этого момента только способности и неуязвимость к огнестрелу
+		z.phase2 = true
+		z.model:SetAttribute("Phase2", true)
+		refreshBossBar()
+		setEyes(z, true)
+		armPose(z, 175, 0.5)
+		local pg = z.poseGen
+		task.delay(1.6, function()
+			if z.alive and z.poseGen == pg and not z.bossAct then
+				armPose(z, 0, 0.5)
+			end
+		end)
+		game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Notify"):FireAllClients("Страж бункера вошёл во вторую фазу: огнестрел его не берёт — бейте холодным оружием!", 6)
+	end
 	if WaveMath.isBossType(z.def.id) then
 		refreshBossBar()
 	end
@@ -2295,7 +2345,20 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 		z.headKill = kind == "Head"
 		spawnCorpse(z, flat, kind, impact ~= nil and impact.heavy == true)
 		release(z)
-		if onKilled then
+		local isClone = z.model:GetAttribute("Clone") == true
+		if z.def.attacks and (z.def.attacks :: any).clones and not isClone then
+			-- настоящий босс убит: его тени рассыпаются
+			local shadows: { Zombie } = {}
+			for _, w in active do
+				if w.alive and w.model:GetAttribute("Clone") == true then
+					table.insert(shadows, w)
+				end
+			end
+			for _, w in shadows do
+				release(w)
+			end
+		end
+		if onKilled and not isClone then -- за тень наград и очков нет
 			(onKilled :: (Player?, Zombie) -> ())(attacker, z)
 		end
 		return true, true

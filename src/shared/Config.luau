@@ -80,7 +80,19 @@ export type BossSlam = { windup: number, cooldown: number, first: number, range:
 export type BossCrawlers = { windup: number, flight: number, cooldown: number, first: number, range: number, minRange: number, maxAlive: number }
 export type BossCharge = { windup: number, lockBefore: number, speed: number, distance: number, width: number, damage: number, recover: number, cooldown: number, first: number, range: number, minRange: number }
 export type BossSwing = { windup: number, cooldown: number, first: number, range: number, minRange: number, speed: number, length: number, width: number, damage: number }
-export type BossAttacks = { slam: BossSlam?, crawlers: BossCrawlers?, charge: BossCharge?, swing: BossSwing? }
+-- Финальный босс (BossAI): sea — море тьмы: waves волн шириной width и высотой height с паузой gap, идут speed студов/с на length студов, низкие — прыжком;
+-- comets — count комет (каждая за hover+0,4+fall ≈ 3–4 с, падает в точку, где игрок стоял), радиус radius, высота зависания height; clones — count теней с 1/hpDivisor
+-- здоровья, поднимаются rise с, прозрачность alpha; beam — луч duration с преследует игрока (скорость chaseSpeed, радиус radius, урон damage раз в tick);
+-- slash — обычный порез (вертикальный, горизонтальный или по диагонали) размером size, летит speed студов/с на length студов.
+export type BossSea = { windup: number, cooldown: number, first: number, range: number, minRange: number, waves: number, gap: number, speed: number, length: number, width: number, height: number, damage: number }
+export type BossComets = { windup: number, cooldown: number, first: number, range: number, minRange: number, count: number, interval: number, hover: number, fall: number, radius: number, damage: number, height: number }
+export type BossClones = { windup: number, cooldown: number, first: number, range: number, minRange: number, count: number, hpDivisor: number, rise: number, alpha: number }
+export type BossBeam = { windup: number, cooldown: number, first: number, range: number, minRange: number, duration: number, chaseSpeed: number, radius: number, damage: number, tick: number }
+export type BossSlash = { windup: number, cooldown: number, first: number, range: number, minRange: number, speed: number, length: number, size: number, damage: number }
+export type BossAttacks = {
+	slam: BossSlam?, crawlers: BossCrawlers?, charge: BossCharge?, swing: BossSwing?,
+	sea: BossSea?, comets: BossComets?, clones: BossClones?, beam: BossBeam?, slash: BossSlash?,
+}
 export type ZombieDef = {
 	id: string,
 	name: string,
@@ -99,7 +111,8 @@ export type ZombieDef = {
 	teleport: { cooldown: number, distance: number }?, -- тёмный: появляется рядом с игроком (не ближе distance)
 	jump: BossJump?, -- босс: мощный прыжок на ближайшего игрока
 	rock: BossRock?, -- босс: бросок куска земли по дуге
-	attacks: BossAttacks?, -- босс: атаки Services/BossAI (удар по земле, ползун, разбег, чёрный взмах)
+	attacks: BossAttacks?, -- босс: атаки Services/BossAI (удар по земле, ползун, разбег, чёрный взмах; у финального — море, кометы, тени, луч, порез)
+	phase2: { hpFraction: number }?, -- вторая фаза: при HP ≤ доли босс не бьёт обычно, только способности, и неуязвим к огнестрелу (нужно холодное оружие)
 }
 
 local Config = {}
@@ -887,17 +900,18 @@ local Zombies: { [string]: ZombieDef } = {
 				swing = { windup = 0.9, cooldown = 9, first = 5, range = 60, minRange = 5, speed = 60, length = 55, width = 9, damage = 45 },
 			},
 	},
-	-- Финальный босс (ночь/день 20, решение Руслана 2026-10-29: новая модель, ассет 5794917487). Набор атак пока собран из атак боссов 10 и 15 (черновик — боссу
-	-- нужны свои); числа — ориентир: сильнее Повелителя тёмных.
+	-- Финальный босс (ночь 20, решение Руслана 2026-10-29: новая модель, ассет 5794917487, свой набор механик). Фаза 1: порез + способности; фаза 2 (HP ≤ 50%):
+	-- только способности и неуязвимость к огнестрелу. Тени (clones) повторяют способности, кроме раздвоения, и в 20 раз слабее.
 	BossFinal = {
 		id = "BossFinal", name = "Страж бункера", hp = 6000, speed = 13, damage = 70, attackCooldown = 2.6, windup = 0.8, breakCooldown = 1.4,
 		reward = 5000, points = 1000, scale = 1.9, color = Color3.fromRGB(30, 24, 36), planksPerHit = 7,
-			jump = { windup = 3, flight = 0.8, cooldown = 11, range = 70, minRange = 8, radius = 14, damage = 80, first = 6, wave = { extra = 10, noSprint = 3 } },
-			rock = { windup = 1.5, flight = 1.3, cooldown = 9, range = 75, minRange = 14, radius = 7, damage = 35, first = 4, stun = 2 },
+			phase2 = { hpFraction = 0.5 },
 			attacks = {
-				slam = { windup = 1.3, cooldown = 10, first = 5, range = 40, minRange = 4, length = 42, width = 4, speed = 32, life = 4.5, slowMult = 0.4, slowSeconds = 3 },
-				charge = { windup = 2, lockBefore = 0.7, speed = 48, distance = 70, width = 5, damage = 70, recover = 1.4, cooldown = 14, first = 9, range = 80, minRange = 15 },
-				swing = { windup = 0.9, cooldown = 9, first = 5, range = 60, minRange = 5, speed = 60, length = 55, width = 9, damage = 45 },
+				sea = { windup = 1.3, cooldown = 15, first = 6, range = 90, minRange = 0, waves = 3, gap = 1, speed = 38, length = 80, width = 70, height = 3, damage = 40 },
+				comets = { windup = 1.6, cooldown = 26, first = 14, range = 140, minRange = 0, count = 20, interval = 0.35, hover = 2.1, fall = 0.8, radius = 6, damage = 45, height = 45 },
+				clones = { windup = 1.8, cooldown = 45, first = 16, range = 140, minRange = 0, count = 3, hpDivisor = 20, rise = 1.4, alpha = 0.6 },
+				beam = { windup = 1, cooldown = 20, first = 10, range = 110, minRange = 6, duration = 5, chaseSpeed = 17, radius = 3.5, damage = 14, tick = 0.25 },
+				slash = { windup = 0.55, cooldown = 2.2, first = 1, range = 16, minRange = 0, speed = 55, length = 32, size = 9, damage = 35 },
 			},
 	},
 }

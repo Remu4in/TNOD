@@ -544,6 +544,7 @@ local function onMelee(player: Player, direction: unknown)
 				push = def.knockback,
 				stagger = 0.35,
 				heavy = def.knockback >= 40,
+				melee = true, -- холодное оружие: единственное, что берёт финального босса во второй фазе
 			})
 			if applied then
 				totalDamage += def.damage
