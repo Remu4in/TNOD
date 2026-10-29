@@ -30,6 +30,7 @@ local WeaponService = require(script.Parent:WaitForChild("WeaponService"))
 local DebrisKit = require(script.Parent:WaitForChild("DebrisKit"))
 local BarricadeService = require(script.Parent:WaitForChild("BarricadeService"))
 local BaseBattleService = require(script.Parent:WaitForChild("BaseBattleService"))
+local BoneKit = require(script.Parent:WaitForChild("BoneKit"))
 
 local MissionService = {}
 
@@ -897,29 +898,10 @@ local function buildBonePile(state: State, index: number, x: number, z: number, 
 	end
 	local model = Instance.new("Model")
 	model.Name = "BonePile_" .. index
-	local function add(libName: string, scale: number, offset: Vector3, yaw: number)
-		local src = metroLib(libName)
-		if not src then
-			return
-		end
-		local c = src:Clone()
-		for _, d in c:GetDescendants() do
-			if d:IsA("BasePart") then
-				d.Anchored = true
-				d.CanCollide = false
-				d.CanQuery = false
-			end
-		end
-		c:ScaleTo(scale)
-		-- центр габарита (а не pivot) ставим на пол: у моделей костей pivot смещён, и кости «летали»
-		c:PivotTo(CFrame.new(c:GetPivot().Position) * CFrame.Angles(0, yaw, 0))
-		local bbox, size = c:GetBoundingBox()
-		c:PivotTo(c:GetPivot() + (floor + offset + Vector3.new(0, size.Y / 2, 0)) - bbox.Position)
-		c.Parent = model
-	end
-	add("C_HumanBones_106503979", 1, Vector3.zero, index * 1.3)
-	add("C_BonesAssortment_14047690299", 3, Vector3.new(4, 0, 2), index * 0.7)
-	add("C_Skull_5528640463", 2, Vector3.new(-3, 0, 2.5), index * 2.1)
+	BoneKit.cluster(model, "Bones", floor, 9000 + index * 17, 16, 3.6, function(bx: number, bz: number): number?
+		local p = metroFloor(bx, bz, floor.Y + 4)
+		return if p and math.abs(p.Y - floor.Y) < 2 then p.Y else nil
+	end)
 	local spot = Instance.new("Part")
 	spot.Name = "BoneSpot"
 	spot.Size = Vector3.new(4, 3, 4)
@@ -946,7 +928,7 @@ local function buildBonePile(state: State, index: number, x: number, z: number, 
 		prompt.Enabled = false
 		s.bones += 1
 		if s.bones >= Config.Metro.Bones then
-			notify("Костяной ключ собран! Откройте костяную дверь у выхода из метро", 6)
+			notify("Костяной ключ собран! Откройте костяную дверь на верхнем уровне пещеры", 6)
 		else
 			notify(string.format("Фрагмент костяного ключа (%d из %d)", s.bones, Config.Metro.Bones), 4)
 		end
@@ -959,22 +941,27 @@ end
 local function buildExitDoor(state: State, metro: Instance)
 	local marker = metro:FindFirstChild("Markers") and metro.Markers:FindFirstChild("Metro_Exit")
 	local src = metroLib("C_Door_Skeleton_122782716925668")
-	if not marker or not marker:IsA("BasePart") or not src then
+	local caveFolder = metro:FindFirstChild("Cave")
+	local pre = caveFolder and caveFolder:FindFirstChild("BoneDoor")
+	if not marker or not marker:IsA("BasePart") or (not src and not (pre and pre:IsA("Model"))) then
 		warn("[MissionService] метро: нет маркера Metro_Exit или модели костяной двери — выхода не будет")
 		return
 	end
 	local floor = metroFloor(marker.Position.X, marker.Position.Z, marker.Position.Y + 2) or Vector3.new(marker.Position.X, marker.Position.Y - 8, marker.Position.Z)
-	local door = src:Clone()
+	local prePlaced = pre ~= nil and pre:IsA("Model")
+	local door: Model = if prePlaced then pre :: Model else (src :: Model):Clone()
 	door.Name = "BoneDoor"
-	for _, d in door:GetDescendants() do
-		if d:IsA("BasePart") then
-			d.Anchored = true
-			d.CanQuery = false
+	if not prePlaced then
+		for _, d in door:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				d.CanQuery = false
+			end
 		end
+		door:PivotTo(CFrame.new(door:GetPivot().Position) * CFrame.Angles(0, math.atan2(-marker.CFrame.LookVector.X, -marker.CFrame.LookVector.Z), 0))
+		local bbox, size = door:GetBoundingBox()
+		door:PivotTo(door:GetPivot() + (floor + Vector3.new(0, size.Y / 2, 0)) - bbox.Position)
 	end
-	door:PivotTo(CFrame.new(door:GetPivot().Position) * CFrame.Angles(0, math.atan2(-marker.CFrame.LookVector.X, -marker.CFrame.LookVector.Z), 0))
-	local bbox, size = door:GetBoundingBox()
-	door:PivotTo(door:GetPivot() + (floor + Vector3.new(0, size.Y / 2, 0)) - bbox.Position)
 	local anchor: BasePart? = nil
 	for _, d in door:GetDescendants() do
 		if d:IsA("BasePart") and (not anchor or d.Size.Magnitude > anchor.Size.Magnitude) then
@@ -982,8 +969,24 @@ local function buildExitDoor(state: State, metro: Instance)
 		end
 	end
 	if not anchor then
-		door:Destroy()
+		if not prePlaced then
+			door:Destroy()
+		end
 		return
+	end
+	-- готовая дверь стоит в карте всегда: подсказку вешаем на деталь в objects, чтобы она исчезала вместе с миссией
+	local holder: BasePart = anchor
+	if prePlaced then
+		local h = Instance.new("Part")
+		h.Name = "BoneDoorPrompt"
+		h.Size = Vector3.one
+		h.Transparency = 1
+		h.Anchored = true
+		h.CanCollide = false
+		h.CanQuery = false
+		h.CFrame = anchor.CFrame
+		h.Parent = objects
+		holder = h
 	end
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Открыть костяную дверь"
@@ -991,7 +994,7 @@ local function buildExitDoor(state: State, metro: Instance)
 	prompt.HoldDuration = 1.5
 	prompt.MaxActivationDistance = 14
 	prompt.RequiresLineOfSight = false
-	prompt.Parent = anchor
+	prompt.Parent = holder
 	prompt.Triggered:Connect(function(player: Player)
 		local s = current
 		if not s or s ~= state or s.phase ~= "inside" or not PlayerService.isUp(player) then
@@ -1027,7 +1030,9 @@ local function buildExitDoor(state: State, metro: Instance)
 		end
 		notify("Костяная дверь открыта — вы вышли в тоннель в горе", 6)
 	end)
-	door.Parent = objects
+	if not prePlaced then
+		door.Parent = objects
+	end
 end
 
 -- Вход в метро: игрок на лестнице. Только на ночи с миссией «metro»: первого спустившегося переносим на станцию, поток зомби
