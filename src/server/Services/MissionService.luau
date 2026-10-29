@@ -55,6 +55,10 @@ type State = {
 	prompt: ProximityPrompt?,
 	installed: boolean,
 	bossIndex: number, -- bossfight: номер вышедшего босса из def.bosses
+	nestsBurned: number, -- metro: сожжено гнёзд
+	bossOut: boolean, -- metro: босс станции уже вызван
+	bossSeen: boolean, -- metro: босс появился (миссия ждёт его смерти)
+	bones: number, -- metro: найдено груд костей (фрагментов ключа)
 }
 
 local current: State? = nil
@@ -680,7 +684,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
 		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0,
+		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0, nestsBurned = 0, bossOut = false, bossSeen = false, bones = 0,
 	}
 	current = state
 	ZombieService.setAnchor(anchor)
@@ -788,6 +792,237 @@ function MissionService.onKill(killer: Player?)
 	end
 end
 
+-- Гнездо мутантов (цель миссии метро): кокон из слипшихся овалов, паутина (ассет из Assets.Metro.New, если есть), зеленоватый свет. Удержание E (Config.Metro.NestHold)
+-- сжигает его: огонь на коконе, через 2 с исчезает, счётчик растёт. Лежит в MissionObjects и убирается вместе с миссией.
+local function buildNest(state: State, marker: BasePart, index: number)
+	local base = Vector3.new(marker.Position.X, marker.Position.Y - marker.Size.Y / 2, marker.Position.Z)
+	local model = Instance.new("Model")
+	model.Name = "MetroNest_" .. index
+	local function ball(size: Vector3, offset: Vector3): Part
+		local p = Instance.new("Part")
+		p.Name = "Cocoon"
+		p.Shape = Enum.PartType.Ball
+		p.Size = size
+		p.CFrame = CFrame.new(base + offset)
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.Material = Enum.Material.Fabric
+		p.Color = Color3.fromRGB(205, 200, 180)
+		p.Parent = model
+		return p
+	end
+	local core = ball(Vector3.new(6, 8, 6), Vector3.new(0, 4, 0))
+	ball(Vector3.new(4, 5, 4), Vector3.new(3, 2.5, 1))
+	ball(Vector3.new(4, 4, 4), Vector3.new(-3, 2, -1.5))
+	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("Metro") and ServerStorage.Assets.Metro:FindFirstChild("New")
+	local webSrc = lib and lib:FindFirstChild("C_Web_Model_18471692316")
+	if webSrc then
+		local web = webSrc:Clone() :: Model
+		for _, d in web:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				d.CanCollide = false
+				d.CanQuery = false
+			end
+		end
+		web:ScaleTo(9)
+		web:PivotTo(CFrame.new(base + Vector3.new(0, 5, 0)) * CFrame.Angles(0, math.rad(index * 70), 0))
+		web.Parent = model
+	end
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(120, 255, 140)
+	light.Range = 18
+	light.Brightness = 0.9
+	light.Parent = core
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Сжечь гнездо"
+	prompt.ObjectText = "Гнездо мутантов"
+	prompt.HoldDuration = Config.Metro.NestHold
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = core
+	local burned = false
+	prompt.Triggered:Connect(function(player: Player)
+		local s = current
+		if burned or not s or s ~= state or s.phase ~= "inside" or not PlayerService.isUp(player) then
+			return
+		end
+		burned = true
+		prompt.Enabled = false
+		s.nestsBurned += 1
+		for _, d in model:GetDescendants() do
+			if d:IsA("BasePart") and d.Name == "Cocoon" then
+				local fire = Instance.new("Fire")
+				fire.Size = 8
+				fire.Heat = 6
+				fire.Parent = d
+			end
+		end
+		light.Color = Color3.fromRGB(255, 150, 60)
+		notify(string.format("Гнездо сожжено (%d из %d)", s.nestsBurned, s.def.nests or 0), 3)
+		task.delay(2.5, function()
+			model:Destroy()
+		end)
+	end)
+	model.Parent = objects
+end
+
+-- Пол под точкой метро: луч вниз по Workspace.Metro (иначе nil)
+local function metroFloor(x: number, z: number, startY: number): Vector3?
+	local metro = workspace:FindFirstChild("Metro")
+	if not metro then
+		return nil
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = { metro }
+	local hit = workspace:Raycast(Vector3.new(x, startY, z), Vector3.new(0, -30, 0), params)
+	return if hit then hit.Position else nil
+end
+
+local function metroLib(name: string): Model?
+	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("Metro") and ServerStorage.Assets.Metro:FindFirstChild("New")
+	local m = lib and lib:FindFirstChild(name)
+	return if m and m:IsA("Model") then m else nil
+end
+
+-- Груда костей (фрагмент костяного ключа): кости из Assets.Metro.New и подсказка «Обыскать» (удержание E). Всего Config.Metro.Bones груд по станции.
+local function buildBonePile(state: State, index: number, x: number, z: number, startY: number)
+	local floor = metroFloor(x, z, startY)
+	if not floor then
+		warn(string.format("[MissionService] метро: нет пола под грудой костей %d (%d, %d)", index, x, z))
+		return
+	end
+	local model = Instance.new("Model")
+	model.Name = "BonePile_" .. index
+	local function add(libName: string, scale: number, offset: Vector3, yaw: number)
+		local src = metroLib(libName)
+		if not src then
+			return
+		end
+		local c = src:Clone()
+		for _, d in c:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				d.CanCollide = false
+				d.CanQuery = false
+			end
+		end
+		c:ScaleTo(scale)
+		local _, size = c:GetBoundingBox()
+		c:PivotTo(CFrame.new(floor + offset + Vector3.new(0, size.Y / 2, 0)) * CFrame.Angles(0, yaw, 0))
+		c.Parent = model
+	end
+	add("C_HumanBones_106503979", 1, Vector3.zero, index * 1.3)
+	add("C_BonesAssortment_14047690299", 3, Vector3.new(4, 0, 2), index * 0.7)
+	add("C_Skull_5528640463", 2, Vector3.new(-3, 0, 2.5), index * 2.1)
+	local spot = Instance.new("Part")
+	spot.Name = "BoneSpot"
+	spot.Size = Vector3.new(4, 3, 4)
+	spot.Transparency = 1
+	spot.CanCollide = false
+	spot.CanQuery = false
+	spot.Anchored = true
+	spot.CFrame = CFrame.new(floor + Vector3.new(0, 1.5, 0))
+	spot.Parent = model
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Обыскать кости"
+	prompt.ObjectText = "Груда костей"
+	prompt.HoldDuration = Config.Metro.BoneHold
+	prompt.MaxActivationDistance = 11
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = spot
+	local taken = false
+	prompt.Triggered:Connect(function(player: Player)
+		local s = current
+		if taken or not s or s ~= state or s.phase ~= "inside" or not PlayerService.isUp(player) then
+			return
+		end
+		taken = true
+		prompt.Enabled = false
+		s.bones += 1
+		if s.bones >= Config.Metro.Bones then
+			notify("Костяной ключ собран! Откройте костяную дверь у выхода из метро", 6)
+		else
+			notify(string.format("Фрагмент костяного ключа (%d из %d)", s.bones, Config.Metro.Bones), 4)
+		end
+	end)
+	model.Parent = objects
+end
+
+-- Костяная дверь у Metro_Exit — выход из метро в тоннель в горе. Открывается, когда собран ключ, сожжены гнёзда и убит босс; тогда всех, кто на станции,
+-- переносит в тоннель (Config.Metro.Hub.spawn) — миссия выполнена (MissionService.update, фаза «hub»).
+local function buildExitDoor(state: State, metro: Instance)
+	local marker = metro:FindFirstChild("Markers") and metro.Markers:FindFirstChild("Metro_Exit")
+	local src = metroLib("C_Door_Skeleton_122782716925668")
+	if not marker or not marker:IsA("BasePart") or not src then
+		warn("[MissionService] метро: нет маркера Metro_Exit или модели костяной двери — выхода не будет")
+		return
+	end
+	local floor = metroFloor(marker.Position.X, marker.Position.Z, marker.Position.Y + 2) or Vector3.new(marker.Position.X, marker.Position.Y - 8, marker.Position.Z)
+	local door = src:Clone()
+	door.Name = "BoneDoor"
+	for _, d in door:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanQuery = false
+		end
+	end
+	local _, size = door:GetBoundingBox()
+	door:PivotTo(CFrame.new(floor + Vector3.new(0, size.Y / 2, 0)) * CFrame.Angles(0, math.atan2(-marker.CFrame.LookVector.X, -marker.CFrame.LookVector.Z), 0))
+	local anchor: BasePart? = nil
+	for _, d in door:GetDescendants() do
+		if d:IsA("BasePart") and (not anchor or d.Size.Magnitude > anchor.Size.Magnitude) then
+			anchor = d
+		end
+	end
+	if not anchor then
+		door:Destroy()
+		return
+	end
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Открыть костяную дверь"
+	prompt.ObjectText = "Выход из катакомб"
+	prompt.HoldDuration = 1.5
+	prompt.MaxActivationDistance = 14
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = anchor
+	prompt.Triggered:Connect(function(player: Player)
+		local s = current
+		if not s or s ~= state or s.phase ~= "inside" or not PlayerService.isUp(player) then
+			return
+		end
+		local missing: { string } = {}
+		if s.bones < Config.Metro.Bones then
+			table.insert(missing, string.format("костяной ключ (%d из %d)", s.bones, Config.Metro.Bones))
+		end
+		if s.nestsBurned < (s.def.nests or 0) then
+			table.insert(missing, "гнёзда мутантов")
+		end
+		if s.def.boss and (not s.bossSeen or ZombieService.bossAlive()) then
+			table.insert(missing, "босс станции")
+		end
+		if #missing > 0 then
+			Remotes.get("Notify"):FireClient(player, "Дверь заперта. Нужно: " .. table.concat(missing, ", "), 4)
+			return
+		end
+		s.phase = "hub"
+		ZombieService.clearAll()
+		ZombieService.setSpawnPoints(nil)
+		local spawn = Config.Metro.Hub.spawn
+		for _, p in PlayerService.upPlayers() do
+			local char = p.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if char and root and root.Position.Y > 300 then
+				char:PivotTo(CFrame.new(spawn + Vector3.new(math.random(-6, 6), 3, math.random(-6, 6))))
+			end
+		end
+		notify("Костяная дверь открыта — вы вышли в тоннель в горе", 6)
+	end)
+	door.Parent = objects
+end
+
 -- Вход в метро: игрок на лестнице. Только на ночи с миссией «metro»: первого спустившегося переносим на станцию, поток зомби
 -- переключается на точки метро. В остальные ночи вход закрыт.
 local metroDebounce: { [Player]: number } = {}
@@ -821,7 +1056,23 @@ function MissionService.onEntranceTouched(player: Player)
 		ZombieService.clearAll() -- зомби снаружи больше не нужны (и не должны занимать места в потоке метро)
 		ZombieService.setAnchor(nil)
 		ZombieService.setSpawnPoints(points)
-		notify("Команда спустилась в метро — зачистите станцию", 4)
+		-- гнёзда: по маркерам Metro_Objective_<n> (сколько — def.nests)
+		for i = 1, s.def.nests or 0 do
+			local marker = (metro :: Folder).Markers:FindFirstChild("Metro_Objective_" .. i)
+			if marker and marker:IsA("BasePart") then
+				buildNest(s, marker, i)
+			end
+		end
+		if (s.def.nests or 0) > 0 then
+			-- выход: груды костей по станции и костяная дверь
+			for i, spot in Config.Metro.BoneSpots do
+				if i <= Config.Metro.Bones then
+					buildBonePile(s, i, spot[1], spot[2], spot[3])
+				end
+			end
+			buildExitDoor(s, metro :: Instance)
+		end
+		notify(if (s.def.nests or 0) > 0 then "Команда спустилась в метро — сожгите гнёзда, найдите кости для ключа и убейте босса!" else "Команда спустилась в метро — зачистите станцию", 4)
 	end
 end
 
@@ -976,9 +1227,36 @@ function MissionService.update(dt: number): string?
 		if state.phase == "approach" then
 			text = "Спуститесь в метро: лестница у входа"
 		else
-			text = string.format("Зачистите станцию: убито %d из %d", math.min(state.metroKills, need), need)
-			if state.metroKills >= need then
+			local nests = state.def.nests or 0
+			if state.phase == "hub" then
+				text = "Вы вышли через костяную дверь в тоннель в горе. Миссия метро выполнена"
 				result = "done"
+			elseif state.nestsBurned < nests then
+				text = string.format("Сожгите гнёзда мутантов: %d из %d (удерживайте E у гнезда)", state.nestsBurned, nests)
+			elseif state.def.boss and not state.bossOut then
+				-- гнёзда сожжены: на станцию выходит босс (из туннелей, вне очереди)
+				state.bossOut = true
+				ZombieService.enqueue({ state.def.boss }, state.hpMult, state.night, true)
+				notify("Гнёзда сожжены — на станцию вышел босс!", 5)
+				text = "Убейте босса станции"
+			elseif state.def.boss and not state.bossSeen then
+				state.bossSeen = ZombieService.bossAlive() -- ждём, пока босс появится
+				text = "Убейте босса станции"
+			elseif state.def.boss and ZombieService.bossAlive() then
+				text = "Убейте босса станции"
+			elseif nests > 0 then
+				-- всё на станции сделано: остаётся собрать ключ и открыть костяную дверь (выход — единственный способ закончить миссию)
+				text = if state.bones < Config.Metro.Bones
+					then string.format("Найдите кости для ключа: %d из %d (удерживайте E у груды)", state.bones, Config.Metro.Bones)
+					else "Откройте костяную дверь у выхода из метро"
+			else
+				text = string.format("Зачистите станцию: убито %d из %d", math.min(state.metroKills, need), need)
+				if state.metroKills >= need then
+					result = "done"
+				end
+			end
+			if nests > 0 and state.phase == "inside" and state.nestsBurned < nests then
+				text ..= string.format("\nКостяной ключ: %d из %d", state.bones, Config.Metro.Bones)
 			end
 		end
 	elseif kind == "bossfight" then
@@ -1036,6 +1314,21 @@ end
 -- поднимаем к лестнице наверху (Markers.Metro_EntranceTop).
 local function leaveMetro()
 	local s = current
+	if s and s.kind == "metro" and s.phase == "hub" then
+		-- вышли в тоннель в горе: с рассветом возвращаем на базу (точка сбора игроков)
+		local markers = workspace:FindFirstChild("Markers")
+		local ps = markers and markers:FindFirstChild("PlayerSpawn") :: BasePart?
+		if ps then
+			for _, p in Players:GetPlayers() do
+				local char = p.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+				if char and root and math.abs(root.Position.X - Config.Metro.Hub.spawn.X) < Config.Metro.Hub.halfWidth and root.Position.Y < 300 and math.abs(root.Position.Z - Config.Metro.Hub.spawn.Z) < 120 then
+					char:PivotTo(CFrame.new(ps.Position + Vector3.new(math.random(-6, 6), 4, math.random(-4, 4))))
+				end
+			end
+		end
+		return
+	end
 	if not s or s.kind ~= "metro" or s.phase ~= "inside" then
 		return
 	end

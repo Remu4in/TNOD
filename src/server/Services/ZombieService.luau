@@ -2452,6 +2452,16 @@ function ZombieService.clearQueue()
 	table.clear(queue)
 end
 
+-- Есть ли живой босс (не считая теней финального босса): миссия метро ждёт его смерти
+function ZombieService.bossAlive(): boolean
+	for _, z in active do
+		if z.alive and WaveMath.isBossType(z.def.id) and z.model:GetAttribute("Clone") ~= true then
+			return true
+		end
+	end
+	return false
+end
+
 function ZombieService.remaining(): number
 	local n = #queue
 	for _ in active do

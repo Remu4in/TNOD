@@ -1136,7 +1136,7 @@ Config.Perks = {
 -- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
 -- (сейчас играется как classic). Не указано — classic.
 -- convoySpeed — скорость грузовика этой миссии (студов/с), вместо Config.Convoy.TruckSpeed; clearSandbags — на эту ночь убрать мешки с песком у точки появления игроков (Config.Convoy.Sandbag*)
-export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }? }
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }?, nests: number?, boss: string? }
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
 	TruckHp = 1000,
@@ -1311,6 +1311,31 @@ Config.Finale = {
 		"Второй акт — в разработке. Спасибо, что играли: ждите продолжения!",
 	},
 }
+-- Метро (ночь 18, MissionService): внизу нужно сжечь гнёзда мутантов (маркеры Workspace.Metro.Markers.Metro_Objective_1…n, удержание E NestHold секунд),
+-- затем выходит босс станции (Missions[18].boss, у маркера Metro_Boss), после его смерти и набранных убийств миссия выполнена. Звуки — тихие зацикленные
+-- (id проверены 2026-10-29: загружаются, длины 1,3–77 с); играют на клиенте, пока игрок выше SoundMinY (станция на y ≈ 600)
+-- Выход из метро (решение Руслана 2026-10-29): 5 груд костей по станции (удержание E BoneHold с) → костяной ключ → костяная дверь у маркера Metro_Exit
+-- (открывается, когда есть ключ, сожжены гнёзда и убит босс) → вся команда оказывается в тоннеле в горе («The Hub Map (For Apeirophobia)», Hub.spawn) — миссия
+-- выполнена. Груды стоят в точках BoneSpots (x, z, y старта луча вниз до пола; мировые координаты метро), пол ищется лучом по Workspace.Metro.
+-- Hub.halfWidth — по x от Hub.spawn «зона тоннеля»: оттуда команду на рассвете возвращает на базу.
+Config.Metro = {
+	NestHold = 6,
+	Bones = 5,
+	BoneHold = 2,
+	BoneSpots = {
+		{ -130, 25, 606 }, { 130, -25, 606 }, { -100, -62, 606 }, { 100, 85, 619 }, { 705, 12, 606 },
+	},
+	Hub = { spawn = Vector3.new(-800, 4, -87), halfWidth = 230 },
+	SoundMinY = 300,
+	Sounds = {
+		{ name = "tunnel ambience", id = "rbxassetid://9118773471", volume = 0.18 },
+		{ name = "underground hum", id = "rbxassetid://9112795571", volume = 0.14 },
+		{ name = "water drip", id = "rbxassetid://9112903083", volume = 0.12 },
+		{ name = "metal creak", id = "rbxassetid://9116552386", volume = 0.1 },
+		{ name = "train rumble", id = "rbxassetid://6761165534", volume = 0.1 },
+		{ name = "light buzz", id = "rbxassetid://9112823813", volume = 0.08 },
+	},
+}
 Config.Missions = {
 	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
 	[2] = { type = "build", title = "Зачистка зоны и установка шатра", anchor = 1, kills = 15, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
@@ -1331,7 +1356,7 @@ Config.Missions = {
 	[15] = { type = "classic", title = "Босс нападает на основную базу", anchor = 1, planned = "boss", hint = "Убейте босса и волну" },
 	[16] = { type = "scout", title = "Разведка территории", anchor = 4, points = 4, planned = "daytime" },
 	[17] = { type = "escort", title = "Установка шатра и конвой", anchor = 4, points = 3, install = true, hint = "Доведите грузовик и установите шатёр у места" },
-	[18] = { type = "metro", title = "Катакомбы: зачистка метро", anchor = 6, kills = 40, hint = "Спуститесь по лестнице у входа в метро и зачистите станцию" },
+	[18] = { type = "metro", title = "Катакомбы: зачистка метро", anchor = 6, kills = 40, nests = 3, boss = "BossBuff", hint = "Спуститесь по лестнице у входа в метро, сожгите гнёзда (E) и убейте босса станции" },
 	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, baseBattle = true, hint = "Отбейте базу: мутанты идут со стороны базы, солдаты у точки сбора помогают" },
 	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,
 	-- пока Повелитель тёмных); победа — убит последний босс (RoundService: атрибут Victory и сообщение; титры и награда — после решения Руслана)
