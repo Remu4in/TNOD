@@ -40,11 +40,14 @@ type Session = {
 	wantSave: boolean,
 	closing: boolean, -- запрошена финальная запись: после неё — ничего
 	retryScheduled: boolean,
+	retryCount: number, -- сколько раз уже повторяли захват (первые повторы частые: прошлый сервер вот-вот отпустит профиль)
 }
 
 local VERSION = 1
 local LOCK_TTL = 15 * 60 -- блокировка старше 15 минут считается брошенной
 local LOCK_RETRY = 15 -- повтор захвата занятого / не загрузившегося профиля, с
+local LOCK_RETRY_FAST = 3 -- первые LOCK_FAST_TRIES повторов: после телепорта прошлый сервер освобождает профиль за секунды
+local LOCK_FAST_TRIES = 6
 local CLOSE_WAIT = 25 -- BindToClose ждёт сохранений не дольше, с (лимит Roblox — 30)
 local STORE_NAME = if RunService:IsStudio() then "Test_Profiles_v1" else "Profiles_v1"
 
@@ -170,7 +173,9 @@ local function scheduleRetry(s: Session)
 		return
 	end
 	s.retryScheduled = true
-	task.delay(LOCK_RETRY, function()
+	local delay = if s.retryCount < LOCK_FAST_TRIES then LOCK_RETRY_FAST else LOCK_RETRY
+	s.retryCount += 1
+	task.delay(delay, function()
 		s.retryScheduled = false
 		if s.closing or s.canSave or sessions[s.player] ~= s then
 			return
@@ -229,6 +234,7 @@ local function acquire(s: Session)
 		s.base = clone(written)
 		s.pendingSnap = nil
 		s.canSave = true
+		s.retryCount = 0
 		publish(s)
 	elseif seen then
 		-- занято (быстрый перезаход или краш сервера): показываем сохранённое + прибавку сессии, не пишем
@@ -348,6 +354,21 @@ function DataService.get(player: Player): Profile?
 	return if s and not s.closing then s.profile else nil
 end
 
+-- Записать профили игроков и дождаться конца записи (перед телепортом: новый сервер получит свежие данные, а блокировку
+-- снимет PlayerRemoving уже на уходе). Не ждёт дольше timeout секунд; без блокировки (профиль занят) просто не пишет.
+function DataService.flush(players: { Player }, timeout: number)
+	local deadline = os.clock() + timeout
+	for _, p in players do
+		requestSave(p)
+	end
+	for _, p in players do
+		local s = sessions[p]
+		while s and (s.busy or s.wantSave or s.wantAcquire) and os.clock() < deadline do
+			task.wait(0.1)
+		end
+	end
+end
+
 -- Профиль загружен и записывается (блокировка наша; не по умолчанию после сбоя и не занят другим сервером)
 function DataService.canSave(player: Player): boolean
 	local s = sessions[player]
@@ -406,6 +427,7 @@ function DataService.init()
 			wantSave = false,
 			closing = false,
 			retryScheduled = false,
+			retryCount = 0,
 		}
 		sessions[player] = s
 		kick(s) -- загрузка; если игрок вышел во время неё, очередь сама сделает финальную запись и снимет блокировку

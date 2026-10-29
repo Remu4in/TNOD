@@ -24,6 +24,7 @@ local ShopService = require(Services:WaitForChild("ShopService"))
 local VendorService = require(Services:WaitForChild("VendorService"))
 local EquipmentService = require(Services:WaitForChild("EquipmentService"))
 local SoldierService = require(Services:WaitForChild("SoldierService"))
+local LobbyService = require(Services:WaitForChild("LobbyService"))
 
 -- Пустой скрипт Health заменяет встроенный реген Roblox (реген свой — в PlayerService)
 local scs = StarterPlayer:FindFirstChildOfClass("StarterCharacterScripts")
@@ -186,33 +187,71 @@ if Config.Explore then
 	return
 end
 
-local first = Config.Locations[1]
-local map = MapBuilder.build(first.id)
-ReplicatedStorage:SetAttribute("Location", first.name)
-BarricadeService.init(map)
-PlayerService.init(map.playerSpawn, RoundService.onAllDown)
-ZombieService.init(map, RoundService.onZombieKilled)
-WeaponService.init(map)
-DataService.init()
-ScoreService.init()
-RatingService.init()
-PerkService.init()
-GeneralService.init()
-require(Services:WaitForChild("AmmoCrateService")).init()
-require(Services:WaitForChild("MissionService")).init()
-StaminaService.init()
-ShopService.init(map)
-RoundService.start(map)
-EquipmentService.init()
-VendorService.init(map)
-SoldierService.init()
+-- Режим сервера: лобби (публичный сервер) или матч (резервный сервер места; в Studio — по Config.Lobby, см. LobbyService.detectMode)
+local mode = LobbyService.detectMode()
+local sharedReady = false -- общие сервисы (игроки, данные, очки, рейтинг) уже подняты лобби
+local matchStarted = false
 
--- ездовые машины: маркеры Workspace.Markers.VehicleSpawn_<Шаблон>
-local VehicleService = require(Services:WaitForChild("VehicleService"))
-VehicleService.init()
-VehicleService.spawnAll(map.carSpawns, map.carNames) -- каждый раунд ставятся заново (RoundService → VehicleService.resetRound)
-if testStandsOn then
-	buildTestStands(map.playerSpawn)
+local function startMatch()
+	matchStarted = true
+	local first = Config.Locations[1]
+	local map = MapBuilder.build(first.id)
+	ReplicatedStorage:SetAttribute("Location", first.name)
+	BarricadeService.init(map)
+	if sharedReady then
+		PlayerService.setSpawn(map.playerSpawn)
+	else
+		PlayerService.init(map.playerSpawn, RoundService.onAllDown)
+	end
+	ZombieService.init(map, RoundService.onZombieKilled)
+	WeaponService.init(map)
+	if not sharedReady then
+		DataService.init()
+		ScoreService.init()
+		RatingService.init()
+	end
+	PerkService.init()
+	GeneralService.init()
+	require(Services:WaitForChild("AmmoCrateService")).init()
+	require(Services:WaitForChild("MissionService")).init()
+	StaminaService.init()
+	ShopService.init(map)
+	-- с лобби раунд кончается экраном итогов и возвратом в лобби (в Studio с ForceMode = "match" — как раньше, новый раунд сразу)
+	if Config.Lobby.Enabled and (mode == "lobby" or not RunService:IsStudio()) then
+		RoundService.setLobbyHooks(LobbyService.beginResults, LobbyService.afterRound)
+	end
+	RoundService.start(map)
+	EquipmentService.init()
+	VendorService.init(map)
+	SoldierService.init()
+
+	-- ездовые машины: маркеры Workspace.Markers.VehicleSpawn_<Шаблон>
+	local VehicleService = require(Services:WaitForChild("VehicleService"))
+	VehicleService.init()
+	VehicleService.spawnAll(map.carSpawns, map.carNames) -- каждый раунд ставятся заново (RoundService → VehicleService.resetRound)
+	if testStandsOn then
+		buildTestStands(map.playerSpawn)
+	end
+
+	print("[NightOfTheDead] server started, location: " .. first.name)
 end
 
-print("[NightOfTheDead] server started, location: " .. first.name)
+if mode == "lobby" then
+	-- лобби: только игроки, данные, очки и рейтинг (для витрины); раунды и зомби не идут
+	PlayerService.init(Config.Lobby.Origin + Config.Lobby.Spawn, RoundService.onAllDown)
+	DataService.init()
+	ScoreService.init()
+	RatingService.init()
+	sharedReady = true
+	LobbyService.initLobby({
+		onStudioStart = function(_players, _data)
+			LobbyService.studioToMatch()
+			if not matchStarted then
+				startMatch()
+			end
+		end,
+	})
+else
+	LobbyService.initMatch()
+	startMatch()
+end
