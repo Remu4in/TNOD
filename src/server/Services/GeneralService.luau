@@ -10,6 +10,8 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
+local WaveMath = require(Shared:WaitForChild("WaveMath"))
+local MissionService = require(script.Parent:WaitForChild("MissionService"))
 
 local GeneralService = {}
 
@@ -42,6 +44,8 @@ function GeneralService.brief(night: number): (string, { string })
 				return tostring(def.seconds or 150)
 			elseif key == "hold" then
 				return tostring(Config.Convoy.InstallHold)
+			elseif key == "follow" then
+				return tostring(Config.Convoy.FollowRadius)
 			end
 			return key
 		end)
@@ -65,10 +69,57 @@ local function send(player: Player)
 	Remotes.get("Briefing"):FireClient(player, NAME, title, lines)
 end
 
+-- Подстановка {points}/{kills}/{seconds}/{follow}/{name} в короткие тексты Config.DayBrief
+local function fill(template: string, def: Config.MissionDef, extra: { [string]: string }?): string
+	local out = string.gsub(template, "{(%w+)}", function(key: string): string
+		if extra and extra[key] then
+			return extra[key]
+		elseif key == "points" then
+			return tostring(def.points or 3)
+		elseif key == "kills" then
+			return tostring(def.kills or 15)
+		elseif key == "seconds" then
+			return tostring(def.seconds or 150)
+		elseif key == "follow" then
+			return tostring(Config.Convoy.FollowRadius)
+		end
+		return key
+	end)
+	return out
+end
+
+-- Что будет следующей ночью: атрибуты ReplicatedStorage для клиента (DayBriefController показывает их панелью и строкой в чате).
+-- NextBriefPos — точка миссии (для строки «где»: расстояние и сторона света считает клиент от игрока); у миссий на базе её нет
+function GeneralService.publishBrief(night: number)
+	local def = missionFor(night)
+	local kind = def.type
+	local DB = Config.DayBrief
+	local task = fill(DB.Task[kind] or DB.Task.classic, def)
+	local tip = fill(DB.Tip[kind] or DB.Tip.classic, def)
+	local bosses = WaveMath.bossTypes(Config.Waves, night)
+	if #bosses > 0 then
+		local names: { string } = {}
+		for _, id in bosses do
+			table.insert(names, Config.Zombies[id].name)
+		end
+		tip = fill(DB.Boss, def, { name = table.concat(names, ", ") }) .. " " .. tip
+	end
+	local pos: Vector3? = nil
+	if kind ~= "classic" and kind ~= "clear" then
+		pos = MissionService.anchorPosition(def.anchor)
+	end
+	ReplicatedStorage:SetAttribute("NextBriefNight", night)
+	ReplicatedStorage:SetAttribute("NextBriefTitle", def.title)
+	ReplicatedStorage:SetAttribute("NextBriefTask", task)
+	ReplicatedStorage:SetAttribute("NextBriefTip", tip)
+	ReplicatedStorage:SetAttribute("NextBriefPos", pos)
+end
+
 -- Утро: напоминание всем игрокам
 function GeneralService.announceDay()
 	local night = nextNight()
 	local def = missionFor(night)
+	GeneralService.publishBrief(night)
 	Remotes.get("Notify"):FireAllClients(string.format("%s ждёт на базе. Ночь %d: %s. Подойдите и нажмите E, чтобы выслушать задание.", NAME, night, def.title), 7)
 end
 

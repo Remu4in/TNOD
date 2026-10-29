@@ -85,6 +85,44 @@ function EquipmentService.give(player: Player, kind: string): boolean
 	return true
 end
 
+-- Деталь-«отрезок» от точки a до точки b (мировые координаты) толщиной t
+local function segment(parent: Instance, a: Vector3, b: Vector3, t: number, color: Color3, material: Enum.Material, name: string): Part
+	local len = (b - a).Magnitude
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = Vector3.new(t, t, math.max(len, 0.02))
+	p.CFrame = CFrame.lookAt((a + b) / 2, b)
+	p.Color = color
+	p.Material = material
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Parent = parent
+	return p
+end
+
+local function postPart(parent: Instance, cf: CFrame, size: Vector3, color: Color3, material: Enum.Material, name: string): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.CFrame = cf
+	p.Color = color
+	p.Material = material
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Parent = parent
+	return p
+end
+
+-- Модель проволоки (визуал; хитбокс и размеры — Config.Equipment, те же): cf — основание в центре, длина вдоль X, глубина вдоль Z.
+-- Колючая: спираль «егоза» из коротких отрезков (витки по дуге) на трёх деревянных кольях, по спирали — шипы.
+-- Электро: три провода с провисанием на металлических столбах, изоляторы на столбах, слабые искры (ParticleEmitter) и мягкий свет.
+-- Деталей: колючая ≈ 100, электро ≈ 45; пресеты — константы ниже.
+local BARBED_LOOPS, BARBED_SEGMENTS = 11, 7
 local function wireModel(kind: string, cf: CFrame, size: Vector3): Model
 	local m = Instance.new("Model")
 	m.Name = kind
@@ -99,36 +137,103 @@ local function wireModel(kind: string, cf: CFrame, size: Vector3): Model
 	base.Anchored = true
 	base.Parent = m
 	m.PrimaryPart = base
-	-- витки проволоки
-	for i = 1, 3 do
-		local coil = Instance.new("Part")
-		coil.Size = Vector3.new(size.X, 0.18, 0.18)
-		coil.Material = if electric then Enum.Material.Neon else Enum.Material.Metal
-		coil.Color = if electric then Color3.fromRGB(90, 170, 255) else Color3.fromRGB(95, 95, 100)
-		coil.CFrame = cf * CFrame.new(0, 0.3 + i * (size.Y / 4), (i - 2) * 0.7) * CFrame.Angles(math.rad(i * 25), 0, 0)
-		coil.Anchored = true
-		coil.CanCollide = false
-		coil.CanQuery = false
-		coil.Parent = m
+	local L = size.X
+	local function world(x: number, y: number, z: number): Vector3
+		return cf:PointToWorldSpace(Vector3.new(x, y, z))
 	end
-	for _, x in { -size.X / 2, size.X / 2 } do
-		local post = Instance.new("Part")
-		post.Size = Vector3.new(0.4, size.Y + 0.8, 0.4)
-		post.Color = Color3.fromRGB(60, 45, 35)
-		post.Material = Enum.Material.Wood
-		post.CFrame = cf * CFrame.new(x, (size.Y + 0.8) / 2, 0)
-		post.Anchored = true
-		post.CanCollide = false
-		post.CanQuery = false
-		post.Parent = m
+	if not electric then
+		local steel = Color3.fromRGB(110, 112, 116)
+		local rust = Color3.fromRGB(92, 58, 44)
+		-- колья
+		local postH = size.Y + 0.7
+		for _, x in { -L / 2, 0, L / 2 } do
+			local lean = if x == 0 then 0.04 else 0
+			postPart(m, cf * CFrame.new(x, postH / 2, 0) * CFrame.Angles(lean, 0, 0), Vector3.new(0.38, postH, 0.38), Color3.fromRGB(70, 52, 38), Enum.Material.Wood, "Post")
+			postPart(m, cf * CFrame.new(x, postH, 0) * CFrame.Angles(0.15, 0.5, 0), Vector3.new(0.3, 0.25, 0.3), Color3.fromRGB(58, 44, 32), Enum.Material.Wood, "PostTop")
+		end
+		-- спираль: витки по дуге из коротких отрезков, чуть неровная
+		local rng = Random.new(math.floor(cf.Position.X * 31 + cf.Position.Z * 17))
+		local total = BARBED_LOOPS * BARBED_SEGMENTS
+		local radius = size.Y * 0.5
+		local yc = radius + 0.08
+		local prev: Vector3? = nil
+		for k = 0, total do
+			local t = k / total
+			local ang = math.pi * 2 * BARBED_LOOPS * t
+			local r = radius * (0.92 + rng:NextNumber() * 0.16)
+			local pos = world(-L / 2 + 0.25 + (L - 0.5) * t, yc + math.sin(ang) * r, math.cos(ang) * r * 1.3)
+			if prev then
+				segment(m, prev, pos, 0.09, if k % 5 == 0 then rust else steel, Enum.Material.Metal, "Coil")
+				if k % 4 == 0 then
+					-- шип: короткая палочка наружу от оси спирали
+					local out = (pos - world(-L / 2 + 0.25 + (L - 0.5) * t, yc, 0))
+					if out.Magnitude > 0.01 then
+						segment(m, pos, pos + out.Unit * 0.32, 0.05, steel, Enum.Material.Metal, "Barb")
+					end
+				end
+			end
+			prev = pos
+		end
+		-- две прямые жилы между кольями (опора для спирали)
+		for _, y in { 0.12, size.Y + 0.1 } do
+			segment(m, world(-L / 2, y, 0), world(L / 2, y, 0), 0.07, steel, Enum.Material.Metal, "Strand")
+		end
+		return m
 	end
-	if electric then
-		local light = Instance.new("PointLight")
-		light.Color = Color3.fromRGB(90, 170, 255)
-		light.Range = 10
-		light.Brightness = 1.5
-		light.Parent = base
+	-- электро: тонкие металлические столбы, изоляторы, три провода с провисанием
+	local pole = Color3.fromRGB(70, 74, 80)
+	local glow = Color3.fromRGB(120, 190, 255)
+	local postH = 2.4
+	local ys = { 0.7, 1.4, 2.1 }
+	for _, x in { -L / 2, 0, L / 2 } do
+		postPart(m, cf * CFrame.new(x, postH / 2, 0), Vector3.new(0.26, postH, 0.26), pole, Enum.Material.Metal, "Pole")
+		postPart(m, cf * CFrame.new(x, 0.1, 0), Vector3.new(0.9, 0.2, 0.9), Color3.fromRGB(58, 60, 64), Enum.Material.Concrete, "PoleBase")
+		for _, y in ys do
+			-- изолятор: короткий светлый цилиндр на выносной ножке
+			postPart(m, cf * CFrame.new(x, y, 0.2) * CFrame.Angles(0, math.rad(90), 0), Vector3.new(0.32, 0.2, 0.2), Color3.fromRGB(200, 210, 205), Enum.Material.SmoothPlastic, "Insulator").Shape = Enum.PartType.Cylinder
+		end
 	end
+	local sparkPart: Part? = nil
+	for yi, y in ys do
+		local steps = 8
+		local prev: Vector3? = nil
+		for k = 0, steps do
+			local t = k / steps
+			local sag = math.sin(t * math.pi) * 0.14 -- провисание между столбами
+			local pos = world(-L / 2 + L * t, y - sag, 0.22)
+			if prev then
+				local s = segment(m, prev, pos, 0.07, glow, Enum.Material.Neon, "Wire")
+				s.Transparency = 0.25
+			end
+			prev = pos
+		end
+		if yi == 2 then
+			-- искры: слабые, из середины среднего провода
+			local sp = postPart(m, cf * CFrame.new(0, y - 0.1, 0.3), Vector3.new(L * 0.5, 0.2, 0.2), glow, Enum.Material.SmoothPlastic, "Sparks")
+			sp.Transparency = 1
+			sparkPart = sp
+		end
+	end
+	if sparkPart then
+		local emitter = Instance.new("ParticleEmitter")
+		emitter.Name = "Sparks"
+		emitter.Color = ColorSequence.new(Color3.fromRGB(190, 225, 255))
+		emitter.LightEmission = 1
+		emitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.22), NumberSequenceKeypoint.new(1, 0) })
+		emitter.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+		emitter.Lifetime = NumberRange.new(0.15, 0.35)
+		emitter.Speed = NumberRange.new(2, 5)
+		emitter.SpreadAngle = Vector2.new(180, 180)
+		emitter.Rate = 6 -- слабые, редкие искры
+		emitter.Acceleration = Vector3.new(0, -8, 0)
+		emitter.Shape = Enum.ParticleEmitterShape.Box
+		emitter.Parent = sparkPart
+	end
+	local light = Instance.new("PointLight")
+	light.Color = glow
+	light.Range = 9
+	light.Brightness = 0.9
+	light.Parent = base
 	return m
 end
 
@@ -158,13 +263,18 @@ local function turretModel(cf: CFrame): (Model?, Vector3)
 	return m, Vector3.new(0, muzzleY, muzzleZ)
 end
 
-local function onPlace(player: Player, position: unknown)
-	if typeof(position) ~= "Vector3" or not RateLimit.allow(player, "Place", 0.3) or not PlayerService.isUp(player) then
+local function onPlace(player: Player, position: unknown, yawArg: unknown)
+	if typeof(position) ~= "Vector3" or not RateLimit.allow(player, "Place", 0.3) or not PlayerService.isUp(player) or PlayerService.isStunned(player) then
 		return
 	end
 	local pos = position :: Vector3
 	if not Validate.finiteVector(pos, 1e5) then
 		return
+	end
+	-- угол поворота (радианы) присылает клиент для превью: число в разумных пределах, иначе — ставим по взгляду игрока, как раньше
+	local yaw: number? = nil
+	if typeof(yawArg) == "number" and yawArg == yawArg and math.abs(yawArg) <= 100 then
+		yaw = yawArg
 	end
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -205,9 +315,14 @@ local function onPlace(player: Player, position: unknown)
 	if not hit or math.abs(hit.Position.Y - root.Position.Y) > 8 then -- не на крышу над собой
 		return
 	end
-	local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
-	look = if look.Magnitude > 0.01 then look.Unit else Vector3.new(0, 0, -1)
-	local cf = CFrame.lookAt(hit.Position, hit.Position + look)
+	local cf: CFrame
+	if yaw then
+		cf = CFrame.new(hit.Position) * CFrame.Angles(0, yaw, 0)
+	else
+		local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+		look = if look.Magnitude > 0.01 then look.Unit else Vector3.new(0, 0, -1)
+		cf = CFrame.lookAt(hit.Position, hit.Position + look)
+	end
 	local model: Model
 	local muzzle = Vector3.zero
 	if kind == "Turret" then

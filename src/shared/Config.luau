@@ -58,6 +58,41 @@ export type MeleeFxDef = {
 	shake: number,
 }
 
+-- Атаки боссов (ZombieService.startBossSpecial). Прыжок: босс приседает на windup секунд, под игроком красная зона (следует за ним, в последние 0,7 с застывает),
+-- затем прыгает за flight секунд; урон в radius студов. Бросок: босс отрывает кусок земли (windup), бросает в игрока по дуге (flight), на месте падения красный круг
+-- (к центру прозрачнее); урон в radius. cooldown — пауза до следующего такого же; range/minRange — дальность до игрока; first — через сколько секунд после появления можно впервые.
+export type BossJump = {
+	windup: number, flight: number, cooldown: number, range: number, minRange: number, radius: number, damage: number, first: number,
+	wave: { extra: number, noSprint: number }?, -- после приземления: волна тьмы на extra студов шире radius, без урона, noSprint секунд нельзя бегать (Повелитель тёмных)
+}
+export type BossRock = {
+	windup: number, flight: number, cooldown: number, range: number, minRange: number, radius: number, damage: number, first: number,
+	stun: number?, -- бросок знака (Гаргантюа): попавшего оглушает на столько секунд (нельзя двигаться и стрелять)
+}
+-- Новые атаки боссов (Services/BossAI), у каждой: windup — телеграф (поза, рисунок на земле), cooldown, first — когда можно впервые, range/minRange — дальность до игрока.
+-- slam (Гаргантюа): удар по земле, от точки удара к игроку со скоростью speed ползёт линия растений длиной length и шириной width, живут life секунд;
+--   попавший (кувырок спасает) замедлен в slowMult раз на slowSeconds. crawlers (Гаргантюа): снимает со спины ползуна и кидает в игрока (flight секунд полёта),
+--   приземлившийся ползун живой и атакует; не больше maxAlive брошенных живых. charge (Повелитель тёмных): windup секунд набирает силу, на земле дорожка;
+--   за lockBefore секунд до старта направление фиксируется; бежит прямо на speed студов/с distance студов (стоп у препятствия), урон damage задетому на пути
+--   (шириной width), после — recover секунд стоит. swing: горизонтальный замах, чёрная волна шириной width летит speed студов/с на length студов
+--   и гаснет у любого укрытия; урон damage (кувырок спасает).
+export type BossSlam = { windup: number, cooldown: number, first: number, range: number, minRange: number, length: number, width: number, speed: number, life: number, slowMult: number, slowSeconds: number }
+export type BossCrawlers = { windup: number, flight: number, cooldown: number, first: number, range: number, minRange: number, maxAlive: number }
+export type BossCharge = { windup: number, lockBefore: number, speed: number, distance: number, width: number, damage: number, recover: number, cooldown: number, first: number, range: number, minRange: number }
+export type BossSwing = { windup: number, cooldown: number, first: number, range: number, minRange: number, speed: number, length: number, width: number, damage: number }
+-- Финальный босс (BossAI): sea — море тьмы: waves волн шириной width и высотой height с паузой gap, идут speed студов/с на length студов, низкие — прыжком;
+-- comets — count комет (каждая за hover+0,4+fall ≈ 3–4 с, падает в точку, где игрок стоял), радиус radius, высота зависания height; clones — count теней с 1/hpDivisor
+-- здоровья, поднимаются rise с, прозрачность alpha; beam — луч duration с преследует игрока (скорость chaseSpeed, радиус radius, урон damage раз в tick);
+-- slash — обычный порез (вертикальный, горизонтальный или по диагонали) размером size, летит speed студов/с на length студов.
+export type BossSea = { windup: number, cooldown: number, first: number, range: number, minRange: number, waves: number, gap: number, speed: number, length: number, width: number, height: number, damage: number }
+export type BossComets = { windup: number, cooldown: number, first: number, range: number, minRange: number, count: number, interval: number, hover: number, fall: number, radius: number, damage: number, height: number }
+export type BossClones = { windup: number, cooldown: number, first: number, range: number, minRange: number, count: number, hpDivisor: number, rise: number, alpha: number }
+export type BossBeam = { windup: number, cooldown: number, first: number, range: number, minRange: number, duration: number, chaseSpeed: number, radius: number, damage: number, tick: number }
+export type BossSlash = { windup: number, cooldown: number, first: number, range: number, minRange: number, speed: number, length: number, size: number, damage: number }
+export type BossAttacks = {
+	slam: BossSlam?, crawlers: BossCrawlers?, charge: BossCharge?, swing: BossSwing?,
+	sea: BossSea?, comets: BossComets?, clones: BossClones?, beam: BossBeam?, slash: BossSlash?,
+}
 export type ZombieDef = {
 	id: string,
 	name: string,
@@ -74,6 +109,10 @@ export type ZombieDef = {
 	planksPerHit: number,
 	flask: { range: number, minRange: number, cooldown: number, damage: number, tick: number, radius: number }?, -- химик: бросает колбу с ядом
 	teleport: { cooldown: number, distance: number }?, -- тёмный: появляется рядом с игроком (не ближе distance)
+	jump: BossJump?, -- босс: мощный прыжок на ближайшего игрока
+	rock: BossRock?, -- босс: бросок куска земли по дуге
+	attacks: BossAttacks?, -- босс: атаки Services/BossAI (удар по земле, ползун, разбег, чёрный взмах; у финального — море, кометы, тени, луч, порез)
+	phase2: { hpFraction: number }?, -- вторая фаза: при HP ≤ доли босс не бьёт обычно, только способности, и неуязвим к огнестрелу (нужно холодное оружие)
 }
 
 local Config = {}
@@ -264,23 +303,31 @@ Config.Score = {
 }
 
 Config.Economy = {
-	CoinsPerHit = 0, -- монеты за попадания убраны: доход — награда за волну и пул за убийства (WaveMath.waveReward / killPool)
+	CoinsPerHit = 0, -- монеты за попадания убраны: доход — награда за миссию и пул за убийства (WaveMath.missionReward / killPool / killCap)
 	CoinsPerPlankRepair = 10,
 	MaxRepairCoinsPerDay = 100, -- на всю команду
-	-- Личные счета (с 2026-10-23; на здания скидываются у вывески). Убийство — монеты убившему. За волну R делится поровну между игроками
-	-- (StartCoins — каждому). R = WaveRewardBase + WaveRewardPerWave·волна (выжившим доля целиком; лежащим на конец ночи — половина доли,
-	-- не зачищена до таймера — тоже половина) + пул за убийства K = KillPoolBase + KillPoolPerWave·волна: в голову полная доля, в тело — KillBodyShare.
+	-- Вариант C «миссии решают» (2026-10-25, docs/balance/economy_2026-10.md). Личные счета (на здания скидываются у вывески). Основной доход —
+	-- награда за миссию ночи: личная часть каждому целиком + командная, поровну на всех (она оплачивает здания). Обе растут от ночи к ночи
+	-- как 1 + MissionGrowth·(ночь − 1); суммы за MissionRewardWaves ночей — MissionPersonalTotal и MissionTeamTotal (цель на игрока к 15-й
+	-- ночи ≈ 0,9 × (5250 на 3–4 ствола + 14 500 / игроков на здания); стартовые 500 — на патроны). Миссия провалена — доля MissionFailShare
+	-- (0: награды нет). Лежащему на конец ночи — DownedRewardFactor от награды.
+	-- Убийства: пул ночи на игрока = KillPoolShare от потолка KillCap (растёт от KillCapMin до KillCapMax за KillCapWaves ночей), пул растёт
+	-- с числом игроков; в голову полная доля, в тело — KillBodyShare. Потолок монет за убийства на игрока за ночь — KillCap (200–300): сколько бы
+	-- зомби ни пришло за время миссии, больше потолка убийства не платят (было 3000 за первую ночь на потоке зомби).
 	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту волну.
-	-- Цель к 16-й волне: без хедшотов ≈ 13,6 тыс., только хедшоты ≈ 20,5 тыс. (все здания = 14,5 тыс., остальное — оружие и расходники).
-	WaveRewardBase = 350,
-	WaveRewardPerWave = 25,
-	KillPoolBase = 440,
-	KillPoolPerWave = 33,
+	MissionPersonalTotal = 3413,
+	MissionTeamTotal = 13050,
+	MissionGrowth = 0.18,
+	MissionRewardWaves = 15,
+	MissionFailShare = 0,
+	KillCapMin = 200,
+	KillCapMax = 300,
+	KillCapWaves = 15,
+	KillPoolShare = 0.35,
 	KillBodyShare = 0.4,
 	KillWeights = { Walker = 1, Runner = 1.2, Crawler = 0.8, Dark = 2, BucketHead = 2.5, Military = 3, Chemist = 3, Brute = 6 },
 	BossKillWeight = 40,
 	DownedRewardFactor = 0.5,
-	UnclearedRewardFactor = 0.5,
 	LossPenalty = 0.2,
 	HeadshotMultiplier = 2, -- урон по голове (было 1,5)
 	LimbMultiplier = 0.75, -- урон по рукам и ногам: целиться в корпус и голову выгоднее
@@ -485,11 +532,24 @@ Config.WeaponModels = {
 	SMG = { ref = "SMG/MP5", length = 2.2 },
 	Shotgun = { ref = "Shotguns/Mossberg500", length = 3.3 },
 	Rifle = { ref = "Rifles/AK12", length = 3.2 },
-	-- LMG и Sniper: подходящих моделей в паках нет (нет пака пулемётов и снайперок) — остаются сгенерированные из WeaponVisuals
+	-- Sniper: сгенерированная модель была размытой (текстура низкого разрешения), пока вместо неё карабин Mini14: оптику даёт маска прицела
+	-- (Config.ScopedWeapons). LMG: подходящей модели в паках нет — остаётся сгенерированная из WeaponVisuals
+	Sniper = { ref = "Carbines/Mini14", length = 4.2 },
 	Knife = { ref = "Melee/CombatKnife", length = 2.1 },
 	Bat = { ref = "Melee/BaseballBat", length = 3.0 },
 	Machete = { ref = "Melee/StandardMachete", length = 2.5 },
 } :: { [string]: WeaponModelDef }
+
+-- Где правая кисть держит оружие (студы, система рукояти, уже с масштабом модели). У пистолетов, револьверов и Kriss Vector начало
+-- координат модели не в рукояти (как у винтовок), поэтому кисть берётся отсюда; нет записи — ViewModelController.DEFAULT_HAND.
+Config.WeaponHands = {
+	Pistol = Vector3.new(0, -0.12, -0.16),
+	M1911 = Vector3.new(0, -0.02, -0.06),
+	FiveSeven = Vector3.new(0, -0.05, -0.06),
+	Revolver = Vector3.new(0, -0.02, 0.04),
+	Model29 = Vector3.new(0, -0.02, 0.08),
+	Vector = Vector3.new(0, -0.1, -0.55),
+} :: { [string]: Vector3 }
 
 -- ЧЕРНОВИК ассортимента (не подключён к игре; числа предложены 2026-10-19 и утверждаются Русланом / balance-analyst).
 -- Работающий баланс — Config.Weapons выше. class — папка библиотеки; slot — место в магазине (1–12) в порядке роста цены;
@@ -600,6 +660,9 @@ local WeaponAim: { [string]: Ballistics.Aim } = {
 }
 Config.WeaponAim = WeaponAim
 
+-- Оружие с оптическим прицелом: при прицеливании ствол и руки скрываются, на экране маска прицела с перекрестием (ViewModelController)
+Config.ScopedWeapons = { Sniper = true } :: { [string]: boolean }
+
 -- Взмах ближнего боя: стиль анимации, длительность (сек.) и сила тряски камеры при попадании
 local MeleeFx: { [string]: MeleeFxDef } = {
 	Knife = { style = "stab", time = 0.26, shake = 1.6 },
@@ -684,6 +747,79 @@ meleeFx("Karambit", "swipe", 0.2, 1.2)
 meleeFx("Balisong", "stab", 0.24, 1.4)
 meleeFx("Crowbar", "smash", 0.38, 2.6)
 meleeFx("Sledge", "heavy", 0.95, 6.0)
+-- Доставание оружия (ViewModelController): стиль по классу оружия. time — вся анимация, с; rise — доля времени, за которую оружие приходит
+-- из начального положения (variants: pos — смещение от стойки вправо/вверх/назад в студах, rot — наклон, градусы; вариант выбирается случайно);
+-- turn/turnAt — осмотр: поворот (градусы) в промежутке turnAt долей времени; action — затвор (slide: затвор пистолета, charge: рукоятка/затвор
+-- сбоку, pump: помпа дробовика) в промежутке actionAt, actionDist — ход затвора в студах. Холодное оружие (melee) — короткое доставание снизу.
+export type DrawVariant = { pos: Vector3, rot: Vector3 }
+export type DrawAnimDef = {
+	time: number,
+	rise: number,
+	variants: { DrawVariant },
+	turn: Vector3?,
+	turnAt: { number }?,
+	action: string?,
+	actionAt: { number }?,
+	actionDist: number?,
+}
+Config.DrawAnim = {
+	melee = { time = 0.4, rise = 1, variants = { { pos = Vector3.new(0, -1, 0.35), rot = Vector3.new(-38, 0, 12) } } },
+	-- пистолеты: поднимаются снизу, небольшой осмотр (поворот ствола к себе), передёргивание затвора левой рукой сверху
+	pistol = {
+		time = 1.25, rise = 0.3, variants = { { pos = Vector3.new(0.05, -0.85, 0.3), rot = Vector3.new(-40, 0, 8) } },
+		turn = Vector3.new(-6, -38, 30), turnAt = { 0.3, 0.64 }, action = "slide", actionAt = { 0.64, 0.95 }, actionDist = 0.35,
+	},
+	-- ПП: небольшой поворот при выходе и передёргивание затвора сбоку (рукоятка взведения)
+	smg = {
+		time = 1.1, rise = 0.4, variants = { { pos = Vector3.new(0.25, -0.7, 0.4), rot = Vector3.new(-30, 22, -14) } },
+		turn = Vector3.new(0, -28, -22), turnAt = { 0.25, 0.56 }, action = "charge", actionAt = { 0.58, 0.94 }, actionDist = 0.4,
+	},
+	-- винтовки: снизу или из-за спины (случайно)
+	rifle = {
+		time = 0.85, rise = 0.7,
+		variants = {
+			{ pos = Vector3.new(0.05, -1, 0.4), rot = Vector3.new(-42, 0, 10) },
+			{ pos = Vector3.new(0.85, -0.2, 0.9), rot = Vector3.new(-12, 58, -34) },
+		},
+	},
+	-- дробовики: из-за спины, в конце передёргивание помпой
+	shotgun = {
+		time = 1.3, rise = 0.5, variants = { { pos = Vector3.new(0.9, -0.15, 0.95), rot = Vector3.new(-14, 62, -36) } },
+		action = "pump", actionAt = { 0.62, 0.95 }, actionDist = 0.45,
+	},
+	-- пулемёт: двумя руками справа из-за спины, тяжёлый, поэтому дольше
+	lmg = { time = 1.4, rise = 0.7, variants = { { pos = Vector3.new(1.1, -0.3, 1.0), rot = Vector3.new(-18, 70, -40) } } },
+} :: { [string]: DrawAnimDef }
+
+-- Осмотр оружия (клавиша F), отдельно от доставания: короткий цикл, повторяется, пока держат F. При прерывании (R, повторное F, прицел)
+-- анимация едет назад по тем же кадрам в reverseSpeed раз быстрее (Rewind), а не прокручивается до конца и не прыгает.
+-- gun — огнестрел: time — один проход, с; pos — смещение оружия (вправо/вверх/назад, студы), rot — поворот (тангаж, рыскание, крен, градусы),
+-- sway — качание рысканием/креном (градусы) и подъём (студы) в середине прохода; in/out — доли прохода на подъём и опускание.
+-- Холодное оружие осматривается по MeleeAnim.INSPECT (флипы ножей), здесь для него только скорость возврата.
+Config.Inspect = {
+	reverseSpeed = 4,
+	gun = { time = 1.3, pos = Vector3.new(-0.12, 0.08, 0.22), rot = Vector3.new(8, -42, 38), sway = Vector3.new(10, 14, 0.04), inRatio = 0.25, outRatio = 0.25 },
+}
+
+-- Стиль доставания по оружию: холодное — melee, пулемёт — lmg, снайперка — rifle, остальное — по папке модели (пистолеты и револьверы — pistol)
+local DRAW_BY_CLASS = { Pistols = "pistol", Revolvers = "pistol", SMG = "smg", Shotguns = "shotgun", Rifles = "rifle", Carbines = "rifle" }
+local WeaponDraw: { [string]: string } = {}
+for id, def in Weapons do
+	local model = Config.WeaponModels[id]
+	local class = if model then (string.match(model.ref, "^(%w+)/") or "") else ""
+	WeaponDraw[id] = if def.melee then "melee" elseif id == "LMG" then "lmg" else (DRAW_BY_CLASS[class] or "rifle")
+end
+Config.WeaponDraw = WeaponDraw
+
+-- Комбо на ЛКМ: серия ударов разными позами (MeleeAnim.STYLES), если следующий удар начат не позже window секунд после начала предыдущего
+-- (window больше интервала 1/fireRate оружия); после последнего удара серия идёт заново. time — длительность взмаха; удар по зомби сервер
+-- применяет в долю MeleeAnim.HIT[style] от неё. Урон и темп (fireRate) не меняются. Катана: справа, слева, снизу. Бита: справа, слева.
+export type ComboStep = { style: string, time: number }
+Config.MeleeCombo = {
+	Katana = { window = 0.9, steps = { { style = "katana", time = 0.3 }, { style = "katanaL", time = 0.3 }, { style = "katanaUp", time = 0.34 } } },
+	Bat = { window = 1.3, steps = { { style = "side", time = 0.5 }, { style = "sideL", time = 0.5 } } },
+} :: { [string]: { window: number, steps: { ComboStep } } }
+
 if Config.WeaponModels.Karambit then
 	Config.WeaponModels.Karambit.grip = Vector3.new(0, -0.47, 0.78) * (MELEE_LENGTH.Karambit / 1.13) + Vector3.new(0, 0.1, -0.5) -- кольцо у кисти, но лезвие выдвинуто вперёд, чтобы не пряталось за кулаком
 end
@@ -704,55 +840,86 @@ Config.WallBuys = { "Bat", "Machete", "Revolver", "SMG", "Shotgun", "Rifle", "LM
 
 local Zombies: { [string]: ZombieDef } = {
 	Walker = {
-		id = "Walker", name = "Ходок", hp = 60, speed = 14, damage = 15, attackCooldown = 2.2, windup = 0.55, breakCooldown = 1,
+		id = "Walker", name = "Ходок", hp = 30, speed = 14, damage = 15, attackCooldown = 2.2, windup = 0.55, breakCooldown = 1,
 		reward = 50, points = 10, scale = 1, color = Color3.fromRGB(95, 140, 80), planksPerHit = 1,
 	},
 	Runner = {
-		id = "Runner", name = "Бегун", hp = 40, speed = 19, damage = 10, attackCooldown = 1.8, windup = 0.4, breakCooldown = 0.8,
+		id = "Runner", name = "Бегун", hp = 20, speed = 19, damage = 10, attackCooldown = 1.8, windup = 0.4, breakCooldown = 0.8,
 		reward = 60, points = 15, scale = 0.9, color = Color3.fromRGB(150, 160, 70), planksPerHit = 1,
 	},
 	Brute = {
-		id = "Brute", name = "Громила", hp = 600, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
+		id = "Brute", name = "Громила", hp = 300, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 400, points = 100, scale = 1.8, color = Color3.fromRGB(110, 50, 50), planksPerHit = 5,
 	},
 	-- Особые зомби (2026-10-19). Числа черновые: расписание по волнам и баланс — следующий шаг.
 	Military = {
-		id = "Military", name = "Заражённый военный", hp = 180, speed = 13, damage = 22, attackCooldown = 2.2, windup = 0.5, breakCooldown = 1,
+		id = "Military", name = "Заражённый военный", hp = 90, speed = 13, damage = 22, attackCooldown = 2.2, windup = 0.5, breakCooldown = 1,
 		reward = 150, points = 40, scale = 1.05, color = Color3.fromRGB(80, 100, 70), planksPerHit = 2,
 	},
 	Chemist = {
-		id = "Chemist", name = "Химик", hp = 90, speed = 12, damage = 10, attackCooldown = 2.4, windup = 0.5, breakCooldown = 1,
+		id = "Chemist", name = "Химик", hp = 45, speed = 12, damage = 10, attackCooldown = 2.4, windup = 0.5, breakCooldown = 1,
 		reward = 120, points = 35, scale = 1, color = Color3.fromRGB(120, 200, 90), planksPerHit = 1,
 		flask = { range = 40, minRange = 10, cooldown = 5, damage = 20, tick = 4, radius = 7 },
 	},
 	Dark = {
-		id = "Dark", name = "Тёмный", hp = 150, speed = 17, damage = 20, attackCooldown = 2, windup = 0.4, breakCooldown = 0.8,
+		id = "Dark", name = "Тёмный", hp = 75, speed = 17, damage = 20, attackCooldown = 2, windup = 0.4, breakCooldown = 0.8,
 		reward = 140, points = 40, scale = 1, color = Color3.fromRGB(25, 25, 30), planksPerHit = 1,
 		teleport = { cooldown = 7, distance = 18 },
 	},
 	BucketHead = {
-		id = "BucketHead", name = "Бронированный", hp = 300, speed = 12, damage = 18, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
+		id = "BucketHead", name = "Бронированный", hp = 150, speed = 12, damage = 18, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
 		reward = 130, points = 40, scale = 1.15, color = Color3.fromRGB(120, 120, 120), planksPerHit = 2,
 	},
 	Crawler = {
-		id = "Crawler", name = "Ползун", hp = 50, speed = 11, damage = 8, attackCooldown = 1.6, windup = 0.35, breakCooldown = 0.8,
+		id = "Crawler", name = "Ползун", hp = 25, speed = 11, damage = 8, attackCooldown = 1.6, windup = 0.35, breakCooldown = 0.8,
 		reward = 40, points = 12, scale = 0.6, color = Color3.fromRGB(110, 120, 90), planksPerHit = 1,
 	},
 	BossBuff = {
-		id = "BossBuff", name = "Качок", hp = 4000, speed = 11, damage = 50, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
+		id = "BossBuff", name = "Качок", hp = 2667, speed = 11, damage = 50, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 2000, points = 500, scale = 2.0, color = Color3.fromRGB(110, 60, 60), planksPerHit = 6,
+			jump = { windup = 3, flight = 0.9, cooldown = 13, range = 70, minRange = 8, radius = 13, damage = 60, first = 6 },
+			rock = { windup = 1.6, flight = 1.3, cooldown = 9, range = 75, minRange = 14, radius = 8, damage = 40, first = 4 },
 	},
 	BossGarg = {
-		id = "BossGarg", name = "Гаргантюа", hp = 8000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
+		id = "BossGarg", name = "Гаргантюа", hp = 5000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
 		reward = 4000, points = 800, scale = 2.5, color = Color3.fromRGB(70, 100, 60), planksPerHit = 8,
+			-- (2026-10-28) вместо прыжка и броска камня: удар по земле, ползун со спины, бросок знака (rock со stun), обычный удар
+			rock = { windup = 1.5, flight = 1.4, cooldown = 9, range = 75, minRange = 14, radius = 6, damage = 30, first = 4, stun = 2 },
+			attacks = {
+				slam = { windup = 1.3, cooldown = 10, first = 5, range = 40, minRange = 4, length = 42, width = 4, speed = 32, life = 4.5, slowMult = 0.4, slowSeconds = 3 },
+				crawlers = { windup = 1.5, flight = 1.0, cooldown = 14, first = 8, range = 60, minRange = 12, maxAlive = 6 },
+			},
 	},
 	BossStrong = {
-		id = "BossStrong", name = "Повелитель тёмных", hp = 6000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
+		id = "BossStrong", name = "Повелитель тёмных", hp = 3000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
 		reward = 3000, points = 650, scale = 1.7, color = Color3.fromRGB(40, 30, 50), planksPerHit = 6,
+			-- (2026-10-28) разбег, чёрный взмах, прыжок с волной тьмы (jump.wave), обычный удар дубинкой
+			jump = { windup = 3, flight = 0.8, cooldown = 11, range = 70, minRange = 8, radius = 13, damage = 70, first = 6, wave = { extra = 10, noSprint = 3 } },
+			attacks = {
+				charge = { windup = 2, lockBefore = 0.7, speed = 48, distance = 70, width = 5, damage = 70, recover = 1.4, cooldown = 14, first = 9, range = 80, minRange = 15 },
+				swing = { windup = 0.9, cooldown = 9, first = 5, range = 60, minRange = 5, speed = 60, length = 55, width = 9, damage = 45 },
+			},
+	},
+	-- Финальный босс (ночь 20, решение Руслана 2026-10-29: новая модель, ассет 5794917487, свой набор механик). Фаза 1: порез + способности; фаза 2 (HP ≤ 50%):
+	-- только способности и неуязвимость к огнестрелу. Тени (clones) повторяют способности, кроме раздвоения, и в 20 раз слабее.
+	BossFinal = {
+		id = "BossFinal", name = "Страж бункера", hp = 6000, speed = 13, damage = 70, attackCooldown = 2.6, windup = 0.8, breakCooldown = 1.4,
+		reward = 5000, points = 1000, scale = 1.9, color = Color3.fromRGB(30, 24, 36), planksPerHit = 7,
+			phase2 = { hpFraction = 0.5 },
+			attacks = {
+				sea = { windup = 1.3, cooldown = 15, first = 6, range = 90, minRange = 0, waves = 3, gap = 1, speed = 38, length = 80, width = 70, height = 3, damage = 40 },
+				comets = { windup = 1.6, cooldown = 26, first = 14, range = 140, minRange = 0, count = 20, interval = 0.35, hover = 2.1, fall = 0.8, radius = 6, damage = 45, height = 45 },
+				clones = { windup = 1.8, cooldown = 45, first = 16, range = 140, minRange = 0, count = 3, hpDivisor = 20, rise = 1.4, alpha = 0.6 },
+				beam = { windup = 1, cooldown = 20, first = 10, range = 110, minRange = 6, duration = 5, chaseSpeed = 17, radius = 3.5, damage = 14, tick = 0.25 },
+				slash = { windup = 0.55, cooldown = 2.2, first = 1, range = 16, minRange = 0, speed = 55, length = 32, size = 9, damage = 35 },
+			},
 	},
 }
 
 Config.Zombies = Zombies
+-- Здоровье зомби уменьшено (2026-10-27, по просьбе Руслана): у всех вдвое, у босса 5-й ночи (Качок) в 1,5 раза; потом добавим количество, а не жирность.
+-- Множитель здоровья по модели в пуле BucketHead (поверх hp): «с конусом» итого в 4 раза слабее прежнего (150 × 0,5 = 75), «с ведром» — в 3 раза (150 × 0,667 = 100).
+Config.ZombieRigHp = { Z_Cone = 0.5, Z_Bucket = 0.667 } :: { [string]: number }
 
 -- Внешний вид зомби (2026-10-17, v2): готовые модели R15 из Creator Store, собранные из мешей тела (см. assets_ledger).
 -- Позиции — в системе корня (начало — таз, лицо смотрит в -Z). height — рост, pelvis — высота таза над стопами.
@@ -832,7 +999,7 @@ Config.ZombieVisuals = ZombieVisuals
 -- Анимации читаются из атрибутов модели Anim_idle / Anim_walk / Anim_run / Anim_attack (записал Baker из Animation-объектов ассета),
 -- чего нет — берётся ZombieAnimDefaults (стандартные R6 Roblox).
 -- absolute — scale задаёт итоговый размер модели (без множителя def.scale); crawl — корпус прижат к земле (ползун)
-export type ZombieRig = { pool: { string }, scale: number, animSpeed: number, useRun: boolean?, tint: Color3?, absolute: boolean?, crawl: boolean? }
+export type ZombieRig = { pool: { string }, scale: number, animSpeed: number, useRun: boolean?, tint: Color3?, absolute: boolean?, crawl: boolean?, noAlertTint: boolean? }
 Config.UseRigZombies = true
 Config.ZombieAnimDefaults = { idle = "180435571", walk = "180426354", run = "180426354" }
 Config.ZombieRigs = {
@@ -856,6 +1023,7 @@ Config.ZombieRigs = {
 	BossBuff = { pool = { "B_Buff" }, scale = 0.6, absolute = true, animSpeed = 8 },
 	BossGarg = { pool = { "B_Garg" }, scale = 1.8, absolute = true, animSpeed = 6 },
 	BossStrong = { pool = { "B_Strong" }, scale = 0.95, absolute = true, animSpeed = 10 },
+	BossFinal = { pool = { "B_Final" }, scale = 2.4, absolute = true, animSpeed = 14, useRun = true, noAlertTint = true }, -- R15, ассет 5794917487 («Boss-Dark Zombie»), скрипты вычищены
 } :: { [string]: ZombieRig }
 
 -- Машины: сгенерированные меши (Studio generate_mesh, 2026-10-17), модель стоит основанием на земле, перёд — в -Z.
@@ -967,23 +1135,82 @@ Config.Perks = {
 -- radius = { от, до } — расстояние контрольных точек от места шатра в студах (по умолчанию Config.ScoutRadius = 50–100);
 -- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
 -- (сейчас играется как classic). Не указано — classic.
-export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string? }
+-- convoySpeed — скорость грузовика этой миссии (студов/с), вместо Config.Convoy.TruckSpeed; clearSandbags — на эту ночь убрать мешки с песком у точки появления игроков (Config.Convoy.Sandbag*)
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }? }
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
 	TruckHp = 1000,
 	TruckSpeed = 9.5, -- студов в секунду. ТЕСТ (2026-10-24): все конвои за ~3 минуты (самый длинный маршрут, ночь 12, ~1614 студов → ~170 с); в релизе вернуть к ~3,5 или короче маршруты
-	SoldierHp = 300,
-	SoldierDps = 50, -- урон по зомби в секунду каждого солдата
-	SoldierShotInterval = 0.25,
-	SoldierRange = 55,
+	SoldierHp = 150, -- было 300: сопровождающие были слишком сильными (2026-10-26)
+	SoldierDps = 15, -- урон по зомби в секунду каждого солдата (было 50)
+	SoldierShotInterval = 0.5,
+	SoldierRange = 40,
 	AliveCap = 14, -- живых зомби одновременно на миссии конвоя (грузовик 1000 HP не выдержит 40)
 	InstallHold = 6, -- сколько секунд держать «Установить шатёр»
+	Model = "APC", -- машина конвоя из ServerStorage.Assets.Vehicles (бронетранспортёр Stryker); запасная — TransportTruck
+	Solid = false, -- true: машина твёрдая (толкает игроков, но на стыках дороги скорость неровная)
+	FollowGain = 6, -- 1/с: как сильно машина подтягивается к расчётной точке маршрута (скорость = курс × скорость + ошибка × FollowGain)
+	TurnGain = 8, -- 1/с: как быстро машина доворачивает к расчётной позе
+	MaxLag = 12, -- студов: дальше машина от расчётной точки (застряла) — возвращаем на маршрут
+	MaxTilt = 12, -- градусов: наклон кузова от вертикали (крен или тангаж) больше — машину ставят на колёса по курсу (не даём перевернуться на уклонах и рёбрах)
+	EngineVolume = 0.04, -- громкость мотора грузовика (было 0,12: слишком громко)
+	Accel = 2.5, -- студов/с² — разгон
+	Brake = 4, -- студов/с² — торможение
+	FollowRadius = 60, -- грузовик едет, только когда рядом (в этом радиусе, студов) есть живой игрок; иначе стоит и ждёт
+	StartOffset = 14, -- студов: грузовик ночью-конвоя выезжает из начальной зоны — от точки появления игроков в сторону ближайшей дороги
+	SandbagFolder = "Base", -- где лежат мешки с песком (модели Fort), перекрывающие выезд из начальной зоны
+	SandbagName = "Fort",
 }
 Config.ScoutRadius = { 50, 100 } -- радиус контрольных точек от места шатра по умолчанию (у миссии можно задать свой: radius)
+-- Разговор с солдатами базы (SoldierService, клавиша E на солдате): случайная реплика над головой, подряд одна и та же не повторяется.
+-- bubbleTime — сколько секунд виден пузырь (и стоит солдат), soldierCooldown — пауза солдата между разговорами, playerInterval — минимум секунд между запросами игрока
+Config.SoldierTalk = {
+	bubbleTime = 4.5,
+	soldierCooldown = 1.5,
+	playerInterval = 1,
+	distance = 9,
+	lines = {
+		"Боец, а ты точно не зомби? Покажи документы. Лучше зубы покажи.",
+		"Генерал Нурсултан сказал держать позицию. Я держу. Уже третий час. Ногу не чувствую.",
+		"Устав гласит: не стой там, где сложно бегать.",
+		"Мутанты ночью, мы днём. Всё по графику, как в профсоюзе.",
+		"Хочешь совет? Целься в голову. Если голова есть.",
+		"Сухпаёк закончился. Остались только лавровый лист и надежда.",
+		"Я не боюсь зомби. Я боюсь, что генерал заставит чистить картошку.",
+		"Говорят, где-то есть тихая ночь. Не верю.",
+		"Береги патроны, боец. Мы их не печатаем.",
+		"Я бы сходил в увольнение, но город сейчас занят.",
+		"Если встретишь босса, беги. Если не встретишь, всё равно беги.",
+		"Старшина учил: один выстрел — один зомби. Старшина не видел толпу.",
+		"На базе безопасно. По крайней мере, до рассвета, потом тоже безопасно.",
+		"Тут недавно один зомби попросил прикурить. Мы ему отказали из принципа.",
+		"Не забывай перезаряжаться. Это тебе не кино, там магазины бесконечные.",
+		"Нурсултан сегодня в хорошем настроении. Расстрелял только одну ведомость.",
+		"Знаешь, почему мы не спим? Потому что ночью приходят мутанты. И ещё кофе.",
+		"Мой дедушка воевал, отец воевал. А я тут с зомби. Эволюция.",
+		"Каску надел? Нет? Ну, значит, будешь героем. Посмертно.",
+		"Лучшая защита — это забор. Лучше забора только двойной забор.",
+		"Видишь тот шатёр? Раньше он был палаткой, теперь это стратегический объект.",
+		"Я тут записался в добровольцы. Не знал, что нас никто не спрашивал.",
+		"Зомби медленные? Расскажи это тому, что ночью меня догнал.",
+		"Не геройствуй. Герои у нас долго не служат, зато красиво.",
+		"Дежурство, боец, это когда ты стоишь и стараешься не заснуть. Вот этим я и занят.",
+		"Главное в армии — уметь вовремя сказать «так точно» и вовремя убежать.",
+		"Разведка доложила: впереди очень много зомби. Разведка не вернулась.",
+		"Вчера нашёл в кармане конфету. Это был лучший день в моей жизни.",
+		"Бить прикладом — не по уставу. Но зомби об уставе не знают.",
+		"Рация молчит уже сутки. Или все спят, или нас забыли.",
+		"Сержант сказал, что я похож на героя. Потом добавил: «издалека».",
+		"Береги базу, боец. Тут тепло, сухо и почти не едят.",
+		"Если упадёшь, не волнуйся: товарищ поднимет. Если успеет.",
+		"Мне бы отпуск на море. Хотя бы на лужу после дождя.",
+	},
+}
+
 -- Тексты генерала Нурсултана по типам миссий ({points}, {radius}, {kills}, {seconds}, {hold} подставляются из Config.Missions и Config.Convoy)
 Config.Briefs = {
 	scout = {
-		"Нужна разведка. Вокруг места будущего шатра отмечены контрольные точки — {points} синих маяков в {radius} шагах от него.",
+		"Нужна разведка. Вокруг места будущего шатра отмечены контрольные точки — {points} синих кругов света в {radius} шагах от него.",
 		"Обойдите их все. Мутанты пойдут со всех сторон без остановки: не стойте на месте и держитесь вместе.",
 	},
 	build = {
@@ -991,8 +1218,9 @@ Config.Briefs = {
 		"Затем встаньте на золотую метку и удерживайте E {hold} секунд — шатёр установится. Он даст нам магазин, автомат и плацдарм в районе.",
 	},
 	escort = {
-		"Конвой с припасами. Грузовик выедет с базы, объедет контрольные точки района и остановится на дороге у места шатра.",
-		"С ним идут двое моих бойцов: по 300 здоровья, бьют по мутантам в полную силу. Но мутанты нападают и на них, и на грузовик (1000 прочности) — прикрывайте.",
+		"Конвой с припасами. Грузовик выедет от точки сбора, объедет контрольные точки района и остановится на дороге у места шатра.",
+		"Едет он только пока рядом с ним (в {follow} шагах) есть кто-то из вас: ушли далеко — колонна встанет и будет ждать.",
+		"С ним идут двое моих бойцов: по 150 здоровья, стреляют несильно — основная работа на вас. Мутанты нападают и на них, и на грузовик (1000 прочности) — прикрывайте.",
 		"Потеряем грузовик — задание провалено.",
 	},
 	defend = {
@@ -1006,10 +1234,43 @@ Config.Briefs = {
 		"Спуститесь по лестнице: внизу вас перенесёт на станцию. Зачистите её: убейте {kills} мутантов. Они лезут из тоннелей со всех сторон — держитесь платформ и укрытий.",
 		"Когда зачистим, вернётесь на базу.",
 	},
+	bossfight = {
+		"Финал, боец. Это не ночь: босс выходит днём, обычных мутантов не будет — только он.",
+		"Держитесь вместе, не стойте на месте: у него хватает приёмов, а кувырок спасает от большинства. Победим его — и город наш.",
+	},
 	classic = {
 		"Уничтожьте всех мутантов этой ночи. Магазин на ночь закрыт — берегите патроны, поднимайте упавших.",
 	},
 } :: { [string]: { string } }
+-- Оповещение днём о ближайшей ночи (GeneralService.announceDay → атрибуты NextBrief*, клиент DayBriefController): панель, строки в чате и напоминание.
+-- {points} {kills} {seconds} {follow} подставляются из Config.Missions и Config.Convoy (как в Config.Briefs)
+Config.DayBrief = {
+	ShowSeconds = 9, -- сколько панель висит в начале дня
+	RemindBefore = 30, -- за сколько секунд до ночи напоминаем
+	RemindSeconds = 6, -- сколько держится напоминание
+	Task = {
+		scout = "Разведка: обойти {points} контрольные точки вокруг места шатра",
+		build = "Зачистить зону ({kills} убийств) и поставить шатёр: удерживать E на золотой метке",
+		escort = "Конвой: довезти грузовик с припасами до места шатра",
+		defend = "Оборона шатра: продержаться {seconds} секунд рядом с ним",
+		clear = "Зачистка: убить всех мутантов ночи",
+		metro = "Метро: спуститься по лестнице и зачистить станцию ({kills} убийств)",
+		classic = "Убить всех мутантов ночи",
+		bossfight = "Финал: босс-файт — убить финального босса",
+	},
+	Tip = {
+		scout = "Мутанты идут со всех сторон без остановки — держитесь вместе.",
+		build = "Пока шатёр не стоит, магазина в районе нет — защищайте золотую метку.",
+		escort = "Конвой стартует от места появления игроков (спавна) и едет, только пока рядом кто-то из вас (в {follow} шагах). Соберитесь у спавна заранее и прикрывайте грузовик!",
+		defend = "Отсчёт идёт, только пока вы рядом с шатром.",
+		clear = "Магазин на ночь закрыт — купите всё днём.",
+		metro = "Внизу тесно и темно: держитесь платформ и укрытий, берите побольше патронов.",
+		classic = "Магазин на ночь закрыт — купите всё днём и поднимайте упавших.",
+		bossfight = "Бой днём и без обычных зомби: только босс. Запаситесь патронами и аптечками, держитесь вместе.",
+	},
+	Boss = "Ночью придёт босс: {name}.",
+	Here = "на базе",
+} :: { ShowSeconds: number, RemindBefore: number, RemindSeconds: number, Task: { [string]: string }, Tip: { [string]: string }, Boss: string, Here: string }
 Config.AmbienceVolume = 0.7 -- общая громкость звуков окружения (зомби, машины); по слуху держим тихо
 Config.DebugStartNight = 1 -- для проверок: с какой ночи начинается раунд (в релизе всегда 1)
 Config.MissionMoveTeam = false -- true: в начале ночи команду переносит к точке миссии (по решению Руслана 2026-10-24 — выключено: идут сами)
@@ -1017,14 +1278,46 @@ Config.MissionMoveTeam = false -- true: в начале ночи команду 
 -- с Config.Waves.CountScale масштабируется как убийства метро (не меньше 5)
 Config.MissionMinKills = { Solo = 15, Full = 30, FullPlayers = 6 }
 Config.MissionKillsFloor = 3 -- ТЕСТ: нижняя граница убийств после масштаба CountScale (минимум убийств, зачистка шатра, метро); в релизе удалить (было 5)
-Config.MissionReturnTeam = true -- с рассветом команда возвращается в магазин
--- Маяк места миссии (MissionService): высокий луч, виден издалека; подпись зависит от типа миссии
-Config.PlaceBeacon = { Height = 160, Color = Color3.fromRGB(255, 200, 60) }
+Config.MissionReturnTeam = false -- true: с рассветом команду переносит к магазину (по решению Руслана 2026-10-26 — выключено: не телепортировать на рассвете)
+-- Военная база (Workspace.Base: стены x −159…107, ворота у z = 300, дальняя стена z ≈ 580): с началом ночи всех, кто внутри, выталкивает к точке сбора
+-- игроков (BuildingService.expelFromBase, по образцу магазина). locationId — локация, для которой верны границы; maxY — выше (вышки, вертолёты) не считаем
+Config.BaseZone = { locationId = "Custom", minX = -161, maxX = 109, minZ = 300, maxZ = 580, maxY = 60 }
+-- Метки миссий (MissionService.makeBeacon): светящийся полупрозрачный круг на земле + метка в HUD с расстоянием (столбы убраны по просьбе Руслана 2026-10-26).
+-- ScoutPointRadius — радиус круга контрольной точки = радиус засчитывания; PlaceBeacon — круг места миссии (подпись зависит от типа миссии)
+Config.ScoutPointRadius = 10
+Config.ScoutPointColor = Color3.fromRGB(80, 200, 255)
+-- Обломки на месте шатра при провале конвоя (MissionService.buildRubble): число деталей по видам и радиус разброса, студы
+Config.Rubble = { Radius = 14, Chunks = 34, Crates = 6, Planks = 12, Barrels = 4, Tires = 5, Cloth = 6 }
+-- Надписи над метками миссий (BillboardGui): мелкие и полупрозрачные, чтобы не закрывали обзор (по просьбе Руслана 2026-10-28 — в 10 раз меньше по площади,
+-- было 200×44 и 240×40 пикселей, дальность 2000 и 1500 студов); дальше MaxDistance надпись не рисуется
+Config.MissionLabel = { Width = 70, Height = 13, MaxDistance = 450, TextTransparency = 0.5, StrokeTransparency = 0.85 }
+Config.PlaceBeacon = { Radius = 16, Color = Color3.fromRGB(255, 200, 60) }
+-- Ночь 19, «бойня на базе» (BaseBattleService, MissionService.begin): Total зомби одним потоком (одновременно не больше AliveCap) со стороны базы (точки
+-- SpawnPoints внутри Config.BaseZone), баррикады на базе на эту ночь убраны; треть солдат базы лежит убитыми (DeadFraction); у точки появления игроков
+-- Defenders живых солдат (HP из DefenderHp, урон DefenderDps, шаг DefenderInterval, дальность DefenderRange) — зомби их атакуют и могут убить;
+-- по базе Debris.Clusters куч мусора (Wrecks из них — с остовами машин).
+Config.BaseBattle = {
+	Total = 200, AliveCap = 45, SpawnPoints = 14, DeadFraction = 1 / 3,
+	Defenders = 10, DefenderHp = { 200, 250 }, DefenderDps = 30, DefenderInterval = 0.4, DefenderRange = 55, PostRadius = 14,
+	Debris = { Clusters = 16, Radius = 11, Chunks = 16, Crates = 3, Planks = 6, Barrels = 2, Tires = 2, Cloth = 3, Wrecks = 3 },
+}
+-- Финал акта 1 (RoundService.day(finale), MissionService.beginFinale): после убийства финального босса начинается день 20 с миссией «зайти в бункер»
+-- (Workspace.Bunker.BunkerEntrance); когда все живые игроки в Radius студов от входа — всем окно поздравления, через EndSeconds раунд заканчивается
+Config.Finale = {
+	Radius = 22, EndSeconds = 25,
+	Title = "Акт 1 пройден!",
+	Lines = {
+		"Вы дошли до бункера и победили Стража. Первый акт закончен: город держится, база цела, а за бронёй бункера — новые вопросы.",
+		"Второй акт — в разработке. Спасибо, что играли: ждите продолжения!",
+	},
+}
 Config.Missions = {
 	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
 	[2] = { type = "build", title = "Зачистка зоны и установка шатра", anchor = 1, kills = 15, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
-	[3] = { type = "escort", title = "Сопровождение конвоя с припасами", anchor = 1, points = 3, hint = "Не дайте уничтожить грузовик: он объедет контрольные точки и встанет у шатра" },
-	[4] = { type = "scout", title = "Разведка ближайших зданий", anchor = 1, points = 4, radius = { 100, 150 }, hint = "Обойдите контрольные точки" },
+	-- Первый конвой: выезжает из начальной зоны (мешки с песком на эту ночь убираются), едет не быстро (6,5 студа/с — маршрут ~600 студов за ~90 с, решение Руслана 2026-10-26; было 3,5;
+	-- Config.Convoy.TruckSpeed = 9,5 — тестовая, на неё ночи 8, 12, 17 не меняем) и только пока рядом игрок
+	[3] = { type = "escort", title = "Сопровождение конвоя с припасами", anchor = 1, points = 3, convoySpeed = 6.5, clearSandbags = true, hint = "Не дайте уничтожить грузовик: он объедет контрольные точки и встанет у шатра" },
+	[4] = { type = "scout", title = "Разведка ближайших зданий", anchor = 1, points = 4, radius = { 100, 200 }, hint = "Обойдите контрольные точки" },
 	[5] = { type = "classic", title = "Защита шатра от босса", anchor = 1, planned = "defend-boss", hint = "Убейте босса и волну" },
 	[6] = { type = "scout", title = "Разведка второго района", anchor = 2, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
 	[7] = { type = "build", title = "Зачистка и установка шатра", anchor = 2, kills = 20, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
@@ -1039,8 +1332,10 @@ Config.Missions = {
 	[16] = { type = "scout", title = "Разведка территории", anchor = 4, points = 4, planned = "daytime" },
 	[17] = { type = "escort", title = "Установка шатра и конвой", anchor = 4, points = 3, install = true, hint = "Доведите грузовик и установите шатёр у места" },
 	[18] = { type = "metro", title = "Катакомбы: зачистка метро", anchor = 6, kills = 40, hint = "Спуститесь по лестнице у входа в метро и зачистите станцию" },
-	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, planned = "capture" },
-	[20] = { type = "classic", title = "Финал: бункер", anchor = 5, planned = "final" },
+	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, baseBattle = true, hint = "Отбейте базу: мутанты идут со стороны базы, солдаты у точки сбора помогают" },
+	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,
+	-- пока Повелитель тёмных); победа — убит последний босс (RoundService: атрибут Victory и сообщение; титры и награда — после решения Руслана)
+	[20] = { type = "bossfight", title = "Финал: босс-файт", anchor = 5, day = true, bosses = { "BossFinal" }, hint = "Днём, без зомби: убейте финального босса" },
 } :: { [number]: MissionDef }
 
 -- Рейтинговые очки (не монеты): копятся за раунд, идут в профиль и в глобальный лидерборд (RatingService)

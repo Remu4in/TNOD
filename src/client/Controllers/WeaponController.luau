@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
 local WeaponSfx = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("WeaponSfx"))
 local FxController = require(script.Parent:WaitForChild("FxController"))
+local ViewModel = require(script.Parent:WaitForChild("ViewModelController"))
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 local Ballistics = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Ballistics"))
 
@@ -66,6 +67,55 @@ local function applyRecoil(aim: Ballistics.Aim)
 	end
 	local cf = camera.CFrame
 	camera.CFrame = CFrame.new(cf.Position) * CFrame.Angles(0, math.rad(yawDeg), 0) * cf.Rotation * CFrame.Angles(math.rad(pitchDeg), 0, 0)
+end
+
+-- Колёсико мыши: вверх — предыдущее оружие, вниз — следующее (по кругу, в порядке хотбара: атрибут Order ставит сервер).
+-- Работает только от первого лица (в стандартной камере колесо там же отдаляет вид; от третьего лица оно остаётся зумом, как и клавиши I/O),
+-- при открытом меню покупки не мешает его прокрутке и не переключает во время перезарядки.
+local WHEEL_COOLDOWN = 0.1
+local lastWheel = 0
+
+local function firstPerson(): boolean
+	local camera = workspace.CurrentCamera
+	return camera ~= nil and (camera.Focus.Position - camera.CFrame.Position).Magnitude < 1.6
+end
+
+local function cycleWeapon(direction: number)
+	local now = os.clock()
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if
+		now - lastWheel < WHEEL_COOLDOWN
+		or not hum
+		or not backpack
+		or hum.Health <= 0
+		or hum.SeatPart ~= nil
+		or player:GetAttribute("Downed") == true
+		or ViewModel.isReloading()
+	then
+		return
+	end
+	local tools: { Tool } = {}
+	local held = char and char:FindFirstChildOfClass("Tool")
+	if held then
+		table.insert(tools, held)
+	end
+	for _, t in backpack:GetChildren() do
+		if t:IsA("Tool") then
+			table.insert(tools, t)
+		end
+	end
+	if #tools < 2 then
+		return
+	end
+	table.sort(tools, function(a: Tool, b: Tool)
+		return ((a:GetAttribute("Order") :: number?) or math.huge) < ((b:GetAttribute("Order") :: number?) or math.huge)
+	end)
+	local current = if held then (table.find(tools, held) or 0) else 0
+	local nextIndex = if current == 0 then (if direction > 0 then 1 else #tools) else (current - 1 + direction) % #tools + 1
+	lastWheel = now
+	hum:EquipTool(tools[nextIndex])
 end
 
 local function aimPoint(): Vector3
@@ -235,17 +285,23 @@ function WeaponController.start()
 
 	ContextActionService:BindAction("Reload", function(_, state)
 		if state == Enum.UserInputState.Begin then
-			FxController.cancelInspect(true) -- R прерывает осмотр оружия (F снова запускает)
+			FxController.cancelInspect(true) -- R: осмотр плавно едет назад (Rewind), затем перезарядка; F снова запускает
+			ViewModel.cancelInspect()
 			Remotes.get("Reload"):FireServer()
 		end
 		return Enum.ContextActionResult.Sink
 	end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonX)
 	ContextActionService:SetTitle("Reload", "R")
 
-	-- F — осмотр холодного оружия (нож, катана, керамбит, бабочка); Pass: та же клавиша «Разобрать» у баррикады продолжает работать
+	-- F — осмотр оружия (отдельно от доставания): у холодного — флипы (MeleeAnim.INSPECT), у огнестрела — короткий цикл (Config.Inspect);
+	-- повторяется, пока держат F; повторное нажатие и R — реверс (Rewind). Pass: та же клавиша «Разобрать» у баррикады продолжает работать
 	ContextActionService:BindAction("InspectWeapon", function(_, state)
 		if state == Enum.UserInputState.Begin then
 			FxController.inspect()
+			ViewModel.inspect()
+		elseif state == Enum.UserInputState.End then
+			FxController.inspectRelease()
+			ViewModel.inspectRelease()
 		end
 		return Enum.ContextActionResult.Pass
 	end, false, Enum.KeyCode.F)
@@ -257,6 +313,17 @@ function WeaponController.start()
 		end
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.KeyCode.G)
+
+	-- колёсико мыши: смена оружия; Sink в первом лице, чтобы камера не отдалялась (меню покупки с прокруткой — не трогаем)
+	ContextActionService:BindActionAtPriority("NotdWheelWeapon", function(_, state, input)
+		local buyMenu = player:FindFirstChildOfClass("PlayerGui") and (player.PlayerGui:FindFirstChild("BuyMenu") :: ScreenGui?)
+		if state ~= Enum.UserInputState.Change or (buyMenu and buyMenu.Enabled) or not firstPerson() then
+			return Enum.ContextActionResult.Pass
+		end
+		-- вверх (Z > 0) — предыдущее, вниз — следующее
+		cycleWeapon(if input.Position.Z > 0 then -1 else 1)
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value, Enum.UserInputType.MouseWheel)
 
 	-- автоматический огонь при удержании
 	task.spawn(function()

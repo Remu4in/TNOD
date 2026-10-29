@@ -233,6 +233,37 @@ local function expelFromShop()
 	end
 end
 
+-- Военная база ночью: тех, кто внутри (Config.BaseZone), переносим к точке сбора игроков; сидящего в машине сначала высаживаем,
+-- упавшего (Downed) переносим как есть. Игроков снаружи не трогаем.
+local function expelFromBase()
+	local m = map
+	local zone = Config.BaseZone
+	if not m or m.id ~= zone.locationId then
+		return
+	end
+	for _, player in Players:GetPlayers() do
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if char and root and hum and hum.Health > 0 then
+			local p = root.Position
+			if p.X >= zone.minX and p.X <= zone.maxX and p.Z >= zone.minZ and p.Z <= zone.maxZ and p.Y <= zone.maxY then
+				task.spawn(function()
+					if hum.SeatPart then
+						hum.Sit = false
+						task.wait(0.25) -- пока сиденье отпустит персонажа
+					end
+					if hum.Health > 0 and char.Parent then
+						char:PivotTo(CFrame.new(m.nightSpawn + Vector3.new(math.random(-6, 6), 0, math.random(-4, 4))))
+						root.AssemblyLinearVelocity = Vector3.zero
+						notify(player, "Ночь: база закрыта, вы у точки сбора", 4)
+					end
+				end)
+			end
+		end
+	end
+end
+
 -- Ночные заграждения (ворота базы): ночью — стальная решётка, днём — проход свободен
 local function setBarriers(closed: boolean)
 	local m = map
@@ -275,6 +306,7 @@ function BuildingService.closeShop()
 	setBarriers(true)
 	BarricadeService.setPointLocked("shop", true)
 	expelFromShop()
+	expelFromBase()
 	for id, info in infos do
 		BarricadeService.setPointLocked(id, true)
 		expelFromBuilding(info)

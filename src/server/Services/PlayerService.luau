@@ -153,6 +153,65 @@ function PlayerService.isInvulnerable(player: Player): boolean
 	return os.clock() < (invulnUntil[player] or 0)
 end
 
+-- Эффекты от атак боссов. Конец эффекта пишется в атрибут игрока по серверному времени (GetServerTimeNow): клиент (MovementController, StatusController)
+-- по нему гасит скорость, показывает значок и не даёт бежать, а сервер проверяет сам (стрельба и ближний бой — isStunned в WeaponService, спринт — StaminaService).
+-- Кувырок (неуязвимость) защищает от всех трёх так же, как от урона. true — эффект наложен.
+local function statusFree(player: Player): boolean
+	return PlayerService.isUp(player) and not PlayerService.isInvulnerable(player)
+end
+
+-- Оглушение: нельзя двигаться и стрелять
+function PlayerService.stun(player: Player, seconds: number): boolean
+	if not statusFree(player) then
+		return false
+	end
+	local untilT = workspace:GetServerTimeNow() + seconds
+	if untilT > ((player:GetAttribute("StunUntil") :: number?) or 0) then
+		player:SetAttribute("StunUntil", untilT)
+	end
+	local h = humanoidOf(player)
+	if h then
+		h.WalkSpeed = 0
+		h.JumpPower = 0
+		task.delay(seconds + 0.05, function()
+			if workspace:GetServerTimeNow() >= ((player:GetAttribute("StunUntil") :: number?) or 0) and PlayerService.isUp(player) then
+				h.WalkSpeed = if player:GetAttribute("Sprinting") == true then Perks.sprintSpeed() else Perks.walkSpeed()
+				h.JumpPower = 50
+			end
+		end)
+	end
+	return true
+end
+
+function PlayerService.isStunned(player: Player): boolean
+	return workspace:GetServerTimeNow() < ((player:GetAttribute("StunUntil") :: number?) or 0)
+end
+
+-- Замедление: скорость умножается на mult (0..1) на seconds
+function PlayerService.slow(player: Player, mult: number, seconds: number): boolean
+	if not statusFree(player) then
+		return false
+	end
+	local untilT = workspace:GetServerTimeNow() + seconds
+	if untilT > ((player:GetAttribute("SlowUntil") :: number?) or 0) then
+		player:SetAttribute("SlowUntil", untilT)
+	end
+	player:SetAttribute("SlowMult", mult)
+	return true
+end
+
+-- Запрет бега: спринт и энергия отключены (StaminaService читает атрибут)
+function PlayerService.noSprint(player: Player, seconds: number): boolean
+	if not statusFree(player) then
+		return false
+	end
+	local untilT = workspace:GetServerTimeNow() + seconds
+	if untilT > ((player:GetAttribute("NoSprintUntil") :: number?) or 0) then
+		player:SetAttribute("NoSprintUntil", untilT)
+	end
+	return true
+end
+
 function PlayerService.damage(player: Player, amount: number)
 	if not PlayerService.isUp(player) or PlayerService.isInvulnerable(player) then
 		return

@@ -146,6 +146,14 @@ local function tryDodge(want: string?)
 		deny("Рано: пауза между подкатом и кувырком")
 		return
 	end
+	local serverNow = workspace:GetServerTimeNow()
+	if serverNow < ((player:GetAttribute("StunUntil") :: number?) or 0) then
+		return -- оглушён
+	end
+	if serverNow < ((player:GetAttribute("NoSprintUntil") :: number?) or 0) then
+		deny("Тьма: бег, подкат и кувырок отключены")
+		return
+	end
 	local energy = (player:GetAttribute("Energy") :: number?) or 0
 	-- подкат — только на бегу (атрибут Sprinting приходит с сервера с задержкой, поэтому смотрим и на скорость)
 	local flatSpeed = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude
@@ -212,11 +220,23 @@ function MovementController.start()
 		if not hum or not camera or hum.Health <= 0 or hum.SeatPart then
 			return
 		end
+		-- эффекты боссов (PlayerService.stun/slow/noSprint): конец эффекта — по серверным часам
+		local serverNow = workspace:GetServerTimeNow()
+		if serverNow < ((player:GetAttribute("StunUntil") :: number?) or 0) then
+			hum.WalkSpeed = 0 -- оглушён (знак Гаргантюа): не двигаемся
+			hum.JumpPower = 0
+			lastWritten = 0
+			return
+		end
 		if player:GetAttribute("Downed") == true or player:GetAttribute("Dodge") ~= nil then
 			return
 		end
-		local base = if player:GetAttribute("Sprinting") == true then Perks.sprintSpeed() else Perks.walkSpeed()
+		local noSprint = serverNow < ((player:GetAttribute("NoSprintUntil") :: number?) or 0)
+		local base = if player:GetAttribute("Sprinting") == true and not noSprint then Perks.sprintSpeed() else Perks.walkSpeed()
 		local factor = 1
+		if serverNow < ((player:GetAttribute("SlowUntil") :: number?) or 0) then
+			factor = (player:GetAttribute("SlowMult") :: number?) or 1 -- замедлен растениями Гаргантюа
+		end
 		local move = hum.MoveDirection
 		if move.Magnitude > 0.1 then
 			local look = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
@@ -224,7 +244,7 @@ function MovementController.start()
 				local dot = move.Unit:Dot(look.Unit)
 				if dot < -0.3 then
 					local t = math.clamp((-dot - 0.3) / 0.7, 0, 1)
-					factor = 1 - (1 - P.BackwardSpeedFactor) * t
+					factor *= 1 - (1 - P.BackwardSpeedFactor) * t
 				end
 			end
 		end

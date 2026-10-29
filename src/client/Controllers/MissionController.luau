@@ -1,8 +1,10 @@
 --!strict
 -- Задача ночи на экране: название и прогресс миссии (атрибуты ReplicatedStorage: MissionTitle, MissionText). Логика — MissionService.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local MissionController = {}
 
@@ -59,6 +61,29 @@ function MissionController.start()
 		text.Text = x
 		text.Visible = x ~= ""
 	end
+	-- метки на земле (тег MissionZone, MissionService.makeBeacon): в подпись добавляем расстояние до игрока
+	local acc = 0
+	RunService.Heartbeat:Connect(function(dt: number)
+		acc += dt
+		if acc < 0.3 then
+			return
+		end
+		acc = 0
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if not root then
+			return
+		end
+		for _, part in CollectionService:GetTagged("MissionZone") do
+			local gui = part:FindFirstChildOfClass("BillboardGui")
+			local lab = gui and gui:FindFirstChild("Label") :: TextLabel?
+			local base = part:GetAttribute("BaseText")
+			if lab and typeof(base) == "string" and part:IsA("BasePart") then
+				local d = Vector3.new(part.Position.X - root.Position.X, 0, part.Position.Z - root.Position.Z).Magnitude
+				lab.Text = string.format("%s · %d м", base, math.floor(d + 0.5))
+			end
+		end
+	end)
 	ReplicatedStorage:GetAttributeChangedSignal("MissionTitle"):Connect(refresh)
 	ReplicatedStorage:GetAttributeChangedSignal("MissionText"):Connect(refresh)
 	refresh()

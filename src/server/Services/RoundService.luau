@@ -37,10 +37,15 @@ local wave = 0
 local locationIndex = 1 -- init.server строит первую локацию из Config.Locations
 local gameOver = false
 local fellAtNight = false
+local finalePending = false -- убит финальный босс: следующий день — финал акта 1 (бункер)
+local finaleDone = false -- акт 1 пройден: раунд кончается поздравлением, а не «все пали»
 local rng = Random.new()
 local killUnits: { [string]: number } = {} -- монеты за убийство в голову по типам на текущую ночь (WaveMath.killUnits)
+local killEarned: { [Player]: number } = {} -- сколько монет за убийства игрок уже получил за эту ночь (потолок WaveMath.killCap)
 local roundSeed = 1 -- семя бросков прогрессии (WaveMath.roll): одно на раунд, чтобы рост по волнам был воспроизводим
 local dayVotes: { [Player]: boolean } = {} -- голоса «завершить день»
+local skipRequested = false -- тестовый стенд «Пропустить волну»: сейчас идёт ночь — завершить её как выполненную; днём — сразу начать ночь
+local pendingNight: number? = nil -- тестовый стенд «Выбор волны»: какой должна быть следующая ночь (применяется, когда текущая закончится)
 
 -- Голоса: считаем среди игроков, которые сейчас в игре; атрибуты для HUD (DayVotes / DayVoteNeed)
 local function countVotes(): (number, number)
@@ -61,7 +66,8 @@ local function waitDayVote(seconds: number): boolean
 	local endsAt = os.clock() + seconds
 	while os.clock() < endsAt and not gameOver do
 		local votes, need = countVotes()
-		if need > 0 and votes >= need then
+		if (need > 0 and votes >= need) or skipRequested then
+			skipRequested = false
 			return true
 		end
 		task.wait(0.25)
@@ -219,6 +225,10 @@ end
 local function startRound()
 	gameOver = false
 	fellAtNight = false
+	finalePending = false
+	finaleDone = false
+	ReplicatedStorage:SetAttribute("Victory", nil)
+	ReplicatedStorage:SetAttribute("ActComplete", nil)
 	wave = math.max(0, Config.DebugStartNight - 1)
 	local players = Players:GetPlayers()
 	if locationIndex ~= 1 then
@@ -245,7 +255,7 @@ local function startRound()
 	PlayerService.spawnAll()
 end
 
-local function day(first: boolean)
+local function day(first: boolean, finale: boolean?)
 	local want = locationFor(wave + 1)
 	if want ~= locationIndex then
 		loadLocation(want)
@@ -271,6 +281,28 @@ local function day(first: boolean)
 		p:SetAttribute("VotedDay", false)
 	end
 	countVotes()
+	if finale then
+		-- финал акта 1: день без таймера и без следующей ночи — миссия «зайти в бункер», затем поздравление
+		setPhase("Day", nil)
+		ReplicatedStorage:SetAttribute("NextBriefTitle", "") -- панель «ближайшая ночь» не показываем
+		MissionService.beginFinale()
+		notifyAll("День 20. Босс повержен — зайдите в бункер всей командой!", 7)
+		while not gameOver and not MissionService.finaleReady() do
+			task.wait(0.5)
+		end
+		if not gameOver then
+			MissionService.finish()
+			ReplicatedStorage:SetAttribute("ActComplete", 1)
+			for _, p in Players:GetPlayers() do
+				Remotes.get("Briefing"):FireClient(p, "Командование", Config.Finale.Title, Config.Finale.Lines)
+			end
+			notifyAll(Config.Finale.Title .. " Следующий акт — в разработке.", 12)
+			task.wait(Config.Finale.EndSeconds)
+			finaleDone = true
+			gameOver = true
+		end
+		return
+	end
 	setPhase("Day", t)
 	GeneralService.announceDay()
 	notifyAll(if first then "Закупайтесь в магазине и открывайте здания — вносите монеты у вывесок" else "Рассвет. Мутанты сгорают на солнце — бегите за покупками!", 4)
@@ -316,8 +348,20 @@ local function loadouts(): { { string } }
 	return list
 end
 
+-- Следующая ночь — nightNumber: счётчик волны ставим на одну меньше (night() прибавит единицу), атрибут Wave нужен брифингу генерала;
+-- если по номеру ночи нужна другая локация, она подгружается так же, как в начале дня
+local function applyNextNight(nightNumber: number)
+	wave = nightNumber - 1
+	ReplicatedStorage:SetAttribute("Wave", wave)
+	local want = locationFor(nightNumber)
+	if want ~= locationIndex then
+		loadLocation(want)
+	end
+end
+
 local function night()
 	wave += 1
+	skipRequested = false
 	ReplicatedStorage:SetAttribute("Wave", wave)
 	BarricadeService.setOpen(false)
 	BuildingService.closeShop() -- магазин на ночь закрыт, оставшихся внутри выталкивает на улицу
@@ -325,7 +369,9 @@ local function night()
 		PlayerService.setSpawn(currentMap.nightSpawn) -- ночью (воскрешение командой) появляемся в стартовом укрытии
 	end
 	local bossIds = WaveMath.bossTypes(Config.Waves, wave)
-	setNight(true, #bossIds > 0)
+	-- финал (Config.Missions[20].day): бой днём — свет и небо дневные, но фаза остаётся «Night» (магазин закрыт, миссия идёт)
+	local dayFight = (Config.Missions[wave] or { day = false }).day == true
+	setNight(not dayFight, #bossIds > 0)
 	setPhase("Night", nil)
 	local nightLength = math.min(Config.Round.NightMaxTime, Config.Round.NightMinTime + Config.Round.NightPerWave * (wave - 1))
 	local nightStart = os.clock()
@@ -333,7 +379,8 @@ local function night()
 	local players = #Players:GetPlayers()
 	local threat = WaveMath.makeThreat(Config.ThreatClasses, Config.Threat.Tiers, loadouts(), roundSeed)
 	local comp = WaveMath.composition(Config.Waves, wave, players, threat)
-	killUnits = WaveMath.killUnits(Config.Economy, wave, comp)
+	killUnits = WaveMath.killUnits(Config.Economy, wave, comp, players)
+	table.clear(killEarned)
 	EconomyService.newWave()
 	PlayerService.takeLosses()
 	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave, threat), wave)
@@ -353,6 +400,12 @@ local function night()
 		local left = ZombieService.remaining()
 		ReplicatedStorage:SetAttribute("ZombiesLeft", left)
 		local missionState = MissionService.update(0.25)
+		if skipRequested then
+			-- тестовый стенд: честно завершаем ночь, как будто миссия выполнена (награды и рейтинг ниже — как за пройденную)
+			skipRequested = false
+			missionDone = true
+			break
+		end
 		if missionState == "done" then
 			missionDone = true
 			break
@@ -368,13 +421,14 @@ local function night()
 	if not gameOver then
 		local cleared = missionDone or ZombieService.remaining() == 0
 		RatingService.onNightEnd(wave, cleared, (os.clock() - nightStart) / nightLength)
-		-- награда за волну делится поровну на личные счета: стоящему на ногах — его доля целиком, лежащему — DownedRewardFactor от неё
-		-- (в сумме по команде — как прежняя общая награда); штраф за каждую потерю — доля того, что каждый заработал за волну
+		-- награда за миссию: личная часть каждому + командная поровну; стоящему на ногах — целиком, лежащему — DownedRewardFactor от неё;
+		-- провал миссии — доля MissionFailShare; штраф за каждую потерю — доля того, что каждый заработал за волну
 		local E = Config.Economy
 		local everyone = Players:GetPlayers()
-		local share = if #everyone > 0 then WaveMath.waveReward(E, wave) / #everyone else 0
+		local personal, team = WaveMath.missionReward(E, wave)
+		local share = personal + (if #everyone > 0 then team / #everyone else 0)
 		if not cleared then
-			share *= E.UnclearedRewardFactor
+			share *= E.MissionFailShare
 		end
 		share *= Perks.mult("coins")
 		local gotBy: { [Player]: number } = {}
@@ -397,6 +451,18 @@ local function night()
 		if WaveMath.isBossWave(Config.Waves, wave) and cleared then
 			PerkService.openOffers()
 		end
+		-- победа над финальным боссом (каркас): атрибут для будущих титров и награды, сообщение всем
+		local finalDef = Config.Missions[wave]
+		if finalDef and finalDef.type == "bossfight" and missionDone then
+			ReplicatedStorage:SetAttribute("Victory", wave)
+			finalePending = true
+			notifyAll("ПОБЕДА! Страж бункера повержен. Остался последний шаг — бункер!", 8)
+		end
+	end
+	if pendingNight then
+		local n = pendingNight
+		pendingNight = nil
+		applyNextNight(n)
 	end
 end
 
@@ -406,7 +472,7 @@ local function finishRound()
 	-- ночь, на которой все пали, не засчитывается
 	local reached = math.max(0, if fellAtNight then wave - 1 else wave)
 	ReplicatedStorage:SetAttribute("LastRoundWave", reached)
-	notifyAll(string.format("Все пали. Продержались %d ночей", reached), Config.Round.GameOverTime)
+	notifyAll(if finaleDone then "Акт 1 пройден! Раунд завершён" else string.format("Все пали. Продержались %d ночей", reached), Config.Round.GameOverTime)
 	-- через несколько секунд — итоги по очкам
 	local bestPlayer, bestScore, bestKills = ScoreService.best()
 	if bestPlayer then
@@ -428,6 +494,31 @@ local function finishRound()
 		)
 	end
 	task.wait(Config.Round.GameOverTime)
+end
+
+-- Тестовые стенды (только Studio, init.server): «Пропустить волну» — ночью завершает текущую ночь как выполненную, днём сразу начинает ночь
+function RoundService.skip()
+	local phase = ReplicatedStorage:GetAttribute("Phase")
+	if phase == "Night" or phase == "Day" then
+		skipRequested = true
+	end
+end
+
+-- Тестовые стенды: «Выбор волны» — следующей будет ночь nightNumber (1…#Config.Missions). Днём — сразу; ночью — после конца текущей
+-- (её награды считаются по её номеру, поэтому счётчик не трогаем). Вместе со «Пропустить волну» ночь можно сменить сразу.
+function RoundService.setNextNight(nightNumber: number): boolean
+	local phase = ReplicatedStorage:GetAttribute("Phase")
+	if nightNumber % 1 ~= 0 or nightNumber < 1 or nightNumber > #Config.Missions then
+		return false
+	end
+	if phase == "Day" then
+		applyNextNight(nightNumber)
+		return true
+	elseif phase == "Night" then
+		pendingNight = nightNumber
+		return true
+	end
+	return false
 end
 
 function RoundService.onAllDown()
@@ -457,6 +548,10 @@ function RoundService.onZombieKilled(player: Player?, zombie: any)
 		local head = zombie.headKill == true
 		local unit = killUnits[zombie.def.id] or 0
 		local coins = unit * (if head then 1 else Config.Economy.KillBodyShare) * Perks.mult("coins")
+		-- потолок за ночь: поток зомби во время миссии не даёт фармить
+		local earned = killEarned[player] or 0
+		coins = math.min(coins, math.max(0, WaveMath.killCap(Config.Economy, wave) - earned))
+		killEarned[player] = earned + coins
 		local bonusPoints = if head then math.floor(zombie.def.points * Config.Economy.HeadshotKillPointsBonus + 0.5) else 0
 		if head then
 			player:SetAttribute("Headshots", ((player:GetAttribute("Headshots") :: number?) or 0) + 1)
@@ -499,7 +594,8 @@ function RoundService.start(map: Types.MapInfo)
 			startRound()
 			local first = true
 			while not gameOver do
-				day(first)
+				day(first, finalePending)
+				finalePending = false
 				first = false
 				if gameOver then
 					break

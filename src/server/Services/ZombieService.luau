@@ -15,6 +15,7 @@ local WaveMath = require(Shared:WaitForChild("WaveMath"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 local BarricadeService = require(script.Parent:WaitForChild("BarricadeService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
+local BossAI = require(script.Parent:WaitForChild("BossAI"))
 
 local ZombieService = {}
 
@@ -66,6 +67,25 @@ type Zombie = {
 	poseGen: number, -- растёт при сбросе позы (resetAttack, release): отложенные возвраты поз прошлой жизни не срабатывают
 	jointTweens: { [string]: Tween }, -- активный твин каждого сустава (замах, удар, реакция на попадание)
 	vaultTween: Tween?, -- активный твин корня при перелезании забора
+	bossAct: BossAct?, -- идущая атака босса (прыжок или бросок): босс стоит и не думает, ИИ ведёт stepBossAct
+	nextJump: number, -- когда босс снова может прыгнуть
+	nextRock: number, -- когда босс снова может бросить обломок
+	phase2: boolean, -- финальный босс во второй фазе: только способности, неуязвим к огнестрелу (принимает лишь удары Impact.melee)
+	nextAtk: { [string]: number }, -- когда можно снова каждую атаку из def.attacks (BossAI): slam, crawlers, charge, swing
+}
+
+-- Атака босса. kind: "jump" (прыжок на игрока) | "rock" (бросок обломка). Фазы: jump — "charge" (3 с, на земле под игроком красная зона) → "air" → посадка;
+-- rock — "rip" (отрывает кусок земли) → бросок (зона падения красным кругом, пока летит) → готово. zone — части красной зоны на земле.
+type BossAct = {
+	kind: string,
+	phase: string,
+	endAt: number, -- конец фазы
+	target: Player,
+	aim: Vector3, -- где зона (центр на земле)
+	zone: { Part },
+	rock: Part?,
+	locked: boolean, -- зона больше не следует за игроком
+	data: any?, -- состояние атак BossAI (линия растений, ползун на спине, дорожка разбега)
 }
 
 local map: Types.MapInfo
@@ -280,6 +300,7 @@ end
 -- Украшения боссов (B_Buff, B_Garg) лежат внутри невидимых деталей тела (Torso.Model.…) и ничем не сварены: у B_Buff они падали на землю и
 -- лежали там, а невидимое тело бегало отдельно; у B_Garg были заякорены и висели на месте. Привариваем каждую несваренную деталь
 -- к ближайшей родительской детали (к конечности) в том виде, как они стоят в шаблоне; на физику, столкновения и пули они не влияют.
+-- Если родительской детали нет (конус, ведро, нож лежат прямо в модели), берётся ближайшая сваренная часть тела (голова, рука).
 local function weldLooseParts(model: Model)
 	local welded: { [Instance]: boolean } = {}
 	for _, d in model:GetDescendants() do
@@ -305,6 +326,18 @@ local function weldLooseParts(model: Model)
 			while parent and not parent:IsA("BasePart") do
 				parent = parent.Parent
 			end
+			if not parent then
+				-- украшение лежит прямо в модели (конус и ведро, нож Качка, Handle аксессуара): крепим к ближайшей сваренной части тела
+				local bestDist = math.huge
+				for part in welded do
+					if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part ~= d and part:IsDescendantOf(model) then
+						local dist = (part.Position - d.Position).Magnitude
+						if dist < bestDist then
+							parent, bestDist = part, dist
+						end
+					end
+				end
+			end
 			if parent and parent:IsA("BasePart") then
 				local w = Instance.new("WeldConstraint")
 				w.Part0 = parent
@@ -318,6 +351,69 @@ local function weldLooseParts(model: Model)
 		end
 	end
 end
+
+-- Колени. У Качка нога составная: внутри R6-ноги лежат декоративные UpperLeg / LowerLeg / Foot (на сварках). Нижняя часть (голень, стопа и всё ниже колена)
+-- получает сустав Motor6D «Knee<Side>» в ноге, чтобы присед (crouchPose) мог согнуть ногу в колене. Без составной ноги колен нет (присед — только бёдра и корпус).
+-- ThighLen — длина бедра в студах: от неё зависит, насколько опускается корпус.
+local function addKnees(model: Model)
+	for _, side in { "Left", "Right" } do
+		local leg = model:FindFirstChild(side .. " Leg") :: BasePart?
+		if not leg then
+			continue
+		end
+		local upper: BasePart? = nil
+		local lower: BasePart? = nil
+		for _, d in leg:GetDescendants() do
+			if d:IsA("BasePart") then
+				if d.Name:find("UpperLeg") then
+					upper = d
+				elseif d.Name:find("LowerLeg") then
+					lower = d
+				end
+			end
+		end
+		model:SetAttribute("ThighLen", if upper then upper.Size.Y else leg.Size.Y)
+		if not upper or not lower then
+			continue
+		end
+		local kneeY = math.clamp((upper.Position.Y - upper.Size.Y / 2 + lower.Position.Y + lower.Size.Y / 2) / 2, lower.Position.Y, upper.Position.Y)
+		local kneeCf = CFrame.new(lower.Position.X, kneeY, lower.Position.Z)
+		local group: { BasePart } = {}
+		for _, d in leg:GetDescendants() do
+			if d:IsA("BasePart") and d ~= upper and d ~= lower and d.Position.Y < kneeY then
+				table.insert(group, d)
+			end
+		end
+		-- голень: вместо сварки с ногой — сустав в колене
+		for _, c in lower:GetChildren() do
+			if c:IsA("WeldConstraint") then
+				c:Destroy()
+			end
+		end
+		local knee = Instance.new("Motor6D")
+		knee.Name = "Knee" .. side
+		knee.Part0 = leg
+		knee.Part1 = lower
+		knee.C0 = leg.CFrame:ToObjectSpace(kneeCf)
+		knee.C1 = lower.CFrame:ToObjectSpace(kneeCf)
+		knee.Parent = leg
+		-- стопа, шарниры и прочее ниже колена теперь держатся за голень (сохраняют положение)
+		for _, d in group do
+			for _, c in d:GetChildren() do
+				if c:IsA("WeldConstraint") then
+					c.Part0 = lower
+				end
+			end
+		end
+	end
+end
+
+-- Части тела рига R6, принимающие попадания (partKind): им CanQuery включаем принудительно
+local RIG_HIT_PARTS: { [string]: boolean } = {
+	Head = true, Torso = true, ["Left Arm"] = true, ["Right Arm"] = true, ["Left Leg"] = true, ["Right Leg"] = true,
+	UpperTorso = true, LowerTorso = true, LeftUpperArm = true, RightUpperArm = true, LeftLowerArm = true, RightLowerArm = true, LeftHand = true, RightHand = true,
+	LeftUpperLeg = true, RightUpperLeg = true, LeftLowerLeg = true, RightLowerLeg = true, LeftFoot = true, RightFoot = true,
+}
 
 -- Риг R6 из библиотеки ServerStorage.Assets.Zombies (Config.ZombieRigs): случайная модель из пула типа, живой Humanoid, суставы Motor6D.
 -- Попадания принимают сами части тела (Head, Torso, руки, ноги); корень-невидимка попаданий не принимает.
@@ -342,6 +438,7 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 	model.Name = "Zombie_" .. def.id
 	model:ScaleTo(if rigDef.absolute then rigDef.scale else rigDef.scale * def.scale)
 	weldLooseParts(model)
+	addKnees(model)
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	humanoid.WalkSpeed = def.speed
 	humanoid.JumpHeight = 3
@@ -364,15 +461,23 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 			d.CollisionGroup = COLLISION_GROUP
 			d.Anchored = false
 			d.CanTouch = false
+			if d.Parent == model and RIG_HIT_PARTS[d.Name] then
+				d.CanQuery = true -- у B_Garg в шаблоне Head с CanQuery = false: пули шли сквозь голову и урон по голове не засчитывался
+			end
 			if d.Name == "Handle" then
 				d.CanCollide = false -- аксессуары не мешают
 			end
 			d:SetAttribute("BaseColor", d.Color) -- цвет «в покое» для подсветки замаха
+			d:SetAttribute("BaseTransparency", d.Transparency) -- прозрачность «в покое»: тени финального босса возвращаются к ней при повторном использовании модели
 			if rigDef.tint and d.Name ~= "HumanoidRootPart" and d.Name ~= "Handle" then
 				d.Color = rigDef.tint
 				d:SetAttribute("BaseColor", rigDef.tint)
 			end
 		end
+	end
+	if rigDef.noAlertTint then
+		-- setEyes не красит тело в розовое при замахе и во второй фазе; эффекты модели (красные глаза, чёрная аура — ParticleEmitter) не трогаем
+		model:SetAttribute("NoTint", true)
 	end
 	if rigDef.crawl then
 		-- ползун: корпус наклонён вперёд почти до горизонтали и опущен к земле (поворот в системе корня, до чтения суставов)
@@ -383,7 +488,7 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 		end
 	end
 	model:SetAttribute("Rig", true)
-	model:SetAttribute("RigAsset", src.Name)
+	model:SetAttribute("RigAsset", src.Name) -- по нему Config.ZombieRigHp уменьшает здоровье зомби в конусе и в ведре
 	return model
 end
 
@@ -495,6 +600,10 @@ local function acquire(typeId: string): Zombie
 	if isRig then
 		-- сустав каждой части находим по тому, какую деталь он держит (имена у ассетов разные: RootJoint / Root Hip)
 		local limbs = { Torso = "Torso", Head = "Head", LeftArm = "Left Arm", RightArm = "Right Arm", LeftLeg = "Left Leg", RightLeg = "Right Leg" }
+		if model:FindFirstChild("LowerTorso") then
+			-- настоящий R15 (финальный босс): «корпус» — корневой сустав HumanoidRootPart → LowerTorso (наклон и присед несут всё тело), руки и ноги — плечи и бёдра
+			limbs = { Torso = "LowerTorso", Head = "Head", LeftArm = "LeftUpperArm", RightArm = "RightUpperArm", LeftLeg = "LeftUpperLeg", RightLeg = "RightUpperLeg" }
+		end
 		for name, partName in limbs do
 			local found: Motor6D? = nil
 			for _, d in model:GetDescendants() do
@@ -512,6 +621,15 @@ local function acquire(typeId: string): Zombie
 			local w = root:FindFirstChild("W_" .. name) :: Weld
 			welds[name] = w
 			rest[name] = w.C0
+		end
+	end
+	if isRig then
+		for _, side in { "Left", "Right" } do
+			local knee = model:FindFirstChild("Knee" .. side, true) or model:FindFirstChild(side .. "Knee", true) -- KneeLeft — составная нога Качка, LeftKnee — колено R15
+			if knee and knee:IsA("Motor6D") then
+				welds[side .. "Knee"] = knee
+				rest[side .. "Knee"] = knee.C0
+			end
 		end
 	end
 	local eyes: { BasePart } = {}
@@ -592,6 +710,11 @@ local function acquire(typeId: string): Zombie
 		poseGen = 0,
 		jointTweens = {},
 		vaultTween = nil,
+		bossAct = nil,
+		nextJump = 0,
+		nextRock = 0,
+		nextAtk = {},
+		phase2 = false,
 	}
 end
 
@@ -675,7 +798,10 @@ local function tweenJoint(z: Zombie, name: string, info: TweenInfo, c0: CFrame)
 end
 
 -- Сброс позы (смерть, пул, новая жизнь): твины суставов и перелезания не доигрывают на следующем зомби из пула
+local endBossAct: (Zombie) -> () -- задаётся ниже вместе с атаками босса
+
 local function cancelPose(z: Zombie)
+	endBossAct(z)
 	z.poseGen += 1
 	for _, tween in z.jointTweens do
 		tween:Cancel()
@@ -698,6 +824,28 @@ local function armPose(z: Zombie, deg: number, time: number)
 	end
 end
 
+-- Присед рига: amount 0 — стоит, 1 — полный. Корпус опускается и наклоняется вперёд, бёдра идут вперёд, колени сгибаются назад (если у босса есть
+-- колени, иначе только бёдра и корпус). Бёдра компенсируют наклон корпуса, иначе ноги уезжают назад вместе с ним.
+local function crouchPose(z: Zombie, amount: number, time: number)
+	if not z.rig then
+		return
+	end
+	local info = TweenInfo.new(time, Enum.EasingStyle.Quad, if amount > 0 then Enum.EasingDirection.Out else Enum.EasingDirection.InOut)
+	local knees = z.welds.LeftKnee ~= nil
+	local thighNet = math.rad(if knees then 55 else 30) * amount -- на сколько бедро идёт вперёд от вертикали
+	local lean = math.rad(25) * amount -- наклон корпуса вперёд
+	local thigh = (z.model:GetAttribute("ThighLen") :: number?) or 3
+	local drop = thigh * (1 - math.cos(thighNet)) * (if knees then 1 else 0.7) + 0.4 * amount
+	local waist = CFrame.new(z.pivots.Torso)
+	tweenJoint(z, "Torso", info, CFrame.new(0, -drop, 0) * waist * CFrame.fromAxisAngle(Vector3.new(-1, 0, 0), lean) * waist:Inverse() * z.rest.Torso)
+	for _, side in { "Left", "Right" } do
+		tweenJoint(z, side .. "Leg", info, z.rest[side .. "Leg"] * CFrame.Angles(thighNet + lean, 0, 0))
+		if knees then
+			tweenJoint(z, side .. "Knee", info, z.rest[side .. "Knee"] * CFrame.Angles(-thighNet * 1.2, 0, 0))
+		end
+	end
+end
+
 -- Знак замаха: у блочных зомби светлеют глаза, у модельных зомби — тело слегка краснеет (подсветка попавшего в замах)
 local TINT_ALERT = Color3.fromRGB(255, 150, 130)
 local function setEyes(z: Zombie, alert: boolean)
@@ -706,6 +854,9 @@ local function setEyes(z: Zombie, alert: boolean)
 			eye.Color = if alert then EYE_ALERT else EYE_NORMAL
 		end
 	else
+		if z.model:GetAttribute("NoTint") == true then
+			return -- финальный босс: цвет тела не меняем
+		end
 		for _, d in z.model:GetChildren() do
 			if d:IsA("MeshPart") then
 				d.Color = if alert then TINT_ALERT else (d:GetAttribute("BaseColor") or Color3.new(1, 1, 1))
@@ -1085,9 +1236,33 @@ local function flinch(z: Zombie, kind: string, hitName: string, flat: Vector3, p
 	end
 end
 
+-- Полоска здоровья босса сверху экрана (клиент: BossBarController): атрибуты ReplicatedStorage BossName, BossHp, BossMaxHp (боссов несколько — сумма)
+local function refreshBossBar()
+	local hp, maxHp, name = 0, 0, ""
+	local immune = false
+	for _, a in active do
+		if a.alive and WaveMath.isBossType(a.def.id) and a.model:GetAttribute("Clone") ~= true then -- тени финального босса в полоску не входят
+			immune = immune or a.phase2
+			hp += math.max(0, a.hp)
+			maxHp += a.maxHp
+			if name == "" then
+				name = a.def.name
+			end
+		end
+	end
+	local rs = game:GetService("ReplicatedStorage")
+	rs:SetAttribute("BossName", if maxHp > 0 then name else nil)
+	rs:SetAttribute("BossHp", if maxHp > 0 then hp else nil)
+	rs:SetAttribute("BossMaxHp", if maxHp > 0 then maxHp else nil)
+	rs:SetAttribute("BossImmune", if immune then true else nil) -- вторая фаза: бить только холодным оружием
+end
+
 local function release(z: Zombie)
 	z.alive = false
 	active[z.model] = nil
+	if WaveMath.isBossType(z.def.id) then
+		refreshBossBar()
+	end
 	cancelPose(z)
 	for _, track in z.tracks do
 		track:Stop(0)
@@ -1326,11 +1501,33 @@ local function pickSpawnPosition(): Vector3
 	return result
 end
 
-local function spawnOne(typeId: string)
+local function spawnOne(typeId: string, atPos: Vector3?): Zombie
 	local z = acquire(typeId)
-	local spawnPos = pickSpawnPosition()
-	z.maxHp = math.floor(z.def.hp * hpMultiplier + 0.5)
+	z.model:SetAttribute("Thrown", nil) -- метка брошенного ползуна (BossAI) не переходит в следующую жизнь модели из пула
+	if z.model:GetAttribute("Clone") then
+		-- модель была тенью финального босса: возвращаем прозрачность и снимаем метку
+		z.model:SetAttribute("Clone", nil)
+		for _, d in z.model:GetDescendants() do
+			if d:IsA("BasePart") then
+				local base = d:GetAttribute("BaseTransparency")
+				if typeof(base) == "number" then
+					d.Transparency = base
+				end
+			end
+		end
+	end
+	z.phase2 = false
+	z.model:SetAttribute("Phase2", nil)
+	local spawnPos = atPos or pickSpawnPosition()
+	local rigMul = Config.ZombieRigHp[tostring(z.model:GetAttribute("RigAsset"))] or 1
+	z.maxHp = math.floor(z.def.hp * hpMultiplier * rigMul + 0.5)
 	z.hp = z.maxHp
+	if WaveMath.isBossType(z.def.id) then
+		local now0 = os.clock()
+		z.nextJump = now0 + ((z.def.jump :: any) and (z.def.jump :: any).first or 0)
+		z.nextRock = now0 + ((z.def.rock :: any) and (z.def.rock :: any).first or 0)
+		z.nextAtk = BossAI.firstTimes(z.def, now0)
+	end
 	-- сразу охотимся на игрока; к баррикадам идём, только если они закрывают путь к нему (см. Hunt)
 	z.state = "Hunt"
 	z.window = nil
@@ -1355,6 +1552,10 @@ local function spawnOne(typeId: string)
 		z.tracks = loadTracks(z.model, z.animIds)
 	end
 	active[z.model] = z
+	if WaveMath.isBossType(z.def.id) then
+		refreshBossBar()
+	end
+	return z
 end
 
 local function nearestUpCharacter(pos: Vector3): (Player?, BasePart?, number)
@@ -1413,6 +1614,371 @@ local function hasLineOfSight(z: Zombie, targetRoot: BasePart): boolean
 	return workspace:Raycast(from, targetRoot.Position - from, paramsExcluding(targetRoot.Parent :: Instance)) == nil
 end
 
+-- Атаки босса -----------------------------------------------------------------------------------------------------------
+
+-- Красная зона на земле: три концентрических диска, чем ближе к центру, тем прозрачнее
+local function makeZone(center: Vector3, radius: number): { Part }
+	local parts: { Part } = {}
+	for i, k in { { 1, 0.6 }, { 0.66, 0.76 }, { 0.33, 0.88 } } do
+		local p = Instance.new("Part")
+		p.Name = "BossZone"
+		p.Shape = Enum.PartType.Cylinder
+		p.Size = Vector3.new(0.2, radius * 2 * k[1], radius * 2 * k[1])
+		p.CFrame = CFrame.new(center + Vector3.new(0, 0.15 + i * 0.03, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.CastShadow = false
+		p.Material = Enum.Material.Neon
+		p.Color = Color3.fromRGB(255, 40, 30)
+		p.Transparency = k[2]
+		p.Parent = workspace
+		table.insert(parts, p)
+	end
+	return parts
+end
+
+local function moveZone(zone: { Part }, center: Vector3)
+	for i, p in zone do
+		p.CFrame = CFrame.new(center + Vector3.new(0, 0.15 + i * 0.03, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	end
+end
+
+local function clearZone(zone: { Part })
+	for _, p in zone do
+		p:Destroy()
+	end
+	table.clear(zone)
+end
+
+-- Точка на земле под игроком
+local function groundUnder(char: Model, pos: Vector3): Vector3
+	local hit = workspace:Raycast(pos + Vector3.new(0, 2, 0), Vector3.new(0, -40, 0), paramsExcluding(char))
+	return if hit then hit.Position else Vector3.new(pos.X, pos.Y - 3, pos.Z)
+end
+
+-- Кольцо удара: расширяется и исчезает
+local function shockwave(center: Vector3, radius: number)
+	local ring = Instance.new("Part")
+	ring.Name = "BossShock"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.4, 2, 2)
+	ring.CFrame = CFrame.new(center + Vector3.new(0, 0.4, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.Material = Enum.Material.Neon
+	ring.Color = Color3.fromRGB(255, 120, 60)
+	ring.Transparency = 0.2
+	ring.Parent = workspace
+	local tw = TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.4, radius * 2, radius * 2), Transparency = 1 })
+	tw:Play()
+	tw.Completed:Once(function()
+		ring:Destroy()
+	end)
+end
+
+local function damageInRadius(center: Vector3, radius: number, amount: number)
+	for _, p in PlayerService.upPlayers() do
+		local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if r and Vector3.new(r.Position.X - center.X, 0, r.Position.Z - center.Z).Magnitude <= radius and r.Position.Y - center.Y < 12 then
+			PlayerService.damage(p, amount)
+		end
+	end
+end
+
+-- Оглушение игроков в радиусе (бросок знака Гаргантюа): кувырок спасает (PlayerService.stun не накладывается на неуязвимого)
+local function stunInRadius(center: Vector3, radius: number, seconds: number)
+	for _, p in PlayerService.upPlayers() do
+		local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if r and Vector3.new(r.Position.X - center.X, 0, r.Position.Z - center.Z).Magnitude <= radius and r.Position.Y - center.Y < 12 then
+			PlayerService.stun(p, seconds)
+		end
+	end
+end
+
+-- Волна тьмы Повелителя после приземления: тёмное кольцо расходится до outer студов, без урона; кто внутри — не может бегать noSprint секунд
+local function darkWave(center: Vector3, outer: number, noSprint: number)
+	local ring = Instance.new("Part")
+	ring.Name = "BossDarkRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.5, 2, 2)
+	ring.CFrame = CFrame.new(center + Vector3.new(0, 0.5, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.CastShadow = false
+	ring.Material = Enum.Material.SmoothPlastic
+	ring.Color = Color3.fromRGB(14, 8, 24)
+	ring.Transparency = 0.2
+	ring.Parent = workspace
+	local tw = TweenService:Create(ring, TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.5, outer * 2, outer * 2), Transparency = 1 })
+	tw:Play()
+	tw.Completed:Once(function()
+		ring:Destroy()
+	end)
+	for _, p in PlayerService.upPlayers() do
+		local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if r and Vector3.new(r.Position.X - center.X, 0, r.Position.Z - center.Z).Magnitude <= outer and r.Position.Y - center.Y < 12 then
+			PlayerService.noSprint(p, noSprint)
+		end
+	end
+end
+
+-- Обломки при падении камня: несколько кусков разлетаются и падают
+local function debrisBurst(center: Vector3, color: Color3)
+	for _ = 1, 9 do
+		local d = Instance.new("Part")
+		d.Name = "BossDebris"
+		d.Size = Vector3.new(0.6 + math.random() * 0.9, 0.6 + math.random() * 0.7, 0.6 + math.random() * 0.9)
+		d.Material = Enum.Material.Slate
+		d.Color = color
+		d.CanCollide = false
+		d.CanQuery = false
+		d.CanTouch = false
+		d.CFrame = CFrame.new(center + Vector3.new(0, 1, 0)) * CFrame.Angles(math.random() * 6, math.random() * 6, 0)
+		d.Parent = workspace
+		d.AssemblyLinearVelocity = Vector3.new((math.random() - 0.5) * 30, 18 + math.random() * 14, (math.random() - 0.5) * 30)
+		Debris:AddItem(d, 2.5)
+	end
+end
+
+endBossAct = function(z: Zombie)
+	local act = z.bossAct
+	if not act then
+		return
+	end
+	z.bossAct = nil
+	clearZone(act.zone)
+	if act.rock then
+		act.rock:Destroy()
+	end
+	if BossAI.isKind(act.kind) then
+		BossAI.cancel(z, act)
+	end
+end
+
+-- Атаки боссов вынесены в BossAI: передаём ему позы, спавн зомби и завершение атаки
+BossAI.init({
+	container = function(): Instance
+		return container
+	end,
+	armPose = armPose,
+	crouchPose = crouchPose,
+	tweenJoint = tweenJoint,
+	setEyes = setEyes,
+	spawnAt = function(typeId: string, pos: Vector3): any?
+		local ok, z = pcall(spawnOne, typeId, pos)
+		return if ok then z else nil
+	end,
+	thrownAlive = function(): number
+		local n = 0
+		for _, z in active do
+			if z.alive and z.model:GetAttribute("Thrown") == true then
+				n += 1
+			end
+		end
+		return n
+	end,
+	damageMult = function(): number
+		return damageMultiplier
+	end,
+	clonesAlive = function(): number
+		local n = 0
+		for _, w in active do
+			if w.alive and w.model:GetAttribute("Clone") == true then
+				n += 1
+			end
+		end
+		return n
+	end,
+	endAct = function(z: any)
+		endBossAct(z)
+	end,
+})
+
+-- Босс начинает атаку, если есть готовая и игрок в её дальности; true — атака началась (дальше ведёт stepBossAct)
+local function startBossSpecial(z: Zombie, player: Player, targetRoot: BasePart, dist: number, now: number): boolean
+	local jump = z.def.jump
+	local rock = z.def.rock
+	local ready: { string } = {}
+	if jump and now >= z.nextJump and dist >= jump.minRange and dist <= jump.range then
+		table.insert(ready, "jump")
+	end
+	if rock and now >= z.nextRock and dist >= rock.minRange and dist <= rock.range and hasLineOfSight(z, targetRoot) then
+		table.insert(ready, "rock")
+	end
+	if z.def.attacks then
+		for _, k in BossAI.ready(z, now, dist, hasLineOfSight(z, targetRoot)) do
+			table.insert(ready, k)
+		end
+	end
+	if #ready == 0 then
+		return false
+	end
+	local kind = ready[math.random(1, #ready)]
+	if BossAI.isKind(kind) then
+		return BossAI.begin(z, kind, player, targetRoot, now)
+	end
+	local char = player.Character :: Model
+	local aim = groundUnder(char, targetRoot.Position)
+	z.humanoid:MoveTo(z.root.Position)
+	setEyes(z, true)
+	if kind == "jump" then
+		local j = jump :: Config.BossJump
+		z.bossAct = { kind = "jump", phase = "charge", endAt = now + j.windup, target = player, aim = aim, zone = makeZone(aim, j.radius), rock = nil, locked = false }
+		-- присел: бёдра вперёд, колени согнуты, корпус опущен и наклонён; держится, пока не прыгнет
+		crouchPose(z, 1, j.windup * 0.45)
+		armPose(z, -30, j.windup * 0.5)
+	else
+		local r = rock :: Config.BossRock
+		local rockPart = Instance.new("Part")
+		rockPart.Name = "BossRock"
+		if r.stun then
+			-- дорожный знак (бросок Гаргантюа): жёлтый ромб, без надписей
+			rockPart.Name = "BossSign"
+			rockPart.Size = Vector3.new(5, 5, 0.4)
+			rockPart.Material = Enum.Material.Metal
+			rockPart.Color = Color3.fromRGB(226, 182, 44)
+		else
+			rockPart.Size = Vector3.new(5, 4, 5)
+			rockPart.Material = Enum.Material.Slate
+			rockPart.Color = Color3.fromRGB(96, 84, 72)
+		end
+		rockPart.Anchored = true
+		rockPart.CanCollide = false
+		rockPart.CanQuery = false
+		rockPart.CanTouch = false
+		local base = groundUnder(z.model, z.root.Position) + z.root.CFrame.LookVector * 3
+		rockPart.CFrame = CFrame.new(base + Vector3.new(0, 1, 0)) * CFrame.Angles(0.4, 0.8, 0.2)
+		rockPart.Parent = workspace
+		debrisBurst(base, Color3.fromRGB(96, 84, 72))
+		z.bossAct = { kind = "rock", phase = "rip", endAt = now + r.windup, target = player, aim = aim, zone = {}, rock = rockPart, locked = false }
+		-- обломок поднимается над головой босса, руки вверх
+		TweenService:Create(rockPart, TweenInfo.new(r.windup * 0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			CFrame = CFrame.new(z.head.Position + Vector3.new(0, 4.5, 0)) * CFrame.Angles(0.8, 1.6, 0.4),
+		}):Play()
+		armPose(z, 150, r.windup * 0.8)
+	end
+	return true
+end
+
+-- Ход идущей атаки (вызывается из think вместо обычного поведения)
+local function stepBossAct(z: Zombie, now: number)
+	local act = z.bossAct :: BossAct
+	local gen = z.gen
+	if BossAI.isKind(act.kind) then
+		BossAI.step(z, act, now) -- новые атаки боссов (удар по земле, ползун, разбег, чёрный взмах) ведёт BossAI
+		return
+	end
+	z.humanoid:MoveTo(z.root.Position)
+	if act.kind == "jump" then
+		local j = z.def.jump :: Config.BossJump
+		if act.phase == "charge" then
+			-- зона следует за игроком, в последние 0,7 с застывает (можно успеть выбежать)
+			if not act.locked then
+				local char = act.target.Character
+				local r = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+				if r and PlayerService.isUp(act.target) then
+					act.aim = groundUnder(char :: Model, r.Position)
+					moveZone(act.zone, act.aim)
+				end
+				if now >= act.endAt - 0.7 then
+					act.locked = true
+				end
+			end
+			if now >= act.endAt then
+				act.phase = "air"
+				local from = z.root.CFrame
+				local to = CFrame.new(act.aim + Vector3.new(0, z.root.Size.Y * 0.5 + 3, 0)) * from.Rotation
+				local apex = CFrame.new((from.Position + to.Position) / 2 + Vector3.new(0, 24, 0)) * from.Rotation
+				cancelWindup(z)
+				crouchPose(z, 0, 0.12) -- распрямился и оттолкнулся
+				armPose(z, 70, 0.25)
+				z.root.Anchored = true
+				local half = j.flight / 2
+				local up = TweenService:Create(z.root, TweenInfo.new(half, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = apex })
+				z.vaultTween = up
+				up.Completed:Once(function(state: Enum.PlaybackState)
+					if z.vaultTween ~= up or state ~= Enum.PlaybackState.Completed or z.gen ~= gen then
+						return
+					end
+					local down = TweenService:Create(z.root, TweenInfo.new(half, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { CFrame = to })
+					z.vaultTween = down
+					down.Completed:Once(function(downState: Enum.PlaybackState)
+						if z.vaultTween ~= down or downState ~= Enum.PlaybackState.Completed or z.gen ~= gen or not z.alive then
+							return
+						end
+						z.vaultTween = nil
+						z.root.Anchored = false
+						local center = act.aim
+						clearZone(act.zone)
+						shockwave(center, j.radius)
+						damageInRadius(center, j.radius, j.damage * damageMultiplier)
+						if j.wave then
+							darkWave(center, j.radius + j.wave.extra, j.wave.noSprint) -- Повелитель тёмных: волна тьмы шире удара, без урона
+						end
+						z.model:SetAttribute("SwingAt", os.clock())
+						z.bossAct = nil
+						z.nextJump = os.clock() + j.cooldown
+						z.lastAttack = os.clock()
+						setEyes(z, false)
+						-- приземление: короткий присед и подъём
+						crouchPose(z, 0.7, 0.1)
+						armPose(z, 0, 0.4)
+						local pg = z.poseGen
+						task.delay(0.3, function()
+							if z.poseGen == pg and z.gen == gen and z.alive then
+								crouchPose(z, 0, 0.4)
+							end
+						end)
+					end)
+					down:Play()
+				end)
+				up:Play()
+			end
+		end
+		return
+	end
+	-- бросок обломка
+	local r = z.def.rock :: Config.BossRock
+	if act.phase == "rip" and now >= act.endAt then
+		local char = act.target.Character
+		local tr = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local aim = if tr and PlayerService.isUp(act.target) then groundUnder(char :: Model, tr.Position) else act.aim
+		local rock = act.rock :: Part
+		local from = rock.Position
+		local flight = math.clamp((aim - from).Magnitude / 55, 0.9, r.flight)
+		local zone = makeZone(aim, r.radius)
+		local gravity = Vector3.new(0, -workspace.Gravity, 0)
+		rock.Anchored = false
+		rock.AssemblyLinearVelocity = (aim + Vector3.new(0, 1.5, 0) - from) / flight - 0.5 * gravity * flight
+		rock.AssemblyAngularVelocity = Vector3.new(4, 6, 2)
+		z.bossAct = nil -- босс свободен; обломок и зона живут сами
+		z.nextRock = now + r.cooldown
+		z.lastAttack = now
+		z.model:SetAttribute("SwingAt", os.clock())
+		armPose(z, 0, 0.3)
+		setEyes(z, false)
+		local hazard = hazardGen
+		task.delay(flight, function()
+			rock:Destroy()
+			clearZone(zone)
+			if hazardGen == hazard then
+				shockwave(aim, r.radius)
+				debrisBurst(aim, Color3.fromRGB(96, 84, 72))
+				damageInRadius(aim, r.radius, r.damage * damageMultiplier)
+				if r.stun then
+					stunInRadius(aim, r.radius, r.stun) -- знак Гаргантюа оглушает
+				end
+			end
+		end)
+	end
+end
+
 local function think(z: Zombie, now: number, dt: number)
 	local pos = z.root.Position
 	local reach = 3.5 * z.def.scale + 1.5
@@ -1421,6 +1987,12 @@ local function think(z: Zombie, now: number, dt: number)
 	if z.slowUntil > 0 and now >= z.slowUntil then
 		z.slowUntil = 0
 		z.humanoid.WalkSpeed = z.speed
+	end
+
+	-- атака босса (прыжок, бросок): стоит и ждёт, попадания её не срывают
+	if z.bossAct then
+		stepBossAct(z, now)
+		return
 	end
 
 	-- после попадания зомби на миг замирает (чувствуется удар); замах при этом срывается
@@ -1561,6 +2133,9 @@ local function think(z: Zombie, now: number, dt: number)
 				return
 			end
 		end
+		if (z.def.jump or z.def.rock or z.def.attacks) and startBossSpecial(z, player, targetRoot, dist, now) then
+			return
+		end
 		local tp = z.def.teleport
 		if tp and now >= z.nextSpecial and dist > tp.distance + 10 then
 			teleportNear(z, targetRoot, now)
@@ -1572,7 +2147,8 @@ local function think(z: Zombie, now: number, dt: number)
 			z.nextSpecial = now + fl.cooldown
 			z.throwing = true
 			startWindup(z, player, now)
-		elseif dist <= reach and now - z.lastAttack >= z.def.attackCooldown then
+		elseif dist <= reach and now - z.lastAttack >= z.def.attackCooldown and not (z.def.attacks and (z.def.attacks :: any).slash) then
+			-- (у финального босса обычного удара нет: его заменяет порез в BossAI)
 			startWindup(z, player, now)
 		end
 	end
@@ -1713,6 +2289,7 @@ export type Impact = {
 	part: BasePart?, -- часть тела, в которую попали (для реакции: голова, корпус, рука, нога)
 	heavy: boolean?, -- тяжёлый удар (дробь, кувалда, топор): смерть с оторванными конечностями
 	power: number? , -- сила удара для анимации реакции (1 — обычная)
+	melee: boolean?, -- удар холодным оружием (по боссу во второй фазе проходит только он)
 }
 
 -- Урон по зомби (только сервер). Возвращает: нанесён ли урон, убит ли.
@@ -1721,8 +2298,30 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 	if not z or not z.alive then
 		return false, false
 	end
+	if z.phase2 and not (impact and impact.melee) then
+		return false, false -- вторая фаза финального босса: огнестрел, турели, проволока и машины не берут
+	end
 	z.hp -= amount
 	z.model:SetAttribute("Hp", math.max(0, z.hp))
+	local ph = z.def.phase2
+	if ph and not z.phase2 and z.hp > 0 and z.hp <= z.maxHp * ph.hpFraction and z.model:GetAttribute("Clone") ~= true then
+		-- вторая фаза: рёв (руки к небу), с этого момента только способности и неуязвимость к огнестрелу
+		z.phase2 = true
+		z.model:SetAttribute("Phase2", true)
+		refreshBossBar()
+		setEyes(z, true)
+		armPose(z, 175, 0.5)
+		local pg = z.poseGen
+		task.delay(1.6, function()
+			if z.alive and z.poseGen == pg and not z.bossAct then
+				armPose(z, 0, 0.5)
+			end
+		end)
+		game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Notify"):FireAllClients("Страж бункера вошёл во вторую фазу: огнестрел его не берёт — бейте холодным оружием!", 6)
+	end
+	if WaveMath.isBossType(z.def.id) then
+		refreshBossBar()
+	end
 	-- горизонтальное направление удара: из импакта или от стрелка к зомби
 	local flat = Vector3.zero
 	if impact and impact.dir then
@@ -1753,7 +2352,20 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 		z.headKill = kind == "Head"
 		spawnCorpse(z, flat, kind, impact ~= nil and impact.heavy == true)
 		release(z)
-		if onKilled then
+		local isClone = z.model:GetAttribute("Clone") == true
+		if z.def.attacks and (z.def.attacks :: any).clones and not isClone then
+			-- настоящий босс убит: его тени рассыпаются
+			local shadows: { Zombie } = {}
+			for _, w in active do
+				if w.alive and w.model:GetAttribute("Clone") == true then
+					table.insert(shadows, w)
+				end
+			end
+			for _, w in shadows do
+				release(w)
+			end
+		end
+		if onKilled and not isClone then -- за тень наград и очков нет
 			(onKilled :: (Player?, Zombie) -> ())(attacker, z)
 		end
 		return true, true
@@ -1776,6 +2388,7 @@ end
 function ZombieService.sunrise()
 	table.clear(queue)
 	hazardGen += 1
+	BossAI.clearAll()
 	for model, z in active do
 		if z.alive then
 			local gen = z.gen
@@ -1819,15 +2432,24 @@ function ZombieService.partKind(part: BasePart): string
 end
 
 -- hpMult не указан — множители текущей ночи не меняются (добавка зомби без сброса силы волны)
-function ZombieService.enqueue(types: { string }, hpMult: number?, wave: number?)
+function ZombieService.enqueue(types: { string }, hpMult: number?, wave: number?, front: boolean?)
 	if hpMult then
 		hpMultiplier = hpMult
 		waveNumber = wave or 1
 		damageMultiplier = WaveMath.damageMultiplier(Config.Waves, waveNumber)
 	end
-	for _, t in types do
-		table.insert(queue, t)
+	for i, t in types do
+		if front then
+			table.insert(queue, i, t) -- вне очереди (тестовый стенд босса: поток миссии не пустеет и до конца очереди не дойти)
+		else
+			table.insert(queue, t)
+		end
 	end
+end
+
+-- Очередь спавна пустеет (живые остаются): ночь 19 заменяет состав волны на свой поток
+function ZombieService.clearQueue()
+	table.clear(queue)
 end
 
 function ZombieService.remaining(): number
@@ -1841,6 +2463,7 @@ end
 function ZombieService.clearAll()
 	table.clear(queue)
 	hazardGen += 1
+	BossAI.clearAll()
 	local list = {}
 	for _, z in active do
 		table.insert(list, z)
@@ -1897,7 +2520,8 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 				aliveCap = math.max(4, math.floor(aliveCap * testScale + 0.5)) -- тестовое уменьшение числа зомби касается и бесконечного потока
 			end
 			local n = 0
-			while #queue > 0 and n < Config.Round.SpawnsPerTick and alive < aliveCap do
+			-- босс выходит вне лимита живых (иначе он ждал бы, пока погибнут все обычные)
+			while #queue > 0 and n < Config.Round.SpawnsPerTick and (alive < aliveCap or WaveMath.isBossType(queue[1])) do
 				local typeId = table.remove(queue, 1) :: string
 				-- сломанный тип (например, риг без нужного сустава) пропускаем, а не роняем весь цикл спавна
 				local ok, err = pcall(spawnOne, typeId)
@@ -1998,6 +2622,10 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 			local now = os.clock()
 			pathBudget = PATH_BUDGET
 			collectTargets()
+			local okBoss, errBoss = pcall(BossAI.update, now)
+			if not okBoss then
+				warn("[ZombieService] атаки боссов: " .. tostring(errBoss))
+			end
 			table.clear(order)
 			for _, z in active do
 				table.insert(order, z)

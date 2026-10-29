@@ -11,7 +11,7 @@ local NAMES = {
 	"Melee", -- клиент → сервер: (direction: Vector3) — взмах оружием ближнего боя
 	"Sprint", -- клиент → сервер: (on: boolean) — хочу спринтовать (энергию считает сервер)
 	"Dodge", -- клиент → сервер: (kind: "slide" | "roll") — подкат или кувырок (энергию, паузу и неуязвимость считает сервер)
-	"MeleeFx", -- сервер → всем: (attacker: Player, weaponId: string) — звук взмаха
+	"MeleeFx", -- сервер → всем: (attacker: Player, weaponId: string, comboIndex: number) — звук и анимация взмаха, номер удара серии
 	"HitFeedback", -- сервер → стрелку: (position: Vector3, damage: number, killed: boolean, headshot: boolean)
 	"ShotFx", -- сервер → всем: (shooter: Player, origin: Vector3, hits: {Vector3}, weaponId: string)
 	"ReloadFx", -- сервер → всем: (player: Player, weaponId: string) — звук перезарядки
@@ -22,7 +22,7 @@ local NAMES = {
 	"TentMarkers", -- сервер → клиенту: ({ { pos: Vector3, name: string } }) — метки на военные палатки поблизости (пусто — снять)
 	"VoteDay", -- клиент → сервер: () — поставить/снять голос «завершить день» (все проголосовали — наступает ночь)
 	"VendorBuy", -- клиент → сервер: (vendorId: string, itemId: string) — купить у НПС-продавца (цену и условия проверяет сервер)
-	"PlaceEquipment", -- клиент → сервер: (position: Vector3) — поставить оборудование из рук (турель, проволока) в точку на земле
+	"PlaceEquipment", -- клиент → сервер: (position: Vector3, yaw: number?) — поставить оборудование из рук (турель, проволока) в точку на земле; yaw — поворот вокруг вертикали, радианы
 	"TurretAim", -- клиент → сервер: (direction: Vector3) — куда стрелок наводит пулемёт машины (направление камеры)
 	"TurretFire", -- клиент → сервер: () — очередь пулемёта (пока зажата кнопка; темп и патроны считает сервер)
 	"TurretReload", -- клиент → сервер: () — перезарядка пулемёта машины
@@ -30,6 +30,8 @@ local NAMES = {
 	"PerkChoose", -- клиент → сервер: (offerId: number, index: number) — выбранный перк из предложенных (1–3)
 	"GiveUp", -- клиент → сервер: () — упавший сдаётся (сразу погибает, не дожидаясь, пока истечёт кровью)
 	"Briefing", -- сервер → игроку: (имя: string, заголовок: string, строки: { string }) — окно задания от генерала
+	"TestPickWave", -- сервер → клиенту (только Studio, тестовый стенд): (maxNight: number) — открыть окно выбора ночи
+	"TestSetWave", -- клиент → сервер (только Studio, тестовый стенд): (night: number) — следующей будет эта ночь (сервер проверяет тип, диапазон, частоту, дистанцию)
 	"Notify", -- сервер → клиенту/всем: (text: string, seconds: number)
 }
 

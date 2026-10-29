@@ -80,7 +80,8 @@ local function addLibraryParts(tool: Tool, handle: BasePart, def: Config.WeaponM
 	local shift = CFrame.new((def.grip or Vector3.zero)) * (def.rot or CFrame.identity)
 	local added = 0
 	for _, src in model:GetChildren() do
-		if src:IsA("MeshPart") then
+		-- быстрозарядник револьвера (Speedloader) лежит в модели отдельной деталью и в кадре «висел в воздухе» рядом со стволом: не берём
+		if src:IsA("MeshPart") and not string.find(src.Name, "^Speedloader") then
 			local part = src:Clone()
 			part.Size = src.Size * scale
 			part.Anchored = false
@@ -184,6 +185,61 @@ local function syncAmmo(player: Player, weaponId: string)
 	update(player.Character)
 end
 
+-- Хотбар (стандартный Backpack Roblox): слоты идут по порядку добавления, и после выброса оружия в середине остаётся пустой слот.
+-- Каждому инструменту при появлении ставим сквозной номер Order (по нему же колёсико мыши листает оружие на клиенте), а compactBackpack
+-- снимает инструменты рюкзака и возвращает их в порядке Order: слоты снова идут подряд с 1. Клиент в этом не участвует.
+local toolOrder = 0
+
+local function stampTool(tool: Instance)
+	if tool:IsA("Tool") and tool:GetAttribute("Order") == nil then
+		toolOrder += 1
+		tool:SetAttribute("Order", toolOrder)
+	end
+end
+
+local compacting: { [Player]: boolean } = {}
+local compactAgain: { [Player]: boolean } = {}
+
+local function compactBackpack(player: Player)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not backpack then
+		return
+	end
+	if compacting[player] then
+		compactAgain[player] = true -- ещё одна выброшенная пушка, пока идёт пересборка: повторим после
+		return
+	end
+	compacting[player] = true
+	local tools: { Tool } = {}
+	for _, t in backpack:GetChildren() do
+		if t:IsA("Tool") then
+			stampTool(t)
+			table.insert(tools, t)
+		end
+	end
+	table.sort(tools, function(a: Tool, b: Tool)
+		return (a:GetAttribute("Order") :: number) < (b:GetAttribute("Order") :: number)
+	end)
+	for _, t in tools do
+		t.Parent = nil
+	end
+	-- хотбар убирает слоты не мгновенно, а добавляемые одним пакетом инструменты занимают слоты в произвольном порядке (проверено в Studio):
+	-- поэтому пауза после снятия и возврат по одному
+	task.wait(0.4)
+	for _, t in tools do
+		if not backpack.Parent then
+			break
+		end
+		t.Parent = backpack
+		task.wait(0.1)
+	end
+	compacting[player] = nil
+	if compactAgain[player] then
+		compactAgain[player] = nil
+		compactBackpack(player)
+	end
+end
+
 local function giveTool(player: Player, weaponId: string)
 	local backpack = player:FindFirstChildOfClass("Backpack") or player:WaitForChild("Backpack", 5)
 	if not backpack then
@@ -201,7 +257,9 @@ local function giveTool(player: Player, weaponId: string)
 		return false
 	end
 	if not has(backpack) and not has(player.Character) then
-		buildTool(Config.Weapons[weaponId]).Parent = backpack
+		local tool = buildTool(Config.Weapons[weaponId])
+		stampTool(tool)
+		tool.Parent = backpack
 	end
 	syncAmmo(player, weaponId)
 end
@@ -281,7 +339,7 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 	end
 	d = d.Unit
 	-- 2. состояние игрока и оружия
-	if not PlayerService.isUp(player) or isSeated(player) then
+	if not PlayerService.isUp(player) or isSeated(player) or PlayerService.isStunned(player) then -- оглушённый (знак Гаргантюа) не стреляет и не бьёт
 		return
 	end
 	local weaponId = equippedWeapon(player)
@@ -391,6 +449,9 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 	end
 end
 
+-- Серия ударов (Config.MeleeCombo): номер последнего удара и время его начала у каждого игрока. Номер считает сервер, клиенту не доверяем.
+local comboState: { [Player]: { index: number, at: number, weaponId: string } } = {}
+
 -- Ближний бой: клиент присылает только направление взгляда; сектор, дальность, видимость и урон считает сервер.
 local function onMelee(player: Player, direction: unknown)
 	if typeof(direction) ~= "Vector3" then
@@ -401,7 +462,7 @@ local function onMelee(player: Player, direction: unknown)
 		return
 	end
 	d = d.Unit
-	if not PlayerService.isUp(player) or isSeated(player) then
+	if not PlayerService.isUp(player) or isSeated(player) or PlayerService.isStunned(player) then -- оглушённый (знак Гаргантюа) не стреляет и не бьёт
 		return
 	end
 	local weaponId = equippedWeapon(player)
@@ -424,9 +485,16 @@ local function onMelee(player: Player, direction: unknown)
 	end
 	st.lastShot = now
 	-- звук/анимация взмаха идут сразу, а удар по зомби — в момент попадания в анимации (у топора и кувалды это после замаха)
-	Remotes.get("MeleeFx"):FireAllClients(player, weaponId)
-	local fx = Config.MeleeFx[weaponId]
-	local hitDelay = if fx then fx.time * (MeleeAnim.HIT[fx.style] or 0.5) else 0
+	local last = comboState[player]
+	local prev, since = 0, math.huge
+	if last and last.weaponId == weaponId then
+		prev, since = last.index, now - last.at
+	end
+	local comboIndex = MeleeAnim.nextIndex(weaponId, prev, since)
+	comboState[player] = { index = comboIndex, at = now, weaponId = weaponId }
+	Remotes.get("MeleeFx"):FireAllClients(player, weaponId, comboIndex)
+	local style, swingTime = MeleeAnim.stepAt(weaponId, comboIndex)
+	local hitDelay = if Config.MeleeFx[weaponId] then swingTime * (MeleeAnim.HIT[style] or 0.5) else 0
 
 	local function strike()
 		local head2 = player.Character and player.Character:FindFirstChild("Head") :: BasePart?
@@ -476,6 +544,7 @@ local function onMelee(player: Player, direction: unknown)
 				push = def.knockback,
 				stagger = 0.35,
 				heavy = def.knockback >= 40,
+				melee = true, -- холодное оружие: единственное, что берёт финального босса во второй фазе
 			})
 			if applied then
 				totalDamage += def.damage
@@ -610,6 +679,7 @@ local function onPickup(player: Player, drop: Model)
 		drop:Destroy()
 		giveWithAmmo(player, weaponId, mag, reserve)
 		equipWeapon(player, weaponId)
+		task.defer(compactBackpack, player)
 		Remotes.get("Notify"):FireClient(player, "Подобрано: " .. def.name, 1.5)
 	end
 end
@@ -669,6 +739,7 @@ local function onDrop(player: Player)
 	local st = inv[weaponId]
 	inv[weaponId] = nil
 	tool:Destroy()
+	task.defer(compactBackpack, player) -- закрыть пустой слот хотбара: оружие из следующих слотов сдвигается к началу
 	local look = head.CFrame.LookVector
 	spawnDrop(weaponId, st.mag, st.reserve, CFrame.new(head.Position + look * 2.5), look * 24 + Vector3.new(0, 10, 0))
 end
@@ -797,7 +868,7 @@ function WeaponService.init(map: Types.MapInfo)
 	Remotes.get("BuyWeapon").OnServerEvent:Connect(onShopBuy)
 	Remotes.get("DropWeapon").OnServerEvent:Connect(onDrop)
 	Remotes.get("Reload").OnServerEvent:Connect(function(player: Player)
-		if not RateLimit.allow(player, "Reload", 0.3) then
+		if not RateLimit.allow(player, "Reload", 0.3) or PlayerService.isStunned(player) then
 			return
 		end
 		local weaponId = equippedWeapon(player)
@@ -829,6 +900,16 @@ function WeaponService.init(map: Types.MapInfo)
 	local function hook(player: Player)
 		player.CharacterAdded:Connect(function()
 			onCharacter(player)
+			-- рюкзак создаётся заново при каждом возрождении: нумеруем всё, что в него попадает (оружие, аптечки, турели)
+			task.spawn(function()
+				local backpack = player:FindFirstChildOfClass("Backpack") or player:WaitForChild("Backpack", 5)
+				if backpack then
+					for _, t in backpack:GetChildren() do
+						stampTool(t)
+					end
+					backpack.ChildAdded:Connect(stampTool)
+				end
+			end)
 		end)
 	end
 	Players.PlayerAdded:Connect(hook)
@@ -838,6 +919,7 @@ function WeaponService.init(map: Types.MapInfo)
 	Players.PlayerRemoving:Connect(function(player)
 		owned[player] = nil
 		RateLimit.forget(player)
+		comboState[player] = nil
 	end)
 end
 
