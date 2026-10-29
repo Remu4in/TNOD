@@ -252,7 +252,14 @@ if markersFolder then
 		end
 	end
 end
+-- проёмы: без обломков, ящиков и бочек в проходе (прямоугольники x0, x1, z0, z1): дверь служебной комнаты R3, лестница зала R2
+local doorZones = { { -108, -92, -46, -30 }, { 98, 114, 30, 46 } }
 local function inClearZone(x: number, z: number): boolean
+	for _, d in doorZones do
+		if x > d[1] and x < d[2] and z > d[3] and z < d[4] then
+			return true
+		end
+	end
 	for _, c in clearZones do
 		if (c.X - x) ^ 2 + (c.Z - z) ^ 2 < CLEAR_RADIUS ^ 2 then
 			return true

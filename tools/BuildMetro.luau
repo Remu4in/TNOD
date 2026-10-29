@@ -318,13 +318,19 @@ local spawnsList = {
 }
 for _, p in spawnsList do
 	zi += 1
-	marker("Metro_ZombieSpawn_" .. zi, p[1], p[2], p[3], Color3.fromRGB(230, 120, 40))
+	-- в месте точка двора (13-я) называется _14 (номер 13 не используется) — как в игре
+	marker("Metro_ZombieSpawn_" .. (if zi == 13 then 14 else zi), p[1], p[2], p[3], Color3.fromRGB(230, 120, 40))
 end
 for i, p in { { -600, -1.5, 0 }, { 600, -1.5, -24 }, { -100, 0.6, -50 } } do
 	marker("Metro_Objective_" .. i, p[1], p[2], p[3], Color3.fromRGB(200, 80, 220)) -- гнёзда и цели зачистки
 end
 marker("Metro_StationB_Spawn", 700, 0.6, 12, Color3.fromRGB(80, 220, 120), V(1, 0, 0)) -- прибытие на станцию B
 marker("Metro_StationB_Exit", 740, 14, 40, Color3.fromRGB(80, 160, 255)) -- двор (выход «за горой»)
+-- ящики с патронами (AmmoCrateService ставит ящики по этим маркерам): двор у разбитого поезда и платформа линии 1 (позиции прочитаны из места 2026-10-25)
+for _, a in { { "AmmoCrate_1", 740, 13.5, 112, V(0, 0, -1) }, { "AmmoCrate_2", 0, 0.5, -34, V(0, 0, 1) } } do
+	local p = part(Markers, a[1], V(3.2, 1, 2.2), a[2], a[3], a[4], Color3.fromRGB(90, 200, 90), Enum.Material.Plastic, { Transparency = 0.6, CanCollide = false, CanQuery = false, CanTouch = false })
+	p.CFrame = CFrame.lookAt(p.Position, p.Position + a[5])
+end
 
 local count = 0
 for _, d in ROOT:GetDescendants() do
