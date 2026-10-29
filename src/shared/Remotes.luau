@@ -32,6 +32,10 @@ local NAMES = {
 	"Briefing", -- сервер → игроку: (имя: string, заголовок: string, строки: { string }) — окно задания от генерала
 	"TestPickWave", -- сервер → клиенту (только Studio, тестовый стенд): (maxNight: number) — открыть окно выбора ночи
 	"TestSetWave", -- клиент → сервер (только Studio, тестовый стенд): (night: number) — следующей будет эта ночь (сервер проверяет тип, диапазон, частоту, дистанцию)
+	"LobbyCmd", -- клиент → сервер (лобби): (cmd: string, arg: any) — create/mode/join/leave/invite/kick/start/solo/reply (сервер проверяет всё)
+	"LobbyState", -- сервер → клиенту (лобби): снимок { squad, squads, invites, board, me } — что показать в окне отряда
+	"LobbyInvite", -- сервер → клиенту (лобби): (squadId: number, fromName: string, seconds: number) — приглашение в отряд
+	"BackToLobby", -- клиент → сервер (матч): () — вернуться в лобби (после конца раунда или по кнопке)
 	"Notify", -- сервер → клиенту/всем: (text: string, seconds: number)
 }
 

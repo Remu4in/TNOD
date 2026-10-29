@@ -36,6 +36,24 @@ if (Config.MissionKillsFloor or 5) < 5 then
 	problem("Config.MissionKillsFloor = " .. tostring(Config.MissionKillsFloor) .. " (тест; в релизе 5)")
 end
 
+-- Лобби: ForceMode и StudioSkipTeleport работают только в Studio (LobbyService проверяет RunService:IsStudio()), но в релизной сборке им делать нечего
+local lobby = Config.Lobby
+if not lobby.Enabled then
+	problem("Config.Lobby.Enabled = false: лобби выключено (в релизе true — игроки сразу попадают в раунд)")
+end
+if lobby.ForceMode ~= nil then
+	problem("Config.Lobby.ForceMode = " .. tostring(lobby.ForceMode) .. " (тест; в релизе nil; на живом сервере всё равно игнорируется)")
+end
+if lobby.MaxSquad < 1 or lobby.MaxSquad > 6 then
+	problem("Config.Lobby.MaxSquad = " .. tostring(lobby.MaxSquad) .. " (игра рассчитана на 1–6 игроков)")
+end
+if lobby.TeleportAttempts < 1 or lobby.PadCountdown <= lobby.PadLockSeconds then
+	problem("Config.Lobby: TeleportAttempts < 1 или PadCountdown <= PadLockSeconds (площадка не успеет стартовать)")
+end
+if lobby.StudioSkipTeleport then
+	print("[ReleaseCheck] Config.Lobby.StudioSkipTeleport = true: действует только в Studio (на живом сервере телепорт настоящий) — это нормально")
+end
+
 -- 2. Магазин и оружие
 for i, item in Config.ShopList do
 	if not Config.Weapons[item.id] then
