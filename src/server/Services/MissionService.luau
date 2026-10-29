@@ -59,6 +59,7 @@ type State = {
 	bossOut: boolean, -- metro: босс станции уже вызван
 	bossSeen: boolean, -- metro: босс появился (миссия ждёт его смерти)
 	bones: number, -- metro: найдено груд костей (фрагментов ключа)
+	caveAt: number, -- metro: metroKills на старте «последнего рубежа» в пещере (-1 — не начат)
 }
 
 local current: State? = nil
@@ -684,7 +685,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
 		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0, nestsBurned = 0, bossOut = false, bossSeen = false, bones = 0,
+		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0, nestsBurned = 0, bossOut = false, bossSeen = false, bones = 0, caveAt = -1,
 	}
 	current = state
 	ZombieService.setAnchor(anchor)
@@ -876,7 +877,7 @@ local function metroFloor(x: number, z: number, startY: number): Vector3?
 	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = { metro }
+	params.FilterDescendantsInstances = { metro, workspace.Terrain }
 	local hit = workspace:Raycast(Vector3.new(x, startY, z), Vector3.new(0, -30, 0), params)
 	return if hit then hit.Position else nil
 end
@@ -910,8 +911,10 @@ local function buildBonePile(state: State, index: number, x: number, z: number, 
 			end
 		end
 		c:ScaleTo(scale)
-		local _, size = c:GetBoundingBox()
-		c:PivotTo(CFrame.new(floor + offset + Vector3.new(0, size.Y / 2, 0)) * CFrame.Angles(0, yaw, 0))
+		-- центр габарита (а не pivot) ставим на пол: у моделей костей pivot смещён, и кости «летали»
+		c:PivotTo(CFrame.new(c:GetPivot().Position) * CFrame.Angles(0, yaw, 0))
+		local bbox, size = c:GetBoundingBox()
+		c:PivotTo(c:GetPivot() + (floor + offset + Vector3.new(0, size.Y / 2, 0)) - bbox.Position)
 		c.Parent = model
 	end
 	add("C_HumanBones_106503979", 1, Vector3.zero, index * 1.3)
@@ -969,8 +972,9 @@ local function buildExitDoor(state: State, metro: Instance)
 			d.CanQuery = false
 		end
 	end
-	local _, size = door:GetBoundingBox()
-	door:PivotTo(CFrame.new(floor + Vector3.new(0, size.Y / 2, 0)) * CFrame.Angles(0, math.atan2(-marker.CFrame.LookVector.X, -marker.CFrame.LookVector.Z), 0))
+	door:PivotTo(CFrame.new(door:GetPivot().Position) * CFrame.Angles(0, math.atan2(-marker.CFrame.LookVector.X, -marker.CFrame.LookVector.Z), 0))
+	local bbox, size = door:GetBoundingBox()
+	door:PivotTo(door:GetPivot() + (floor + Vector3.new(0, size.Y / 2, 0)) - bbox.Position)
 	local anchor: BasePart? = nil
 	for _, d in door:GetDescendants() do
 		if d:IsA("BasePart") and (not anchor or d.Size.Magnitude > anchor.Size.Magnitude) then
@@ -1003,6 +1007,9 @@ local function buildExitDoor(state: State, metro: Instance)
 		if s.def.boss and (not s.bossSeen or ZombieService.bossAlive()) then
 			table.insert(missing, "босс станции")
 		end
+		if s.caveAt < 0 or s.metroKills - s.caveAt < Config.Metro.CaveKills then
+			table.insert(missing, "последний рубеж в пещере")
+		end
 		if #missing > 0 then
 			Remotes.get("Notify"):FireClient(player, "Дверь заперта. Нужно: " .. table.concat(missing, ", "), 4)
 			return
@@ -1014,7 +1021,7 @@ local function buildExitDoor(state: State, metro: Instance)
 		for _, p in PlayerService.upPlayers() do
 			local char = p.Character
 			local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-			if char and root and root.Position.Y > 300 then
+			if char and root and root.Position.Y < Config.Metro.InsideMaxY then
 				char:PivotTo(CFrame.new(spawn + Vector3.new(math.random(-6, 6), 3, math.random(-6, 6))))
 			end
 		end
@@ -1245,10 +1252,42 @@ function MissionService.update(dt: number): string?
 			elseif state.def.boss and ZombieService.bossAlive() then
 				text = "Убейте босса станции"
 			elseif nests > 0 then
-				-- всё на станции сделано: остаётся собрать ключ и открыть костяную дверь (выход — единственный способ закончить миссию)
-				text = if state.bones < Config.Metro.Bones
-					then string.format("Найдите кости для ключа: %d из %d (удерживайте E у груды)", state.bones, Config.Metro.Bones)
-					else "Откройте костяную дверь у выхода из метро"
+				-- всё на станции сделано: ключ из костей, последний рубеж в пещере и костяная дверь на верхнем уровне (выход — единственный способ закончить миссию)
+				if state.caveAt < 0 then
+					-- первый, кто вошёл в большой зал пещеры, запускает последний рубеж: зомби идут из пещерных маркеров
+					local metroFolder = workspace:FindFirstChild("Metro")
+					local room = metroFolder and metroFolder.Markers:FindFirstChild("Metro_CaveRoom")
+					if room and room:IsA("BasePart") then
+						for _, pos in upPositions() do
+							if flatDist(pos, room.Position) < Config.Metro.CaveRadius and pos.Y < Config.Metro.InsideMaxY then
+								state.caveAt = state.metroKills
+								local points: { Vector3 } = {}
+								for _, mk in (metroFolder :: Instance).Markers:GetChildren() do
+									local n = tonumber(string.match(mk.Name, "^Metro_ZombieSpawn_(%d+)$"))
+									if n and n >= 15 and mk:IsA("BasePart") then
+										table.insert(points, mk.Position)
+									end
+								end
+								if #points > 0 then
+									ZombieService.setSpawnPoints(points)
+								end
+								notify("Последний рубеж: мутанты лезут из глубины пещеры!", 5)
+								break
+							end
+						end
+					end
+				end
+				if state.caveAt < 0 then
+					text = if state.bones < Config.Metro.Bones
+						then string.format("Найдите кости для ключа: %d из %d (удерживайте E у груды)", state.bones, Config.Metro.Bones)
+						else "Идите в пещеру за станцией B — там дверь выхода"
+				elseif state.metroKills - state.caveAt < Config.Metro.CaveKills then
+					text = string.format("Отбейтесь в пещере: убито %d из %d", state.metroKills - state.caveAt, Config.Metro.CaveKills)
+				elseif state.bones < Config.Metro.Bones then
+					text = string.format("Найдите кости для ключа: %d из %d (удерживайте E у груды)", state.bones, Config.Metro.Bones)
+				else
+					text = "Откройте костяную дверь на верхнем уровне пещеры"
+				end
 			else
 				text = string.format("Зачистите станцию: убито %d из %d", math.min(state.metroKills, need), need)
 				if state.metroKills >= need then
@@ -1342,7 +1381,7 @@ local function leaveMetro()
 	for _, p in Players:GetPlayers() do
 		local char = p.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if char and root and root.Position.Y > inner.Position.Y - 200 then
+		if char and root and root.Position.Y < Config.Metro.InsideMaxY then
 			char:PivotTo(CFrame.new(top.Position + Vector3.new(math.random(-4, 4), 4, math.random(-4, 4))))
 		end
 	end

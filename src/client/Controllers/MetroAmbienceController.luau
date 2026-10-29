@@ -1,5 +1,5 @@
 --!strict
--- Звуки метро: пока игрок на станции (выше Config.Metro.SoundMinY — станция лежит на y ≈ 600), тихо звучат зацикленные фон тоннеля, гул, капли, скрип металла,
+-- Звуки метро: пока игрок на станции (ниже Config.Metro.InsideMaxY — станция и пещера лежат под картой, y ≈ -400), тихо звучат зацикленные фон тоннеля, гул, капли, скрип металла,
 -- далёкий поезд и гудение ламп (Config.Metro.Sounds). Выйдет наверх — плавно стихают. Общая громкость — SoundGroup «NotdAmbience» (SfxController), если он есть.
 
 local Players = game:GetService("Players")
@@ -36,7 +36,7 @@ function MetroAmbienceController.start()
 		end
 		acc = 0
 		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
-		local inside = root ~= nil and root.Position.Y > Config.Metro.SoundMinY
+		local inside = root ~= nil and root.Position.Y < Config.Metro.InsideMaxY
 		if inside == active then
 			return
 		end

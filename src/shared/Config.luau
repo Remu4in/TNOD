@@ -1313,20 +1313,31 @@ Config.Finale = {
 }
 -- Метро (ночь 18, MissionService): внизу нужно сжечь гнёзда мутантов (маркеры Workspace.Metro.Markers.Metro_Objective_1…n, удержание E NestHold секунд),
 -- затем выходит босс станции (Missions[18].boss, у маркера Metro_Boss), после его смерти и набранных убийств миссия выполнена. Звуки — тихие зацикленные
--- (id проверены 2026-10-29: загружаются, длины 1,3–77 с); играют на клиенте, пока игрок выше SoundMinY (станция на y ≈ 600)
+-- (id проверены 2026-10-29: загружаются, длины 1,3–77 с); играют на клиенте, пока игрок ниже InsideMaxY (станция и пещера лежат под картой, пол y ≈ -400)
 -- Выход из метро (решение Руслана 2026-10-29): 5 груд костей по станции (удержание E BoneHold с) → костяной ключ → костяная дверь у маркера Metro_Exit
 -- (открывается, когда есть ключ, сожжены гнёзда и убит босс) → вся команда оказывается в тоннеле в горе («The Hub Map (For Apeirophobia)», Hub.spawn) — миссия
--- выполнена. Груды стоят в точках BoneSpots (x, z, y старта луча вниз до пола; мировые координаты метро), пол ищется лучом по Workspace.Metro.
+-- выполнена. Груды стоят в точках BoneSpots (x, z, y старта луча вниз до пола; мировые координаты метро), пол ищется лучом по Workspace.Metro и Terrain.
+-- Пещера за станцией B (Terrain, 2026-10-29): кишка → большой зал → верхний уровень с костяной дверью (маркер Metro_Exit). Первый, кто входит в зал
+-- (Metro_CaveRoom, CaveRadius), запускает «последний рубеж»: зомби идут из пещерных маркеров, нужно CaveKills убийств, только потом открывается дверь.
+-- Освещение: в метро клиент приглушает Lighting (Dark.station) и в пещере темнее (Dark.cave, x > Cave.minX и z > Cave.minZ), включается фонарик у камеры.
 -- Hub.halfWidth — по x от Hub.spawn «зона тоннеля»: оттуда команду на рассвете возвращает на базу.
 Config.Metro = {
 	NestHold = 6,
 	Bones = 5,
 	BoneHold = 2,
 	BoneSpots = {
-		{ -130, 25, 606 }, { 130, -25, 606 }, { -100, -62, 606 }, { 100, 85, 619 }, { 705, 12, 606 },
+		{ -130, 50, -390 }, { 130, -55, -390 }, { -100, -62, -393 }, { 100, 90, -390 }, { 892, 140, -385 },
 	},
 	Hub = { spawn = Vector3.new(-800, 4, -87), halfWidth = 230 },
-	SoundMinY = 300,
+	InsideMaxY = -200,
+	CaveKills = 20,
+	CaveRadius = 60,
+	Cave = { minX = 640, minZ = 22 },
+	Dark = {
+		station = { Brightness = 0, Ambient = Color3.fromRGB(34, 36, 48), OutdoorAmbient = Color3.fromRGB(34, 36, 48), ExposureCompensation = -0.35, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
+		cave = { Brightness = 0, Ambient = Color3.fromRGB(7, 7, 11), OutdoorAmbient = Color3.fromRGB(7, 7, 11), ExposureCompensation = -0.6, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
+	},
+	Flashlight = { Range = 70, Angle = 75, Brightness = 3.2, Color = Color3.fromRGB(255, 244, 220) },
 	Sounds = {
 		{ name = "tunnel ambience", id = "rbxassetid://9118773471", volume = 0.18 },
 		{ name = "underground hum", id = "rbxassetid://9112795571", volume = 0.14 },
