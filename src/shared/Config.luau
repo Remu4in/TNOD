@@ -1331,12 +1331,12 @@ Config.Metro = {
 	DefendRadius = 45,
 	-- Тоннель в горе («The Hub Map»): команда появляется почти в конце (ближе к базе, +z), там военный джип с турелью, припасы и майор с брифингом
 	Hub = {
-		spawn = Vector3.new(-879, 3, 40),
-		vehicle = Vector3.new(-868, 0.4, 62),
-		officer = Vector3.new(-893, 0, 36),
+		spawn = Vector3.new(-872, 3, 26),
+		vehicle = Vector3.new(-885, 0.4, 44),
+		officer = Vector3.new(-893, 0, 26),
 		supplies = {
-			Vector3.new(-893, 0, 52), Vector3.new(-865, 0, 48), Vector3.new(-890, 0, 24),
-			Vector3.new(-866, 0, 20), Vector3.new(-892, 0, 4), Vector3.new(-864, 0, 0),
+			Vector3.new(-898, 0, 52), Vector3.new(-862, 0, 52), Vector3.new(-898, 0, 38),
+			Vector3.new(-862, 0, 38), Vector3.new(-898, 0, 28), Vector3.new(-862, 0, 28),
 		},
 		OfficerName = "Майор Громов",
 		BriefTitle = "Военная база потеряна",

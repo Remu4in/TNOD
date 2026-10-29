@@ -14,6 +14,7 @@
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -68,6 +69,7 @@ type State = {
 	hasKey: boolean, -- metro: SkeletonKey у команды
 	keyOut: boolean, -- metro: ключ уже выпал
 	tntModels: { Model }, -- metro: установленные заряды
+	actions: { [string]: (Player) -> () }, -- metro: обработчики подсказок финала (в Studio их вызывает MissionService.debugInteract)
 }
 
 local current: State? = nil
@@ -698,7 +700,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
 		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0, nestsBurned = 0, bossOut = false, bossSeen = false, gensOn = 0, tnt = 0, detStage = 0, defendLeft = 0, detPos = Vector3.zero, hasKey = false, keyOut = false, tntModels = {},
+		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0, nestsBurned = 0, bossOut = false, bossSeen = false, gensOn = 0, tnt = 0, detStage = 0, defendLeft = 0, detPos = Vector3.zero, hasKey = false, keyOut = false, tntModels = {}, actions = {},
 	}
 	current = state
 	ZombieService.setAnchor(anchor)
@@ -857,7 +859,7 @@ local function buildNest(state: State, marker: BasePart, index: number)
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = core
 	local burned = false
-	prompt.Triggered:Connect(function(player: Player)
+	local function act(player: Player)
 		local s = current
 		if burned or not s or s ~= state or s.phase ~= "inside" or not PlayerService.isUp(player) then
 			return
@@ -878,7 +880,9 @@ local function buildNest(state: State, marker: BasePart, index: number)
 		task.delay(2.5, function()
 			model:Destroy()
 		end)
-	end)
+	end
+	state.actions["nest" .. tostring(index)] = act
+	prompt.Triggered:Connect(act)
 	model.Parent = objects
 end
 
@@ -967,7 +971,21 @@ local function setupHub()
 	folder.Name = "HubObjects"
 	folder.Parent = workspace
 	hubFolder = folder
-	if not VehicleService.spawn("GunJeep", CFrame.lookAt(H.vehicle, H.vehicle + Vector3.new(0, 0, 1))) then
+	local jeep = VehicleService.spawn("GunJeep", CFrame.lookAt(H.vehicle, H.vehicle + Vector3.new(0, 0, 1)))
+	if jeep and jeep.PrimaryPart then
+		-- корпус машины почти без трения: на неровной дороге тоннеля она уезжала сама. Пока никто не сел, держим её на месте
+		local root = jeep.PrimaryPart
+		root.Anchored = true
+		for _, d in jeep:GetDescendants() do
+			if d:IsA("Seat") or d:IsA("VehicleSeat") then
+				d:GetPropertyChangedSignal("Occupant"):Connect(function()
+					if d.Occupant then
+						root.Anchored = false
+					end
+				end)
+			end
+		end
+	else
 		warn("[MissionService] не удалось поставить джип с турелью в тоннеле")
 	end
 	AmmoCrateService.resetSupply()
@@ -1036,7 +1054,7 @@ local function buildExitDoor(state: State, metro: Instance)
 	prompt.MaxActivationDistance = 14
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = holder
-	prompt.Triggered:Connect(function(player: Player)
+	local function act(player: Player)
 		local s = current
 		if not s or s ~= state or s.phase ~= "inside" or not PlayerService.isUp(player) then
 			return
@@ -1068,7 +1086,9 @@ local function buildExitDoor(state: State, metro: Instance)
 		end
 		setupHub()
 		notify("Костяная дверь открыта — вы вышли в тоннель в горе. Поговорите с майором, возьмите припасы и джип с турелью!", 8)
-	end)
+	end
+	state.actions["door"] = act
+	prompt.Triggered:Connect(act)
 	if not prePlaced then
 		door.Parent = objects
 	end
@@ -1140,7 +1160,7 @@ local function buildGenerators(state: State, metro: Instance)
 			local holder = holderPart(cf.Position + Vector3.new(0, size.Y / 2 - 0.4, 0))
 			local mark = markerGui(holder, "ГЕНЕРАТОР", Color3.fromRGB(230, 150, 40), 220, 74)
 			local prompt = holdPrompt(holder, "Запустить генератор", "Генератор", Config.Metro.GenHold, 12)
-			prompt.Triggered:Connect(function(player: Player)
+			local function act(player: Player)
 				local s = current
 				if not s or s ~= state or s.phase ~= "inside" or not prompt.Enabled or not PlayerService.isUp(player) then
 					return
@@ -1155,7 +1175,9 @@ local function buildGenerators(state: State, metro: Instance)
 				light.Shadows = false
 				light.Parent = holder
 				notify(string.format("Генератор запущен (%d из %d)", s.gensOn, Config.Metro.Gens), 3)
-			end)
+			end
+			state.actions["gen" .. tostring(model.Name)] = act
+			prompt.Triggered:Connect(act)
 		end
 	end
 end
@@ -1186,7 +1208,7 @@ local function buildTnt(state: State, metro: Instance)
 						end
 					end
 				end
-				m:ScaleTo(2.6)
+				m:ScaleTo(1.3)
 				m:PivotTo(CFrame.new(m:GetPivot().Position) * CFrame.Angles(0, i * 1.7, 0))
 				local bbox, size = m:GetBoundingBox()
 				m:PivotTo(m:GetPivot() + (floor + Vector3.new(0, size.Y / 2 + 0.05, 0)) - bbox.Position)
@@ -1198,7 +1220,7 @@ local function buildTnt(state: State, metro: Instance)
 			if part then
 				markerGui(part, "ТНТ", Color3.fromRGB(70, 190, 230), Config.Metro.MarkDistance, 30)
 				local prompt = holdPrompt(part, "Установить заряд", "ТНТ", Config.Metro.TntHold, 9)
-				prompt.Triggered:Connect(function(player: Player)
+				local function act(player: Player)
 					local s = current
 					if not s or s ~= state or s.phase ~= "inside" or not prompt.Enabled or not PlayerService.isUp(player) then
 						return
@@ -1208,7 +1230,9 @@ local function buildTnt(state: State, metro: Instance)
 					table.insert(s.tntModels, make(false))
 					s.tnt += 1
 					notify(string.format("Заряд установлен (%d из %d)", s.tnt, Config.Metro.Tnt), 3)
-				end)
+				end
+				state.actions["tnt" .. tostring(i)] = act
+				prompt.Triggered:Connect(act)
 			end
 		end
 	end
@@ -1256,7 +1280,7 @@ local function spawnKey(state: State)
 	light.Range = 24
 	light.Parent = holder
 	local prompt = holdPrompt(holder, "Взять SkeletonKey", "Костяной ключ", 1, 14)
-	prompt.Triggered:Connect(function(player: Player)
+	local function act(player: Player)
 		local s = current
 		if not s or s ~= state or s.hasKey or not PlayerService.isUp(player) then
 			return
@@ -1265,7 +1289,9 @@ local function spawnKey(state: State)
 		prompt.Enabled = false
 		key:Destroy()
 		notify("SkeletonKey у команды — откройте костяную дверь на верхнем уровне пещеры!", 6)
-	end)
+	end
+	state.actions["key"] = act
+	prompt.Triggered:Connect(act)
 end
 
 local function buildDetonator(state: State, metro: Instance)
@@ -1279,7 +1305,7 @@ local function buildDetonator(state: State, metro: Instance)
 	local holder = holderPart(cf.Position + Vector3.new(0, size.Y / 2 - 0.4, 0))
 	markerGui(holder, "ДЕТОНАТОР", Color3.fromRGB(230, 70, 60), 300, 82)
 	local prompt = holdPrompt(holder, "Включить детонатор", "Детонатор", 3, 14)
-	prompt.Triggered:Connect(function(player: Player)
+	local function act(player: Player)
 		local s = current
 		if not s or s ~= state or s.phase ~= "inside" or s.detStage ~= 0 or not PlayerService.isUp(player) then
 			return
@@ -1313,7 +1339,9 @@ local function buildDetonator(state: State, metro: Instance)
 			ZombieService.setSpawnPoints(points)
 		end
 		notify(string.format("Детонатор включён! Защищайте зону %d секунд", Config.Metro.DefendSeconds), 6)
-	end)
+	end
+	state.actions["det"] = act
+	prompt.Triggered:Connect(act)
 end
 
 -- Раз в 0,25 с (из update): текст задачи и переходы финала метро после босса
@@ -1411,6 +1439,21 @@ function MissionService.onEntranceTouched(player: Player)
 		end
 		notify(if (s.def.nests or 0) > 0 then "Команда спустилась в метро — сожгите гнёзда, убейте босса, запустите генераторы и заложите заряды!" else "Команда спустилась в метро — зачистите станцию", 4)
 	end
+end
+
+-- Только в Studio: вызвать обработчик подсказки финала метро напрямую («gen<имя модели>», "tnt<n>", "det", "key") — удержание E в тестах из-за
+-- неотрисованного окна не срабатывает. В игре (не Studio) ничего не делает.
+function MissionService.debugInteract(name: string, player: Player): boolean
+	if not RunService:IsStudio() then
+		return false
+	end
+	local s = current
+	local act = s and s.actions[name]
+	if act then
+		act(player)
+		return true
+	end
+	return false
 end
 
 function MissionService.init()
