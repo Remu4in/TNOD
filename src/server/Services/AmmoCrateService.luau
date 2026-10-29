@@ -34,11 +34,11 @@ local function build(marker: BasePart)
 	label.TextColor3 = Color3.fromRGB(255, 220, 90)
 	label.Font = Enum.Font.GothamBold
 	label.TextScaled = true
-	label.Text = "ПАТРОНЫ"
+	label.Text = "AMMO"
 	label.Parent = gui
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Взять патроны"
-	prompt.ObjectText = "Ящик с патронами"
+	prompt.ActionText = "Take ammo"
+	prompt.ObjectText = "Ammo crate"
 	prompt.HoldDuration = 1
 	prompt.MaxActivationDistance = 9
 	prompt.RequiresLineOfSight = false
@@ -48,14 +48,14 @@ local function build(marker: BasePart)
 			return
 		end
 		if used[player] then
-			Remotes.get("Notify"):FireClient(player, "Вы уже брали патроны из ящика в эту фазу", 2)
+			Remotes.get("Notify"):FireClient(player, "You already took ammo from a crate this phase", 2)
 			return
 		end
 		if WeaponService.refillAll(player) then
 			used[player] = true
-			Remotes.get("Notify"):FireClient(player, "Патроны пополнены", 2)
+			Remotes.get("Notify"):FireClient(player, "Ammo refilled", 2)
 		else
-			Remotes.get("Notify"):FireClient(player, "Патроны полные", 2)
+			Remotes.get("Notify"):FireClient(player, "Ammo is full", 2)
 		end
 	end)
 	crate.Parent = workspace
@@ -90,11 +90,11 @@ function AmmoCrateService.supply(parent: Instance, position: Vector3, yaw: numbe
 	label.TextColor3 = Color3.fromRGB(255, 220, 90)
 	label.Font = Enum.Font.GothamBold
 	label.TextScaled = true
-	label.Text = "ПРИПАСЫ"
+	label.Text = "SUPPLIES"
 	label.Parent = gui
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Пополнить оружие в руках"
-	prompt.ObjectText = "Припасы (одно оружие на игрока)"
+	prompt.ActionText = "Refill the weapon in your hands"
+	prompt.ObjectText = "Supplies (one weapon per player)"
 	prompt.HoldDuration = 1
 	prompt.MaxActivationDistance = 9
 	prompt.RequiresLineOfSight = false
@@ -104,17 +104,17 @@ function AmmoCrateService.supply(parent: Instance, position: Vector3, yaw: numbe
 			return
 		end
 		if supplyUsed[player] then
-			Remotes.get("Notify"):FireClient(player, "Вы уже пополнили своё оружие из припасов", 3)
+			Remotes.get("Notify"):FireClient(player, "You've already refilled your weapon from the supplies", 3)
 			return
 		end
 		local ok, reason = WeaponService.canRefillHeld(player)
 		if not ok then
-			Remotes.get("Notify"):FireClient(player, reason or "Возьмите в руки оружие, которое хотите пополнить", 3)
+			Remotes.get("Notify"):FireClient(player, reason or "Hold the weapon you want to refill", 3)
 			return
 		end
 		if WeaponService.refillHeld(player) then
 			supplyUsed[player] = true
-			Remotes.get("Notify"):FireClient(player, "Оружие в руках пополнено. Больше припасов вам не положено", 4)
+			Remotes.get("Notify"):FireClient(player, "Weapon in hand refilled. No more supplies for you", 4)
 		end
 	end)
 	crate.Parent = parent

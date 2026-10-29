@@ -82,7 +82,7 @@ function TurretController.start()
 				end
 				return Enum.ContextActionResult.Sink
 			end, true, Enum.ContextActionPriority.High.Value, Enum.KeyCode.ButtonR2)
-			ContextActionService:SetTitle("TurretFire", "Огонь")
+			ContextActionService:SetTitle("TurretFire", "Fire")
 			ContextActionService:BindActionAtPriority("TurretReload", function(_, state)
 				if state == Enum.UserInputState.Begin then
 					Remotes.get("TurretReload"):FireServer()
@@ -100,11 +100,11 @@ function TurretController.start()
 	local function controlsHint(): string
 		local last = UserInputService:GetLastInputType()
 		if last == Enum.UserInputType.Touch then
-			return "кнопки «Огонь» и «R» на экране"
+			return "on-screen «Fire» and «R» buttons"
 		elseif string.find(last.Name, "Gamepad") then
-			return "R2 — огонь, X — перезарядка"
+			return "R2 — fire, X — reload"
 		end
-		return "ЛКМ — огонь, R — перезарядка"
+		return "LMB — fire, R — reload"
 	end
 
 	local lastAim, lastFire = 0, 0
@@ -119,10 +119,9 @@ function TurretController.start()
 		local mag = current:GetAttribute("TurretMag")
 		local reserve = current:GetAttribute("TurretReserve")
 		if current:GetAttribute("TurretReloading") == true then
-			label.Text = "ПЕРЕЗАРЯДКА…"
+			label.Text = "RELOADING…"
 		else
-			label.Text = string.format("ПУЛЕМЁТ  %s / %s\
-%s", tostring(mag), tostring(reserve), controlsHint())
+			label.Text = string.format("MACHINE GUN  %s / %s\n%s", tostring(mag), tostring(reserve), controlsHint())
 		end
 		local cam = workspace.CurrentCamera
 		local now = os.clock()

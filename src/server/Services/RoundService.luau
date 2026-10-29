@@ -190,7 +190,7 @@ local function loadLocation(idx: number)
 			char:PivotTo(CFrame.new(map.playerSpawn + Vector3.new(math.random(-6, 6), 0, math.random(-4, 4))))
 		end
 	end
-	notifyAll("Новая локация: " .. loc.name, 5)
+	notifyAll("New location: " .. loc.name, 5)
 end
 
 local function waitPhase(seconds: number)
@@ -218,7 +218,7 @@ local function intermission()
 		PlayerService.setSpawn(currentMap.playerSpawn) -- днём (и в перерыве) появляемся в магазине
 	end
 	PlayerService.spawnAll()
-	notifyAll("Новый раунд скоро начнётся", 3)
+	notifyAll("A new round starts soon", 3)
 	task.wait(Config.Round.IntermissionTime)
 end
 
@@ -286,7 +286,7 @@ local function day(first: boolean, finale: boolean?)
 		setPhase("Day", nil)
 		ReplicatedStorage:SetAttribute("NextBriefTitle", "") -- панель «ближайшая ночь» не показываем
 		MissionService.beginFinale()
-		notifyAll("День 20. Босс повержен — зайдите в бункер всей командой!", 7)
+		notifyAll("Day 20. The boss is down — enter the bunker as a team!", 7)
 		while not gameOver and not MissionService.finaleReady() do
 			task.wait(0.5)
 		end
@@ -294,9 +294,9 @@ local function day(first: boolean, finale: boolean?)
 			MissionService.finish()
 			ReplicatedStorage:SetAttribute("ActComplete", 1)
 			for _, p in Players:GetPlayers() do
-				Remotes.get("Briefing"):FireClient(p, "Командование", Config.Finale.Title, Config.Finale.Lines)
+				Remotes.get("Briefing"):FireClient(p, "Command", Config.Finale.Title, Config.Finale.Lines)
 			end
-			notifyAll(Config.Finale.Title .. " Следующий акт — в разработке.", 12)
+			notifyAll(Config.Finale.Title .. " The next act is in development.", 12)
 			task.wait(Config.Finale.EndSeconds)
 			finaleDone = true
 			gameOver = true
@@ -305,20 +305,20 @@ local function day(first: boolean, finale: boolean?)
 	end
 	setPhase("Day", t)
 	GeneralService.announceDay()
-	notifyAll(if first then "Закупайтесь в магазине и открывайте здания — вносите монеты у вывесок" else "Рассвет. Мутанты сгорают на солнце — бегите за покупками!", 4)
+	notifyAll(if first then "Stock up at the shop and open buildings — invest coins at the signs" else "Dawn. The mutants burn in the sun — run to the shops!", 4)
 	local warn = Config.Round.DayWarnSeconds
 	local early = false
 	if t > warn + 2 then
 		early = waitDayVote(t - warn)
 		if not gameOver and not early then
-			notifyAll(string.format("Через %d секунд наступит ночь, магазины закроются. Кто снаружи — останется снаружи! (V — завершить день)", warn), 4)
+			notifyAll(string.format("Night falls in %d seconds and the shops will close. Anyone outside stays outside! (V — end the day)", warn), 4)
 			early = waitDayVote(warn)
 		end
 	else
 		early = waitDayVote(t)
 	end
 	if early and not gameOver then
-		notifyAll("Все готовы — день завершён досрочно", 3)
+		notifyAll("Everyone is ready — the day ends early", 3)
 	end
 	table.clear(dayVotes)
 	ReplicatedStorage:SetAttribute("DayVotes", 0)
@@ -384,13 +384,13 @@ local function night()
 	EconomyService.newWave()
 	PlayerService.takeLosses()
 	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave, threat), wave)
-	print(string.format("[RoundService] ночь %d: игроков %d, зомби %d, угроза %.1f (уровень x%.2f HP), оружие: %s", wave, players, WaveMath.total(comp), threat.score, threat.tier.hp, table.concat(threat.classes, ",")))
+	print(string.format("[RoundService] night %d: players %d, zombies %d, threat %.1f (level x%.2f HP), weapons: %s", wave, players, WaveMath.total(comp), threat.score, threat.tier.hp, table.concat(threat.classes, ",")))
 	local bossName: string? = nil
 	for _, bossId in WaveMath.bossTypes(Config.Waves, wave) do
 		bossName = Config.Zombies[bossId].name
 	end
 	if bossName then
-		notifyAll(string.format("Идёт босс: %s!", bossName), 3)
+		notifyAll(string.format("Boss incoming: %s!", bossName), 3)
 	end
 	-- миссия ночи (MissionService): точка, задача, поток зомби вокруг точки; ночь засчитана, когда задача выполнена и убит минимум зомби
 	-- (classic/clear — когда убита вся волна и набран минимум; MissionService.update возвращает "done")
@@ -440,9 +440,9 @@ local function night()
 		local losses = PlayerService.takeLosses()
 		local fine = if losses > 0 then EconomyService.penalize(E.LossPenalty * losses) else 0
 		for _, p in everyone do
-			local text = string.format("Волна %d пройдена: +%d монет", wave, math.floor((gotBy[p] or 0) + 0.5))
+			local text = string.format("Wave %d cleared: +%d coins", wave, math.floor((gotBy[p] or 0) + 0.5))
 			if fine > 0 then
-				text ..= string.format(" (штраф команды за потери −%d)", fine)
+				text ..= string.format(" (team penalty for losses −%d)", fine)
 			end
 			if p.Parent then
 				Remotes.get("Notify"):FireClient(p, text, 5)
@@ -456,7 +456,7 @@ local function night()
 		if finalDef and finalDef.type == "bossfight" and missionDone then
 			ReplicatedStorage:SetAttribute("Victory", wave)
 			finalePending = true
-			notifyAll("ПОБЕДА! Страж бункера повержен. Остался последний шаг — бункер!", 8)
+			notifyAll("VICTORY! The Bunker Guardian is down. One last step — the bunker!", 8)
 		end
 	end
 	if pendingNight then
@@ -472,14 +472,14 @@ local function finishRound()
 	-- ночь, на которой все пали, не засчитывается
 	local reached = math.max(0, if fellAtNight then wave - 1 else wave)
 	ReplicatedStorage:SetAttribute("LastRoundWave", reached)
-	notifyAll(if finaleDone then "Акт 1 пройден! Раунд завершён" else string.format("Все пали. Продержались %d ночей", reached), Config.Round.GameOverTime)
+	notifyAll(if finaleDone then "Act 1 complete! Round over" else string.format("Everyone has fallen. Nights survived: %d", reached), Config.Round.GameOverTime)
 	-- через несколько секунд — итоги по очкам
 	local bestPlayer, bestScore, bestKills = ScoreService.best()
 	if bestPlayer then
 		local team = (ReplicatedStorage:GetAttribute("TeamTotal") :: number?) or 0
 		task.delay(4, function()
 			notifyAll(
-				string.format("Лучший: %s — %d очков, %d убийств. Команда набрала %d", bestPlayer.DisplayName, bestScore, bestKills, team),
+				string.format("Best: %s — %d points, %d kills. The team scored %d", bestPlayer.DisplayName, bestScore, bestKills, team),
 				Config.Round.GameOverTime - 4
 			)
 		end)
@@ -532,7 +532,7 @@ function RoundService.onAllDown()
 		if lives > 0 then
 			ReplicatedStorage:SetAttribute("TeamLives", lives - 1)
 			reviveLockUntil = os.clock() + 5
-			notifyAll("Дополнительная жизнь! Команда поднимается", 4)
+			notifyAll("Extra life! The team gets back up", 4)
 			PlayerService.reviveAll()
 			return
 		end
@@ -585,7 +585,7 @@ function RoundService.start(map: Types.MapInfo)
 		if phase == "Intermission" or phase == "Day" then
 			PlayerService.spawn(player)
 		else
-			Remotes.get("Notify"):FireClient(player, "Идёт ночь. Вы появитесь на рассвете", 4)
+			Remotes.get("Notify"):FireClient(player, "Night is on. You'll respawn at dawn", 4)
 		end
 	end)
 	task.spawn(function()

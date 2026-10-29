@@ -85,7 +85,7 @@ function ShopService.addPoint(name: string, center: Vector3, radius: number, fre
 	part.Position = center + Vector3.new(0, 2, 0)
 	part.Parent = folder
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Открыть магазин"
+	prompt.ActionText = "Open the shop"
 	prompt.ObjectText = name
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = math.min(radius, 24)
@@ -93,7 +93,7 @@ function ShopService.addPoint(name: string, center: Vector3, radius: number, fre
 	prompt.Parent = part
 	prompt.Triggered:Connect(function(player: Player)
 		if not free and not isDay() then
-			Remotes.get("Notify"):FireClient(player, "Ночью магазин закрыт — это укрытие", 2)
+			Remotes.get("Notify"):FireClient(player, "The shop is closed at night — this is a shelter", 2)
 			return
 		end
 		Remotes.get("ShopOpen"):FireClient(player)

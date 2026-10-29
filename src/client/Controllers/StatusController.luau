@@ -36,7 +36,7 @@ function StatusController.start()
 	stunText.TextSize = 40
 	stunText.TextColor3 = Color3.fromRGB(255, 190, 120)
 	stunText.TextStrokeTransparency = 0.4
-	stunText.Text = "ОГЛУШЕН"
+	stunText.Text = "STUNNED"
 	stunText.Parent = veil
 
 	local function bar(order: number, color: Color3, text: string): TextLabel
@@ -57,8 +57,8 @@ function StatusController.start()
 		c.Parent = l
 		return l
 	end
-	local slowBar = bar(0, Color3.fromRGB(150, 235, 120), "Растения опутали ноги: движение замедлено")
-	local darkBar = bar(1, Color3.fromRGB(190, 150, 255), "Тьма: бег, подкат и кувырок отключены")
+	local slowBar = bar(0, Color3.fromRGB(150, 235, 120), "Vines tangle your legs: movement slowed")
+	local darkBar = bar(1, Color3.fromRGB(190, 150, 255), "Darkness: sprint, slide and roll are disabled")
 
 	local acc = 0
 	RunService.Heartbeat:Connect(function(dt: number)

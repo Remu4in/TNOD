@@ -67,7 +67,7 @@ function BriefingController.start()
 	close.Font = Enum.Font.GothamBold
 	close.TextSize = 20
 	close.TextColor3 = Color3.new(1, 1, 1)
-	close.Text = "Есть, генерал! (E)"
+	close.Text = "Yes, General! (E)"
 	close.Parent = panel
 	local cc = Instance.new("UICorner")
 	cc.CornerRadius = UDim.new(0, 8)

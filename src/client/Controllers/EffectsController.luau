@@ -43,7 +43,7 @@ local function damageNumber(pos: Vector3, amount: number, killed: boolean, heads
 	t.Font = Enum.Font.GothamBlack
 	t.TextScaled = true
 	t.TextStrokeTransparency = 0.3
-	t.Text = if headshot then "ГОЛОВА " .. tostring(amount) else tostring(amount)
+	t.Text = if headshot then "HEADSHOT " .. tostring(amount) else tostring(amount)
 	t.TextColor3 = if killed then Color3.fromRGB(255, 80, 60) elseif headshot then Color3.fromRGB(255, 220, 60) else Color3.new(1, 1, 1)
 	t.Parent = bb
 	TweenService:Create(anchor, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = pos + Vector3.new(0, 3, 0) }):Play()

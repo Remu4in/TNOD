@@ -37,7 +37,7 @@ function VoteController.start()
 		local votes = (ReplicatedStorage:GetAttribute("DayVotes") :: number?) or 0
 		local need = (ReplicatedStorage:GetAttribute("DayVoteNeed") :: number?) or 0
 		local mine = player:GetAttribute("VotedDay") == true
-		button.Text = string.format("%s (V)  %d/%d", if mine then "Готов — отменить" else "Завершить день", votes, need)
+		button.Text = string.format("%s (V)  %d/%d", if mine then "Ready — cancel" else "End the day", votes, need)
 		button.BackgroundColor3 = if mine then Color3.fromRGB(60, 130, 70) else Color3.fromRGB(34, 37, 44)
 	end
 	for _, name in { "Phase", "DayVotes", "DayVoteNeed" } do

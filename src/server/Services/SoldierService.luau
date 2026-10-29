@@ -404,8 +404,8 @@ end
 
 local function addTalkPrompt(s: Soldier)
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Поговорить"
-	prompt.ObjectText = "Солдат"
+	prompt.ActionText = "Talk"
+	prompt.ObjectText = "Soldier"
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = Config.SoldierTalk.distance
 	prompt.RequiresLineOfSight = false
@@ -506,7 +506,7 @@ function SoldierService.init()
 			end
 		end
 	end)
-	print("[SoldierService] солдат: " .. #soldiers)
+	print("[SoldierService] soldiers: " .. #soldiers)
 end
 
 -- Ночь 19 («бойня на базе»): доля солдат базы «убита» — лежат на земле без движения и разговора. Берём равномерно по списку (каждого k-го),

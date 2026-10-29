@@ -82,7 +82,7 @@ local suppliedSites: { [number]: { Instance } } = {}
 
 -- Подписи маяка места миссии по типу
 local PLACE_LABELS: { [string]: string } = {
-	scout = "Район разведки", build = "Место шатра", escort = "Место шатра", defend = "Шатёр: оборона", metro = "Вход в метро", classic = "Зона боя", clear = "Зона боя", bossfight = "Арена",
+	scout = "Scouting area", build = "Tent site", escort = "Tent site", defend = "Tent: defense", metro = "Metro entrance", classic = "Combat zone", clear = "Combat zone", bossfight = "Arena",
 }
 
 local GROUND_FOLDERS = { "Roads", "Ground", "Grass" }
@@ -255,7 +255,7 @@ local function districtPoints(anchorIndex: number, count: number, grid: RoadRout
 		end
 	end
 	if #list < count then
-		warn(string.format("[MissionService] точек разведки района %d: нашлось %d из %d (радиус %d–%d)", anchorIndex, #list, count, rr[1], rr[2]))
+		warn(string.format("[MissionService] scouting points of the area %d: found %d of %d (radius %d–%d)", anchorIndex, #list, count, rr[1], rr[2]))
 	end
 	return list
 end
@@ -477,7 +477,7 @@ local function installTent(site: number)
 	end
 	local cf, size = clone:GetBoundingBox()
 	local center = Vector3.new(cf.Position.X, cf.Position.Y - size.Y / 2, cf.Position.Z)
-	ShopService.addPoint("Военная палатка", center, math.max(size.X, size.Z) / 2 + 18, false, true, true)
+	ShopService.addPoint("Military tent", center, math.max(size.X, size.Z) / 2 + 18, false, true, true)
 	rec.shop = center
 	installedSites[site] = rec
 end
@@ -595,13 +595,13 @@ local function makeSiteMarker(state: State, enabled: boolean)
 	label.TextTransparency = Config.MissionLabel.TextTransparency
 	label.TextStrokeTransparency = Config.MissionLabel.StrokeTransparency
 	label.Name = "Label"
-	label.Text = "◆ Место шатра"
+	label.Text = "◆ Tent site"
 	label.Parent = gui
-	part:SetAttribute("BaseText", "◆ Место шатра")
+	part:SetAttribute("BaseText", "◆ Tent site")
 	CollectionService:AddTag(part, "MissionZone")
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Установить шатёр"
-	prompt.ObjectText = "Шатёр"
+	prompt.ActionText = "Set up the tent"
+	prompt.ObjectText = "Tent"
 	prompt.HoldDuration = Config.Convoy.InstallHold
 	prompt.MaxActivationDistance = 18
 	prompt.RequiresLineOfSight = false
@@ -612,7 +612,7 @@ local function makeSiteMarker(state: State, enabled: boolean)
 		if s and s == state and s.phase == "install" and PlayerService.isUp(player) then
 			installTent(s.site)
 			s.installed = true
-			notify("Шатёр установлен!", 4)
+			notify("Tent set up!", 4)
 		end
 	end)
 	part.Parent = objects
@@ -669,7 +669,7 @@ local function setupBaseBattle(night: number, comp: WaveMath.Composition, hpMult
 		end
 	end
 	if #points == 0 then
-		warn("[MissionService] ночь 19: на базе не нашлось точек появления — зомби идут кольцом вокруг базы")
+		warn("[MissionService] night 19: no spawn points found at the base — zombies will form a ring around the base")
 		ZombieService.setAnchor(MissionService.anchorPosition(5))
 	else
 		ZombieService.setAnchor(nil)
@@ -687,7 +687,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		hubFolder:Destroy() -- майор и припасы тоннеля нужны только до начала следующей ночи
 		hubFolder = nil
 	end
-	local def: Config.MissionDef = Config.Missions[night] or { type = "classic", title = string.format("Ночь %d", night), anchor = 1 }
+	local def: Config.MissionDef = Config.Missions[night] or { type = "classic", title = string.format("Night %d", night), anchor = 1 }
 	local anchor = MissionService.anchorPosition(def.anchor)
 	objects = Instance.new("Folder")
 	objects.Name = "MissionObjects"
@@ -725,7 +725,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	end
 	if kind == "scout" then
 		for i, pos in districtPoints(def.anchor, def.points or 3, nil, def.radius) do
-			table.insert(state.points, { pos = pos, part = makeBeacon(pos, string.format("Точка %d", i)), done = false })
+			table.insert(state.points, { pos = pos, part = makeBeacon(pos, string.format("Point %d", i)), done = false })
 		end
 	elseif kind == "build" then
 		makeSiteMarker(state, false)
@@ -740,12 +740,12 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		local route = districtPoints(def.anchor, def.points or 3, grid, def.radius)
 		local routeBeacons: { BasePart } = {}
 		for _, p in route do
-			table.insert(routeBeacons, makeBeacon(p, "Маршрут"))
+			table.insert(routeBeacons, makeBeacon(p, "Route"))
 		end
 		local stop = roadStopNear(grid, anchor)
 		local groundStart = groundAt(start.X, start.Z) or start
 		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed) then
-			warn("[MissionService] конвой не запущен — миссия играется как обычная ночь")
+			warn("[MissionService] convoy not started — the mission plays as a regular night")
 			state.kind = "classic"
 			state.infinite = false
 		else
@@ -760,7 +760,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 					end
 				end
 				if nearest then
-					nearest:SetAttribute("BaseText", string.format("◆ Маршрут %d", i))
+					nearest:SetAttribute("BaseText", string.format("◆ Route %d", i))
 					table.remove(routeBeacons, table.find(routeBeacons, nearest) :: number)
 				end
 			end
@@ -774,7 +774,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	end
 	ZombieService.setStreamMode(state.infinite)
 	setStatus(def.title, def.hint or "", state.kind)
-	notify(string.format("Ночь %d — %s", night, def.title), 4)
+	notify(string.format("Night %d — %s", night, def.title), 4)
 	return state.infinite, state.kind
 end
 
@@ -852,8 +852,8 @@ local function buildNest(state: State, marker: BasePart, index: number)
 	light.Brightness = 0.9
 	light.Parent = core
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Сжечь гнездо"
-	prompt.ObjectText = "Гнездо мутантов"
+	prompt.ActionText = "Burn the nest"
+	prompt.ObjectText = "Mutant nest"
 	prompt.HoldDuration = Config.Metro.NestHold
 	prompt.MaxActivationDistance = 12
 	prompt.RequiresLineOfSight = false
@@ -876,7 +876,7 @@ local function buildNest(state: State, marker: BasePart, index: number)
 			end
 		end
 		light.Color = Color3.fromRGB(255, 150, 60)
-		notify(string.format("Гнездо сожжено (%d из %d)", s.nestsBurned, s.def.nests or 0), 3)
+		notify(string.format("Nest burned (%d of %d)", s.nestsBurned, s.def.nests or 0), 3)
 		task.delay(2.5, function()
 			model:Destroy()
 		end)
@@ -912,7 +912,7 @@ local function buildOfficer(folder: Folder)
 	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("NPC")
 	local template = lib and lib:FindFirstChild("General")
 	if not template then
-		warn("[MissionService] нет ServerStorage.Assets.NPC.General — майора в тоннеле не будет")
+		warn("[MissionService] no ServerStorage.Assets.NPC.General — no major in the tunnel")
 		return
 	end
 	local model = template:Clone() :: Model
@@ -950,7 +950,7 @@ local function buildOfficer(folder: Folder)
 	label.Text = H.OfficerName
 	label.Parent = gui
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Поговорить"
+	prompt.ActionText = "Talk"
 	prompt.ObjectText = H.OfficerName
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 12
@@ -986,7 +986,7 @@ local function setupHub()
 			end
 		end
 	else
-		warn("[MissionService] не удалось поставить джип с турелью в тоннеле")
+		warn("[MissionService] failed to place the turret jeep in the tunnel")
 	end
 	AmmoCrateService.resetSupply()
 	for i, pos in H.supplies do
@@ -1003,7 +1003,7 @@ local function buildExitDoor(state: State, metro: Instance)
 	local caveFolder = metro:FindFirstChild("Cave")
 	local pre = caveFolder and caveFolder:FindFirstChild("BoneDoor")
 	if not marker or not marker:IsA("BasePart") or (not src and not (pre and pre:IsA("Model"))) then
-		warn("[MissionService] метро: нет маркера Metro_Exit или модели костяной двери — выхода не будет")
+		warn("[MissionService] metro: no Metro_Exit marker or bone door model — there will be no exit")
 		return
 	end
 	local floor = metroFloor(marker.Position.X, marker.Position.Z, marker.Position.Y + 2) or Vector3.new(marker.Position.X, marker.Position.Y - 8, marker.Position.Z)
@@ -1048,8 +1048,8 @@ local function buildExitDoor(state: State, metro: Instance)
 		holder = h
 	end
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Открыть костяную дверь"
-	prompt.ObjectText = "Выход из катакомб"
+	prompt.ActionText = "Open the bone door"
+	prompt.ObjectText = "Catacomb exit"
 	prompt.HoldDuration = 1.5
 	prompt.MaxActivationDistance = 14
 	prompt.RequiresLineOfSight = false
@@ -1061,16 +1061,16 @@ local function buildExitDoor(state: State, metro: Instance)
 		end
 		local missing: { string } = {}
 		if not s.hasKey then
-			table.insert(missing, "SkeletonKey (выдаётся после обороны детонатора)")
+			table.insert(missing, "SkeletonKey (given after defending the detonator)")
 		end
 		if s.nestsBurned < (s.def.nests or 0) then
-			table.insert(missing, "гнёзда мутантов")
+			table.insert(missing, "mutant nests")
 		end
 		if s.def.boss and (not s.bossSeen or ZombieService.bossAlive()) then
-			table.insert(missing, "босс станции")
+			table.insert(missing, "station boss")
 		end
 		if #missing > 0 then
-			Remotes.get("Notify"):FireClient(player, "Дверь заперта. Нужно: " .. table.concat(missing, ", "), 4)
+			Remotes.get("Notify"):FireClient(player, "The door is locked. Needed: " .. table.concat(missing, ", "), 4)
 			return
 		end
 		s.phase = "hub"
@@ -1085,7 +1085,7 @@ local function buildExitDoor(state: State, metro: Instance)
 			end
 		end
 		setupHub()
-		notify("Костяная дверь открыта — вы вышли в тоннель в горе. Поговорите с майором, возьмите припасы и джип с турелью!", 8)
+		notify("The bone door is open — you've come out into the tunnel in the mountain. Talk to the major, grab supplies and the turret jeep!", 8)
 	end
 	state.actions["door"] = act
 	prompt.Triggered:Connect(act)
@@ -1151,15 +1151,15 @@ end
 local function buildGenerators(state: State, metro: Instance)
 	local folder = metro:FindFirstChild("Generators")
 	if not folder then
-		warn("[MissionService] метро: нет Workspace.Metro.Generators — генераторов не будет")
+		warn("[MissionService] metro: no Workspace.Metro.Generators — there will be no generators")
 		return
 	end
 	for _, model in folder:GetChildren() do
 		if model:IsA("Model") and model:GetAttribute("MissionGenerator") then
 			local cf, size = model:GetBoundingBox()
 			local holder = holderPart(cf.Position + Vector3.new(0, size.Y / 2 - 0.4, 0))
-			local mark = markerGui(holder, "ГЕНЕРАТОР", Color3.fromRGB(230, 150, 40), 220, 74)
-			local prompt = holdPrompt(holder, "Запустить генератор", "Генератор", Config.Metro.GenHold, 12)
+			local mark = markerGui(holder, "GENERATOR", Color3.fromRGB(230, 150, 40), 220, 74)
+			local prompt = holdPrompt(holder, "Start the generator", "Generator", Config.Metro.GenHold, 12)
 			local function act(player: Player)
 				local s = current
 				if not s or s ~= state or s.phase ~= "inside" or not prompt.Enabled or not PlayerService.isUp(player) then
@@ -1174,7 +1174,7 @@ local function buildGenerators(state: State, metro: Instance)
 				light.Range = 30
 				light.Shadows = false
 				light.Parent = holder
-				notify(string.format("Генератор запущен (%d из %d)", s.gensOn, Config.Metro.Gens), 3)
+				notify(string.format("Generator started (%d of %d)", s.gensOn, Config.Metro.Gens), 3)
 			end
 			state.actions["gen" .. tostring(model.Name)] = act
 			prompt.Triggered:Connect(act)
@@ -1186,7 +1186,7 @@ local function buildTnt(state: State, metro: Instance)
 	local src = metroLib("C_TNT_11684524329")
 	local markers = metro:FindFirstChild("Markers")
 	if not src or not markers then
-		warn("[MissionService] метро: нет модели ТНТ или маркеров — зарядов не будет")
+		warn("[MissionService] metro: no TNT model or markers — there will be no charges")
 		return
 	end
 	for i = 1, Config.Metro.Tnt do
@@ -1218,8 +1218,8 @@ local function buildTnt(state: State, metro: Instance)
 			local ghost = make(true)
 			local part = ghost:FindFirstChildWhichIsA("BasePart", true)
 			if part then
-				markerGui(part, "ТНТ", Color3.fromRGB(70, 190, 230), Config.Metro.MarkDistance, 30)
-				local prompt = holdPrompt(part, "Установить заряд", "ТНТ", Config.Metro.TntHold, 9)
+				markerGui(part, "TNT", Color3.fromRGB(70, 190, 230), Config.Metro.MarkDistance, 30)
+				local prompt = holdPrompt(part, "Plant the charge", "TNT", Config.Metro.TntHold, 9)
 				local function act(player: Player)
 					local s = current
 					if not s or s ~= state or s.phase ~= "inside" or not prompt.Enabled or not PlayerService.isUp(player) then
@@ -1229,7 +1229,7 @@ local function buildTnt(state: State, metro: Instance)
 					ghost:Destroy()
 					table.insert(s.tntModels, make(false))
 					s.tnt += 1
-					notify(string.format("Заряд установлен (%d из %d)", s.tnt, Config.Metro.Tnt), 3)
+					notify(string.format("Charge planted (%d of %d)", s.tnt, Config.Metro.Tnt), 3)
 				end
 				state.actions["tnt" .. tostring(i)] = act
 				prompt.Triggered:Connect(act)
@@ -1273,13 +1273,13 @@ local function spawnKey(state: State)
 	key:PivotTo(CFrame.new(state.detPos + Vector3.new(0, 7, 0)))
 	key.Parent = objects
 	local holder = holderPart(state.detPos + Vector3.new(0, 6, 0))
-	markerGui(holder, "КЛЮЧ", Color3.fromRGB(240, 220, 120), 300, 46)
+	markerGui(holder, "KEY", Color3.fromRGB(240, 220, 120), 300, 46)
 	local light = Instance.new("PointLight")
 	light.Color = Color3.fromRGB(255, 235, 150)
 	light.Brightness = 2
 	light.Range = 24
 	light.Parent = holder
-	local prompt = holdPrompt(holder, "Взять SkeletonKey", "Костяной ключ", 1, 14)
+	local prompt = holdPrompt(holder, "Take the SkeletonKey", "Bone key", 1, 14)
 	local function act(player: Player)
 		local s = current
 		if not s or s ~= state or s.hasKey or not PlayerService.isUp(player) then
@@ -1288,7 +1288,7 @@ local function spawnKey(state: State)
 		s.hasKey = true
 		prompt.Enabled = false
 		key:Destroy()
-		notify("SkeletonKey у команды — откройте костяную дверь на верхнем уровне пещеры!", 6)
+		notify("The team has the SkeletonKey — open the bone door on the upper level of the cave!", 6)
 	end
 	state.actions["key"] = act
 	prompt.Triggered:Connect(act)
@@ -1298,13 +1298,13 @@ local function buildDetonator(state: State, metro: Instance)
 	local cave = metro:FindFirstChild("Cave")
 	local det = cave and cave:FindFirstChild("Detonator")
 	if not det or not det:IsA("Model") then
-		warn("[MissionService] метро: нет Workspace.Metro.Cave.Detonator — детонатора не будет")
+		warn("[MissionService] metro: no Workspace.Metro.Cave.Detonator — there will be no detonator")
 		return
 	end
 	local cf, size = det:GetBoundingBox()
 	local holder = holderPart(cf.Position + Vector3.new(0, size.Y / 2 - 0.4, 0))
-	markerGui(holder, "ДЕТОНАТОР", Color3.fromRGB(230, 70, 60), 300, 82)
-	local prompt = holdPrompt(holder, "Включить детонатор", "Детонатор", 3, 14)
+	markerGui(holder, "DETONATOR", Color3.fromRGB(230, 70, 60), 300, 82)
+	local prompt = holdPrompt(holder, "Activate the detonator", "Detonator", 3, 14)
 	local function act(player: Player)
 		local s = current
 		if not s or s ~= state or s.phase ~= "inside" or s.detStage ~= 0 or not PlayerService.isUp(player) then
@@ -1312,13 +1312,13 @@ local function buildDetonator(state: State, metro: Instance)
 		end
 		local missing: { string } = {}
 		if s.gensOn < Config.Metro.Gens then
-			table.insert(missing, string.format("генераторы (%d из %d)", s.gensOn, Config.Metro.Gens))
+			table.insert(missing, string.format("generators (%d of %d)", s.gensOn, Config.Metro.Gens))
 		end
 		if s.tnt < Config.Metro.Tnt then
-			table.insert(missing, string.format("заряды ТНТ (%d из %d)", s.tnt, Config.Metro.Tnt))
+			table.insert(missing, string.format("TNT charges (%d of %d)", s.tnt, Config.Metro.Tnt))
 		end
 		if #missing > 0 then
-			Remotes.get("Notify"):FireClient(player, "Детонатор не готов. Нужно: " .. table.concat(missing, ", "), 4)
+			Remotes.get("Notify"):FireClient(player, "The detonator isn't ready. Needed: " .. table.concat(missing, ", "), 4)
 			return
 		end
 		s.detStage = 1
@@ -1338,7 +1338,7 @@ local function buildDetonator(state: State, metro: Instance)
 		if #points > 0 then
 			ZombieService.setSpawnPoints(points)
 		end
-		notify(string.format("Детонатор включён! Защищайте зону %d секунд", Config.Metro.DefendSeconds), 6)
+		notify(string.format("Detonator activated! Defend the zone for %d seconds", Config.Metro.DefendSeconds), 6)
 	end
 	state.actions["det"] = act
 	prompt.Triggered:Connect(act)
@@ -1348,7 +1348,7 @@ end
 local function finaleStep(state: State, dt: number, need: number): string
 	local cfg = Config.Metro
 	if state.hasKey then
-		return "Откройте костяную дверь на верхнем уровне пещеры"
+		return "Open the bone door on the upper level of the cave"
 	end
 	if state.detStage == 1 then
 		local near = false
@@ -1363,29 +1363,29 @@ local function finaleStep(state: State, dt: number, need: number): string
 		end
 		if state.defendLeft > 0 then
 			return if near
-				then string.format("Защитите детонатор: осталось %d с", math.ceil(state.defendLeft))
-				else string.format("Вернитесь к детонатору! Осталось %d с", math.ceil(state.defendLeft))
+				then string.format("Defend the detonator: %d s left", math.ceil(state.defendLeft))
+				else string.format("Get back to the detonator! %d s left", math.ceil(state.defendLeft))
 		end
 		state.detStage = 2
 		blastTnt(state)
-		notify("Заряды сработали!", 5)
+		notify("The charges went off!", 5)
 	end
 	if state.detStage == 2 then
 		if state.metroKills < need then
-			return string.format("Добейте мутантов: убито %d из %d", state.metroKills, need)
+			return string.format("Finish off the mutants: killed %d of %d", state.metroKills, need)
 		end
 		if not state.keyOut then
 			state.keyOut = true
 			spawnKey(state)
 			if not state.hasKey then
-				notify("Выпал SkeletonKey — заберите его у детонатора!", 6)
+				notify("The SkeletonKey dropped — take it from the detonator!", 6)
 			end
 		end
-		return "Заберите SkeletonKey у детонатора"
+		return "Take the SkeletonKey from the detonator"
 	end
-	local text = string.format("Запустите генераторы: %d из %d (удерживайте E)\nУстановите заряды ТНТ: %d из %d (метки в радиусе %d студов)", state.gensOn, cfg.Gens, state.tnt, cfg.Tnt, cfg.MarkDistance)
+	local text = string.format("Start the generators: %d of %d (hold E)\nPlant the TNT charges: %d of %d (markers within %d studs)", state.gensOn, cfg.Gens, state.tnt, cfg.Tnt, cfg.MarkDistance)
 	if state.gensOn >= cfg.Gens and state.tnt >= cfg.Tnt then
-		text = "Всё готово — включите детонатор в большом зале пещеры"
+		text = "All set — activate the detonator in the big cave hall"
 	end
 	return text
 end
@@ -1402,7 +1402,7 @@ function MissionService.onEntranceTouched(player: Player)
 	metroDebounce[player] = now
 	local s = current
 	if not s or s.kind ~= "metro" then
-		Remotes.get("Notify"):FireClient(player, "Вход в метро закрыт: завалено", 2)
+		Remotes.get("Notify"):FireClient(player, "The metro entrance is closed: collapsed", 2)
 		return
 	end
 	local metro = workspace:FindFirstChild("Metro")
@@ -1437,7 +1437,7 @@ function MissionService.onEntranceTouched(player: Player)
 			buildDetonator(s, metro :: Instance)
 			buildExitDoor(s, metro :: Instance)
 		end
-		notify(if (s.def.nests or 0) > 0 then "Команда спустилась в метро — сожгите гнёзда, убейте босса, запустите генераторы и заложите заряды!" else "Команда спустилась в метро — зачистите станцию", 4)
+		notify(if (s.def.nests or 0) > 0 then "The team went down into the metro — burn the nests, kill the boss, start the generators and plant the charges!" else "The team went down into the metro — clear the station", 4)
 	end
 end
 
@@ -1494,7 +1494,7 @@ function MissionService.update(dt: number): string?
 					if flatDist(pos, pt.pos) < Config.ScoutPointRadius then
 						pt.done = true
 						pt.part:Destroy()
-						notify("Точка обследована", 2)
+						notify("Point scouted", 2)
 						break
 					end
 				end
@@ -1503,7 +1503,7 @@ function MissionService.update(dt: number): string?
 				done += 1
 			end
 		end
-		text = string.format("Обследовано точек: %d из %d", done, #state.points)
+		text = string.format("Points scouted: %d of %d", done, #state.points)
 		if #state.points > 0 and done >= #state.points then
 			result = "done"
 		end
@@ -1517,9 +1517,9 @@ function MissionService.update(dt: number): string?
 		end
 		if near then
 			state.secondsLeft = math.max(0, state.secondsLeft - dt)
-			text = string.format("Держим шатёр: осталось %d с", math.ceil(state.secondsLeft))
+			text = string.format("Holding the tent: %d s left", math.ceil(state.secondsLeft))
 		else
-			text = string.format("Вернитесь к шатру! Осталось %d с", math.ceil(state.secondsLeft))
+			text = string.format("Get back to the tent! %d s left", math.ceil(state.secondsLeft))
 		end
 		if state.secondsLeft <= 0 then
 			result = "done"
@@ -1527,16 +1527,16 @@ function MissionService.update(dt: number): string?
 	elseif kind == "build" then
 		local need = math.max(Config.MissionKillsFloor, math.floor((state.def.kills or 15) * (Config.Waves.CountScale or 1) + 0.5))
 		if state.phase == "kill" then
-			text = string.format("Зачистите зону: убито %d из %d", math.min(state.kills, need), need)
+			text = string.format("Clear the zone: killed %d of %d", math.min(state.kills, need), need)
 			if state.kills >= need then
 				state.phase = "install"
 				if state.prompt then
 					state.prompt.Enabled = true
 				end
-				notify("Зона зачищена — установите шатёр на отмеченном месте (удерживайте E)", 5)
+				notify("Zone cleared — set up the tent at the marked spot (hold E)", 5)
 			end
 		else
-			text = if state.installed then "Шатёр установлен" else "Установите шатёр на отмеченном месте: удерживайте E"
+			text = if state.installed then "Tent set up" else "Set up the tent at the marked spot: hold E"
 			if state.installed then
 				result = "done"
 			end
@@ -1557,20 +1557,20 @@ function MissionService.update(dt: number): string?
 			local status = ConvoyService.update(dt, near)
 			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
 			text = if near
-				then string.format("Сопровождайте конвой. Прочность грузовика: %d%%", hp)
-				else string.format("Подойдите к конвою: он ждёт (в радиусе %d студов). Прочность грузовика: %d%%", Config.Convoy.FollowRadius, hp)
+				then string.format("Escort the convoy. Truck durability: %d%%", hp)
+				else string.format("Get close to the convoy: it's waiting (within %d studs). Truck durability: %d%%", Config.Convoy.FollowRadius, hp)
 			if status == "fail" then
-				notify("Конвой уничтожен!", 5)
+				notify("The convoy was destroyed!", 5)
 				result = "fail"
 			elseif status == "arrived" then
 				dropSupplies(state.site)
 				if state.def.install then
-					notify("Конвой прибыл — припасы доставлены", 4)
+					notify("The convoy has arrived — supplies delivered", 4)
 				else
 					-- без установки руками шатёр ставится сам (если ночью 2 его не ставили, например при пропуске ночи)
 					installTent(state.site)
 					state.installed = true
-					notify("Конвой прибыл — шатёр установлен, припасы доставлены", 4)
+					notify("The convoy has arrived — tent set up, supplies delivered", 4)
 				end
 				if state.def.install then
 					state.phase = "install"
@@ -1585,18 +1585,18 @@ function MissionService.update(dt: number): string?
 			-- колонна стоит у места шатра: солдаты продолжают стрелять, гибель грузовика до установки — провал
 			-- (иначе грузовик и солдаты остаются целями зомби, но ни на что не влияют)
 			if ConvoyService.update(dt) == "fail" then
-				notify("Конвой уничтожен!", 5)
+				notify("The convoy was destroyed!", 5)
 				result = "fail"
 			end
 			ZombieService.moveAnchor(state.anchor)
 			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
 			if state.phase == "install" then
-				text = string.format("Установите шатёр: удерживайте E. Прочность грузовика: %d%%", hp)
+				text = string.format("Set up the tent: hold E. Truck durability: %d%%", hp)
 				if state.installed and not result then
 					result = "done"
 				end
 			else
-				text = string.format("Конвой на месте. Прочность грузовика: %d%%", hp)
+				text = string.format("The convoy is in place. Truck durability: %d%%", hp)
 				if not result then
 					result = "done"
 				end
@@ -1605,29 +1605,29 @@ function MissionService.update(dt: number): string?
 	elseif kind == "metro" then
 		local need = math.max(Config.MissionKillsFloor, math.floor((state.def.kills or 40) * (Config.Waves.CountScale or 1) + 0.5))
 		if state.phase == "approach" then
-			text = "Спуститесь в метро: лестница у входа"
+			text = "Go down into the metro: stairs by the entrance"
 		else
 			local nests = state.def.nests or 0
 			if state.phase == "hub" then
-				text = "Вы вышли через костяную дверь в тоннель в горе. Миссия метро выполнена"
+				text = "You left through the bone door into the tunnel in the mountain. Metro mission complete"
 				result = "done"
 			elseif state.nestsBurned < nests then
-				text = string.format("Сожгите гнёзда мутантов: %d из %d (удерживайте E у гнезда)", state.nestsBurned, nests)
+				text = string.format("Burn the mutant nests: %d of %d (hold E at a nest)", state.nestsBurned, nests)
 			elseif state.def.boss and not state.bossOut then
 				-- гнёзда сожжены: на станцию выходит босс (из туннелей, вне очереди)
 				state.bossOut = true
 				ZombieService.enqueue({ state.def.boss }, state.hpMult, state.night, true)
-				notify("Гнёзда сожжены — на станцию вышел босс!", 5)
-				text = "Убейте босса станции"
+				notify("Nests burned — the boss has come out onto the station!", 5)
+				text = "Kill the station boss"
 			elseif state.def.boss and not state.bossSeen then
 				state.bossSeen = ZombieService.bossAlive() -- ждём, пока босс появится
-				text = "Убейте босса станции"
+				text = "Kill the station boss"
 			elseif state.def.boss and ZombieService.bossAlive() then
-				text = "Убейте босса станции"
+				text = "Kill the station boss"
 			elseif nests > 0 then
 				text = finaleStep(state, dt, need)
 			else
-				text = string.format("Зачистите станцию: убито %d из %d", math.min(state.metroKills, need), need)
+				text = string.format("Clear the station: killed %d of %d", math.min(state.metroKills, need), need)
 				if state.metroKills >= need then
 					result = "done"
 				end
@@ -1636,21 +1636,21 @@ function MissionService.update(dt: number): string?
 	elseif kind == "bossfight" then
 		local list = state.def.bosses or { "BossStrong" }
 		local def = Config.Zombies[list[math.max(1, state.bossIndex)]]
-		text = string.format("Убейте босса: %s (%d из %d)", if def then def.name else "?", state.bossIndex, #list)
+		text = string.format("Kill the boss: %s (%d of %d)", if def then def.name else "?", state.bossIndex, #list)
 		if ZombieService.remaining() == 0 then
 			if state.bossIndex < #list then
 				state.bossIndex += 1
 				ZombieService.enqueue({ list[state.bossIndex] }, state.hpMult, state.night, true)
-				notify("Следующий босс!", 4)
+				notify("Next boss!", 4)
 			else
 				result = "done" -- последний босс убит
 			end
 		end
 	elseif kind == "clear" or kind == "classic" then
 		local left = ZombieService.remaining()
-		text = string.format("Осталось зомби: %d", left)
+		text = string.format("Zombies left: %d", left)
 		if state.def.baseBattle then
-			text ..= string.format("\nСолдаты у точки сбора: %d из %d", BaseBattleService.alive(), Config.BaseBattle.Defenders)
+			text ..= string.format("\nSoldiers at the rally point: %d of %d", BaseBattleService.alive(), Config.BaseBattle.Defenders)
 		end
 		if left == 0 then
 			result = "done"
@@ -1667,14 +1667,14 @@ function MissionService.update(dt: number): string?
 			for _, p in Players:GetPlayers() do
 				WeaponService.refillAll(p)
 			end
-			notify("Район успешно захвачен! Патроны пополнены", 6)
+			notify("District captured! Ammo refilled", 6)
 		else
 			destroyTent(state.site)
-			notify("Конвой не доехал — шатёр района уничтожен", 6)
+			notify("The convoy didn't make it — the district tent was destroyed", 6)
 		end
 	end
 	if state.minKills > 0 then
-		text ..= string.format("\nУбито мутантов: %d из %d", math.min(state.playerKills, state.minKills), state.minKills)
+		text ..= string.format("\nMutants killed: %d of %d", math.min(state.playerKills, state.minKills), state.minKills)
 	end
 	if text ~= state.lastText then
 		state.lastText = text
@@ -1734,7 +1734,7 @@ function MissionService.beginFinale(): Vector3?
 	local bunker = workspace:FindFirstChild("Bunker")
 	local entrance = bunker and bunker:FindFirstChild("BunkerEntrance")
 	if not entrance or not entrance:IsA("Model") then
-		warn("[MissionService] нет Workspace.Bunker.BunkerEntrance — финал без бункера")
+		warn("[MissionService] no Workspace.Bunker.BunkerEntrance — finale without a bunker")
 		return nil
 	end
 	local cf = entrance:GetBoundingBox()
@@ -1744,8 +1744,8 @@ function MissionService.beginFinale(): Vector3?
 	objects = Instance.new("Folder")
 	objects.Name = "MissionObjects"
 	objects.Parent = workspace
-	makeBeacon(pos, "Бункер", Config.PlaceBeacon.Color, Config.Finale.Radius)
-	setStatus("Финал: бункер", "Босс повержен. Зайдите в бункер всей командой", "finale")
+	makeBeacon(pos, "Bunker", Config.PlaceBeacon.Color, Config.Finale.Radius)
+	setStatus("Finale: the bunker", "The boss is down. Enter the bunker as a team", "finale")
 	return pos
 end
 

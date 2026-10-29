@@ -51,7 +51,7 @@ function EquipController.start()
 	hintLabel.TextSize = 15
 	hintLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
 	hintLabel.TextStrokeTransparency = 0.5
-	hintLabel.Text = "ЛКМ — поставить · R — повернуть"
+	hintLabel.Text = "LMB — place · R — rotate"
 	hintLabel.Parent = hint
 	hint.Parent = player:WaitForChild("PlayerGui")
 
@@ -112,7 +112,7 @@ function EquipController.start()
 		preview.Parent = workspace
 		hint.Enabled = true
 		hintLabel.TextColor3 = if ok then Color3.fromRGB(235, 235, 235) else Color3.fromRGB(255, 130, 120)
-		hintLabel.Text = if ok then "ЛКМ — поставить · R — повернуть" else "Здесь поставить нельзя (далеко или нет земли) · R — повернуть"
+		hintLabel.Text = if ok then "LMB — place · R — rotate" else "Can't place here (too far or no ground) · R — rotate"
 	end
 	RunService.Heartbeat:Connect(refreshPreview) -- не RenderStepped: макету достаточно кадра запаздывания
 

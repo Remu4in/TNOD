@@ -102,7 +102,7 @@ local function makeBar(root: BasePart): Frame
 	label.TextScaled = true
 	label.TextColor3 = Color3.new(1, 1, 1)
 	label.TextStrokeTransparency = 0.4
-	label.Text = "КОНВОЙ"
+	label.Text = "CONVOY"
 	label.Parent = back
 	return fill
 end
@@ -175,7 +175,7 @@ local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?,
 	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("Vehicles")
 	local template = lib and (lib:FindFirstChild(C.Model) or lib:FindFirstChild("TransportTruck"))
 	if not template then
-		warn("[ConvoyService] нет ServerStorage.Assets.Vehicles." .. C.Model)
+		warn("[ConvoyService] no ServerStorage.Assets.Vehicles." .. C.Model)
 		return nil, nil, 0, 0
 	end
 	local truck = template:Clone() :: Model
@@ -417,7 +417,7 @@ local function planFrom(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, r
 		if onRoad and legPath(grid, cache, start, onRoad) and legPath(grid, cache, onRoad, stop) then
 			table.insert(pts, onRoad)
 		else
-			warn(string.format("[ConvoyService] до контрольной точки %d дорогой не доехать — пропущена", i))
+			warn(string.format("[ConvoyService] checkpoint %d can't be reached by road — skipped", i))
 		end
 	end
 	if not legPath(grid, cache, start, stop) then
@@ -495,7 +495,7 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	local waypoints, order = planRoute(spawn, route, finalStop)
 	lastOrder = order
 	if not waypoints or #waypoints < 2 then
-		warn("[ConvoyService] по дорогам до места шатра не доехать")
+		warn("[ConvoyService] the tent site can't be reached by road")
 		return false
 	end
 	-- грузовик стоит в начальной зоне: на StartOffset студов от точки появления игроков к первой дороге (не на самой точке, где появляются игроки)
@@ -518,7 +518,7 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	end
 	local length = pathLength(waypoints)
 	local v = speed or C.TruckSpeed
-	print(string.format("[ConvoyService] маршрут по дорогам: %d студов, %d точек, в пути около %d с при скорости %.1f", length, #waypoints, length / v, v))
+	print(string.format("[ConvoyService] road route: %d studs, %d points, about %d s en route at speed %.1f", length, #waypoints, length / v, v))
 	local state: State = {
 		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, kpos = Vector3.new(begin.X, gy, begin.Z), yaw = yaw, waypoints = waypoints, wpIndex = 2, length = length,
 		escorts = {}, bar = makeBar(root), arrived = false, failed = false, heading = heading, speed = v, held = false, curSpeed = 0, phase = 0, roll = 0, gy = nil,

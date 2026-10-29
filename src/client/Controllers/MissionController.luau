@@ -57,7 +57,7 @@ function MissionController.start()
 		local t = (ReplicatedStorage:GetAttribute("MissionTitle") :: string?) or ""
 		local x = (ReplicatedStorage:GetAttribute("MissionText") :: string?) or ""
 		frame.Visible = t ~= ""
-		title.Text = "ЗАДАЧА: " .. t
+		title.Text = "OBJECTIVE: " .. t
 		text.Text = x
 		text.Visible = x ~= ""
 	end
@@ -80,7 +80,7 @@ function MissionController.start()
 			local base = part:GetAttribute("BaseText")
 			if lab and typeof(base) == "string" and part:IsA("BasePart") then
 				local d = Vector3.new(part.Position.X - root.Position.X, 0, part.Position.Z - root.Position.Z).Magnitude
-				lab.Text = string.format("%s · %d м", base, math.floor(d + 0.5))
+				lab.Text = string.format("%s · %d m", base, math.floor(d + 0.5))
 			end
 		end
 	end)

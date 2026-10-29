@@ -43,7 +43,7 @@ function TestStandController.start()
 	title.TextSize = 20
 	title.TextColor3 = Color3.fromRGB(255, 215, 80)
 	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.Text = "Выбор ночи (тест)"
+	title.Text = "Night select (test)"
 	title.Parent = frame
 
 	local close = Instance.new("TextButton")
@@ -70,7 +70,7 @@ function TestStandController.start()
 	hint.TextSize = 14
 	hint.TextColor3 = Color3.fromRGB(190, 190, 200)
 	hint.TextXAlignment = Enum.TextXAlignment.Left
-	hint.Text = "Следующей будет выбранная ночь"
+	hint.Text = "The selected night will be next"
 	hint.Parent = frame
 
 	local grid = Instance.new("Frame")

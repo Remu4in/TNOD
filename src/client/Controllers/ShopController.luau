@@ -18,11 +18,11 @@ local PANEL = Color3.fromRGB(34, 37, 44)
 
 local function statsText(def: Config.WeaponDef): string
 	if def.melee then
-		return string.format("Урон %d · %.1f уд/с · дальность %.1f", def.damage, def.fireRate, def.range)
+		return string.format("Damage %d · %.1f hits/s · range %.1f", def.damage, def.fireRate, def.range)
 	end
 	local dmg = if def.pellets > 1 then string.format("%d×%d", def.damage, def.pellets) else tostring(def.damage)
 	local reserve = if def.reserve < 0 then "∞" else tostring(def.reserve)
-	return string.format("Урон %s · %.1f выстр/с · магазин %d / %s%s", dmg, def.fireRate, def.magSize, reserve, if def.automatic then " · авто" else "")
+	return string.format("Damage %s · %.1f shots/s · mag %d / %s%s", dmg, def.fireRate, def.magSize, reserve, if def.automatic then " · auto" else "")
 end
 
 function ShopController.start()
@@ -68,7 +68,7 @@ function ShopController.start()
 	title.TextSize = 22
 	title.TextColor3 = ACCENT
 	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.Text = "ОРУЖИЕ"
+	title.Text = "WEAPONS"
 	title.Parent = main
 
 	local hint = Instance.new("TextLabel")
@@ -79,7 +79,7 @@ function ShopController.start()
 	hint.TextSize = 14
 	hint.TextColor3 = Color3.fromRGB(150, 155, 165)
 	hint.TextXAlignment = Enum.TextXAlignment.Left
-	hint.Text = "B / Esc — закрыть · 1–6 — категория · клик — взять в руки"
+	hint.Text = "B / Esc — close · 1–6 — category · click — equip"
 	hint.Parent = main
 
 	local cats = Instance.new("Frame")
@@ -118,7 +118,7 @@ function ShopController.start()
 
 	local function populateVendor(v: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string } } })
 		title.Text = v.title
-		hint.Text = v.greeting .. "  ·  Esc — закрыть"
+		hint.Text = v.greeting .. "  ·  Esc — close"
 		for order, item in v.items do
 			local row = Instance.new("TextButton")
 			row.Size = UDim2.new(1, 0, 0, 54)
@@ -178,8 +178,8 @@ function ShopController.start()
 			list.CanvasPosition = Vector2.zero
 			return
 		end
-		title.Text = "ОРУЖИЕ"
-		hint.Text = "B / Esc — закрыть · 1–6 — категория · клик — взять в руки"
+		title.Text = "WEAPONS"
+		hint.Text = "B / Esc — close · 1–6 — category · click — equip"
 		for i, b in catButtons do
 			b.BackgroundColor3 = if i == current then ACCENT else PANEL
 			b.TextColor3 = if i == current then Color3.new(0, 0, 0) else Color3.fromRGB(225, 228, 235)
@@ -226,7 +226,7 @@ function ShopController.start()
 				price.TextSize = 18
 				price.TextColor3 = ACCENT
 				price.TextXAlignment = Enum.TextXAlignment.Right
-				price.Text = if player:GetAttribute("ShopFree") == true or def.price == 0 then "ВЗЯТЬ" else "$" .. def.price
+				price.Text = if player:GetAttribute("ShopFree") == true or def.price == 0 then "TAKE" else "$" .. def.price
 				price.Parent = row
 				row.Activated:Connect(function()
 					Remotes.get("BuyWeapon"):FireServer(item.id)
@@ -365,7 +365,7 @@ function ShopController.start()
 			local cam = workspace.CurrentCamera
 			if cam then
 				for _, m in markers do
-					m.label.Text = string.format("%s\n%d ст.", m.name, math.floor((m.part.Position - cam.CFrame.Position).Magnitude))
+					m.label.Text = string.format("%s\n%d st.", m.name, math.floor((m.part.Position - cam.CFrame.Position).Magnitude))
 				end
 			end
 		end

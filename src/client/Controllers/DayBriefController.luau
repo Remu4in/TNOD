@@ -14,20 +14,20 @@ local Config = require(Shared:WaitForChild("Config"))
 local DayBriefController = {}
 
 -- Сторона света от игрока к точке: север — к −Z (восток — к +X)
-local DIRECTIONS = { "севере", "северо-востоке", "востоке", "юго-востоке", "юге", "юго-западе", "западе", "северо-западе" }
+local DIRECTIONS = { "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest" }
 
 local function whereText(target: Vector3?, from: Vector3?): string
 	if not target then
 		return Config.DayBrief.Here
 	end
 	if not from then
-		return "на карте отмечено позже"
+		return "will be marked on the map later"
 	end
 	local dx, dz = target.X - from.X, target.Z - from.Z
 	local dist = math.floor(math.sqrt(dx * dx + dz * dz) / 5 + 0.5) * 5 -- с округлением до 5 студов («м» на метках)
 	local angle = math.deg(math.atan2(dx, -dz)) % 360
 	local name = DIRECTIONS[math.floor((angle + 22.5) / 45) % 8 + 1]
-	return string.format("%d м на %s", dist, name)
+	return string.format("%d m to the %s", dist, name)
 end
 
 function DayBriefController.start()
@@ -106,7 +106,7 @@ function DayBriefController.start()
 			end
 		end)
 		if not ok then
-			warn("[DayBriefController] чат недоступен")
+			warn("[DayBriefController] chat unavailable")
 		end
 	end
 
@@ -126,10 +126,10 @@ function DayBriefController.start()
 		end
 		shown += 1
 		local mine = shown
-		header.Text = if full then "ГЕНЕРАЛ НУРСУЛТАН: ЗАДАНИЕ НА БЛИЖАЙШУЮ НОЧЬ" else "ГЕНЕРАЛ НУРСУЛТАН: НОЧЬ СКОРО"
-		title.Text = string.format("Ночь %d — %s", night, ttl)
-		taskLabel.Text = "Задача: " .. taskText
-		whereLabel.Text = "Где: " .. whereText(pos, playerPos())
+		header.Text = if full then "GENERAL NURSULTAN: TONIGHT'S ORDERS" else "GENERAL NURSULTAN: NIGHT IS COMING"
+		title.Text = string.format("Night %d — %s", night, ttl)
+		taskLabel.Text = "Objective: " .. taskText
+		whereLabel.Text = "Where: " .. whereText(pos, playerPos())
 		tipLabel.Text = tip
 		panel.Visible = true
 		TweenService:Create(panel, TweenInfo.new(0.4), { GroupTransparency = 0 }):Play()
@@ -142,16 +142,16 @@ function DayBriefController.start()
 				conn:Disconnect()
 				return
 			end
-			whereLabel.Text = "Где: " .. whereText(pos, playerPos())
+			whereLabel.Text = "Where: " .. whereText(pos, playerPos())
 		end)
 		local lines = {
-			string.format("[Генерал Нурсултан] Ночь %d — %s", night, ttl),
-			"Задача: " .. taskText,
-			"Где: " .. whereText(pos, playerPos()),
+			string.format("[General Nursultan] Night %d — %s", night, ttl),
+			"Objective: " .. taskText,
+			"Where: " .. whereText(pos, playerPos()),
 			tip,
 		}
 		if not full then
-			lines = { string.format("[Генерал Нурсултан] До ночи %d секунд. Ночь %d — %s. Где: %s.", Config.DayBrief.RemindBefore, night, ttl, whereText(pos, playerPos())) }
+			lines = { string.format("[General Nursultan] %d seconds until night. Night %d — %s. Where: %s.", Config.DayBrief.RemindBefore, night, ttl, whereText(pos, playerPos())) }
 		end
 		chat(lines)
 		-- скрытие

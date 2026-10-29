@@ -148,7 +148,7 @@ local function loadMesh(meshId: string): MeshPart?
 			meshTemplates[meshId] = result
 			meshState[meshId] = "ok"
 		else
-			warn("[ZombieService] не удалось загрузить меш " .. meshId .. ": " .. tostring(result))
+			warn("[ZombieService] failed to load mesh " .. meshId .. ": " .. tostring(result))
 			meshState[meshId] = "failed"
 		end
 	end
@@ -500,7 +500,7 @@ local function buildModel(def: Config.ZombieDef): Model
 			if rigModel then
 				return rigModel
 			end
-			warn("[ZombieService] нет моделей из пула в ServerStorage.Assets.Zombies — зомби " .. def.id .. " собран из мешей")
+			warn("[ZombieService] no models from the pool in ServerStorage.Assets.Zombies — zombie " .. def.id .. " assembled from meshes")
 		end
 	end
 	local vis = Config.ZombieVisuals[def.id]
@@ -553,7 +553,7 @@ local function loadTracks(model: Model, ids: { [string]: string }): { [string]: 
 			return animator:LoadAnimation(anim)
 		end)
 		if not ok then
-			warn("[ZombieService] не загрузилась анимация " .. name .. " " .. id .. ": " .. tostring(track))
+			warn("[ZombieService] animation failed to load " .. name .. " " .. id .. ": " .. tostring(track))
 			return nil
 		end
 		track.Looped = true
@@ -568,7 +568,7 @@ local function loadTracks(model: Model, ids: { [string]: string }): { [string]: 
 			if id ~= default then
 				task.delay(4, function()
 					if track.Length == 0 and tracks[name] == track then
-						warn("[ZombieService] анимация " .. id .. " недоступна, заменена стандартной")
+						warn("[ZombieService] animation " .. id .. " unavailable, replaced with the default")
 						local wasPlaying = track.IsPlaying
 						track:Stop(0)
 						local fallback = make(name, default)
@@ -2317,7 +2317,7 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 				armPose(z, 0, 0.5)
 			end
 		end)
-		game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Notify"):FireAllClients("Страж бункера вошёл во вторую фазу: огнестрел его не берёт — бейте холодным оружием!", 6)
+		game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Notify"):FireAllClients("The Bunker Guardian entered its second phase: firearms can't hurt it — use melee weapons!", 6)
 	end
 	if WaveMath.isBossType(z.def.id) then
 		refreshBossBar()
@@ -2536,7 +2536,7 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 				-- сломанный тип (например, риг без нужного сустава) пропускаем, а не роняем весь цикл спавна
 				local ok, err = pcall(spawnOne, typeId)
 				if not ok then
-					warn(string.format("[ZombieService] не удалось создать зомби %s: %s", typeId, tostring(err)))
+					warn(string.format("[ZombieService] failed to create zombie %s: %s", typeId, tostring(err)))
 				end
 				n += 1
 				alive += 1
@@ -2611,7 +2611,7 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 			task.wait(3)
 			local ok, err = pcall(relocateLost)
 			if not ok then
-				warn("[ZombieService] перенос потерявшихся: " .. tostring(err))
+				warn("[ZombieService] relocating stray zombies: " .. tostring(err))
 			end
 		end
 	end)
@@ -2634,7 +2634,7 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 			collectTargets()
 			local okBoss, errBoss = pcall(BossAI.update, now)
 			if not okBoss then
-				warn("[ZombieService] атаки боссов: " .. tostring(errBoss))
+				warn("[ZombieService] boss attacks: " .. tostring(errBoss))
 			end
 			table.clear(order)
 			for _, z in active do
@@ -2652,7 +2652,7 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 				if z.alive and active[z.model] == z then
 					local ok, err = pcall(stepZombie, z, now, dt)
 					if not ok then
-						warn(string.format("[ZombieService] ошибка ИИ у %s, зомби убран: %s", z.def.id, tostring(err)))
+						warn(string.format("[ZombieService] AI error on %s, zombie removed: %s", z.def.id, tostring(err)))
 						z.alive = false
 						active[z.model] = nil
 						z.model:Destroy()

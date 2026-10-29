@@ -111,7 +111,7 @@ local function down(player: Player, h: Humanoid)
 	if root then
 		local prompt = Instance.new("ProximityPrompt")
 		prompt.Name = "RevivePrompt"
-		prompt.ActionText = "Поднять"
+		prompt.ActionText = "Pick up"
 		prompt.ObjectText = player.DisplayName
 		prompt.HoldDuration = Config.Player.ReviveHoldTime * (1 - math.min(0.8, Perks.total("revive")))
 		prompt.MaxActivationDistance = 7

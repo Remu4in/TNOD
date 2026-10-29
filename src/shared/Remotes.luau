@@ -45,7 +45,7 @@ local function folder(): Folder
 			nf.Name = "Remotes"
 			local seen: { [string]: boolean } = {}
 			for _, name in NAMES do
-				assert(not seen[name], "Remotes: имя события объявлено дважды: " .. name)
+				assert(not seen[name], "Remotes: event name declared twice: " .. name)
 				seen[name] = true
 				local ev = Instance.new("RemoteEvent")
 				ev.Name = name

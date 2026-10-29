@@ -16,7 +16,7 @@ end
 local function setupPlayer(player: Player)
 	local folder = Instance.new("Folder")
 	folder.Name = "leaderstats"
-	for _, name in { "Убийства", "Очки" } do
+	for _, name in { "Kills", "Score" } do
 		local v = Instance.new("IntValue")
 		v.Name = name
 		v.Value = 0
@@ -28,8 +28,8 @@ local function setupPlayer(player: Player)
 end
 
 local function refresh(player: Player)
-	local kills = stat(player, "Убийства")
-	local points = stat(player, "Очки")
+	local kills = stat(player, "Kills")
+	local points = stat(player, "Score")
 	if kills then
 		kills.Value = (player:GetAttribute("RoundKills") :: number?) or 0
 	end

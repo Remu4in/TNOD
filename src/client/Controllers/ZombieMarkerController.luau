@@ -93,7 +93,7 @@ function ZombieMarkerController.start()
 					local label = gui and gui:FindFirstChild("Dist") :: TextLabel?
 					local zr = m:FindFirstChild("HumanoidRootPart") :: BasePart? or m.PrimaryPart
 					if label and root and zr then
-						label.Text = string.format("%d м", math.floor((zr.Position - root.Position).Magnitude + 0.5))
+						label.Text = string.format("%d m", math.floor((zr.Position - root.Position).Magnitude + 0.5))
 					end
 				else
 					clearMarkers(m)

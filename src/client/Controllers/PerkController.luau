@@ -49,7 +49,7 @@ function PerkController.start()
 				table.insert(lines, string.format("<b>%s</b> ×%d — %s", def.name, n, def.desc))
 			end
 		end
-		list.Text = if #lines > 0 then "ПЕРКИ КОМАНДЫ\n" .. table.concat(lines, "\n") else ""
+		list.Text = if #lines > 0 then "TEAM PERKS\n" .. table.concat(lines, "\n") else ""
 	end
 	ReplicatedStorage:GetAttributeChangedSignal("Perks"):Connect(refreshList)
 	refreshList()
@@ -70,7 +70,7 @@ function PerkController.start()
 	title.Font = Enum.Font.GothamBold
 	title.TextSize = 30
 	title.TextColor3 = Color3.fromRGB(255, 215, 80)
-	title.Text = "Босс повержен — выберите перк для команды"
+	title.Text = "Boss defeated — choose a team perk"
 	title.Parent = overlay
 
 	local timer = Instance.new("TextLabel")
@@ -121,8 +121,8 @@ function PerkController.start()
 			picked = true
 			endsAt = 0 -- таймер больше не перетирает «Ждём остальных игроков…», окно закроет task.delay ниже
 			Remotes.get("PerkChoose"):FireServer(currentId, index)
-			title.Text = "Выбрано: " .. options[index].name
-			timer.Text = "Ждём остальных игроков…"
+			title.Text = "Chosen: " .. options[index].name
+			timer.Text = "Waiting for the other players…"
 			task.delay(1.2, function()
 				if currentId == offerId then
 					close()
@@ -183,13 +183,13 @@ function PerkController.start()
 			stacksLabel.Font = Enum.Font.GothamMedium
 			stacksLabel.TextSize = 15
 			stacksLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
-			stacksLabel.Text = string.format("Уже взято: %d из %d", opt.stacks, opt.max)
+			stacksLabel.Text = string.format("Already taken: %d of %d", opt.stacks, opt.max)
 			stacksLabel.Parent = card
 			card.Activated:Connect(function()
 				choose(i)
 			end)
 		end
-		title.Text = "Босс повержен — выберите перк для команды"
+		title.Text = "Boss defeated — choose a team perk"
 		overlay.Visible = true
 		ContextActionService:BindActionAtPriority("NotdPerkPick", function(_, state, input)
 			if state ~= Enum.UserInputState.Begin then
@@ -218,7 +218,7 @@ function PerkController.start()
 				return
 			end
 			local left = math.max(0, endsAt - os.clock())
-			timer.Text = string.format("Выбор: 1 / 2 / 3 или клик · осталось %d с (иначе случайно)", math.ceil(left))
+			timer.Text = string.format("Choose: 1 / 2 / 3 or click · %d s left (otherwise random)", math.ceil(left))
 		end
 	end)
 end

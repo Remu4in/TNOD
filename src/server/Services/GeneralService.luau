@@ -15,11 +15,11 @@ local MissionService = require(script.Parent:WaitForChild("MissionService"))
 
 local GeneralService = {}
 
-local NAME = "Генерал Нурсултан"
+local NAME = "General Nursultan"
 local IDLE_ANIM = "rbxassetid://180435571" -- стойка R6
 
 local function missionFor(night: number): Config.MissionDef
-	return Config.Missions[night] or { type = "classic", title = string.format("Ночь %d", night), anchor = 1 }
+	return Config.Missions[night] or { type = "classic", title = string.format("Night %d", night), anchor = 1 }
 end
 
 -- Текст брифинга: заголовок и строки
@@ -27,8 +27,8 @@ function GeneralService.brief(night: number): (string, { string })
 	local def = missionFor(night)
 	local lines: { string } = {}
 	if night == 1 then
-		table.insert(lines, "Бойцы, добро пожаловать на базу. Город захвачен мутантами, днём они сгорают на солнце — ночью выходят. Мы забираем город район за районом.")
-		table.insert(lines, "Днём закупайтесь в магазине и открывайте здания за общие монеты. Ночью магазин закрыт: выдвигаемся на задание.")
+		table.insert(lines, "Soldiers, welcome to the base. The city has been overrun by mutants: by day they burn in the sun, at night they come out. We are taking the city back district by district.")
+		table.insert(lines, "By day, stock up at the shop and open buildings with shared coins. At night the shop is closed: we move out on the mission.")
 	end
 	local template = Config.Briefs[def.type] or Config.Briefs.classic
 	for _, line in template do
@@ -52,12 +52,12 @@ function GeneralService.brief(night: number): (string, { string })
 		table.insert(lines, text)
 	end
 	if def.install and def.type == "escort" then
-		table.insert(lines, string.format("Когда грузовик встанет, установите шатёр на золотой метке: удерживайте E %d секунд.", Config.Convoy.InstallHold))
+		table.insert(lines, string.format("When the truck stops, set up the tent on the golden marker: hold E for %d seconds.", Config.Convoy.InstallHold))
 	end
 	if def.hint and def.hint ~= "" then
-		table.insert(lines, "Задача: " .. def.hint .. ".")
+		table.insert(lines, "Objective: " .. def.hint .. ".")
 	end
-	return string.format("Ночь %d: %s", night, def.title), lines
+	return string.format("Night %d: %s", night, def.title), lines
 end
 
 local function nextNight(): number
@@ -120,14 +120,14 @@ function GeneralService.announceDay()
 	local night = nextNight()
 	local def = missionFor(night)
 	GeneralService.publishBrief(night)
-	Remotes.get("Notify"):FireAllClients(string.format("%s ждёт на базе. Ночь %d: %s. Подойдите и нажмите E, чтобы выслушать задание.", NAME, night, def.title), 7)
+	Remotes.get("Notify"):FireAllClients(string.format("%s is waiting at the base. Night %d: %s. Come over and press E to hear the orders.", NAME, night, def.title), 7)
 end
 
 local function build()
 	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("NPC")
 	local template = lib and lib:FindFirstChild("General")
 	if not template then
-		warn("[GeneralService] нет ServerStorage.Assets.NPC.General")
+		warn("[GeneralService] no ServerStorage.Assets.NPC.General")
 		return
 	end
 	local markers = workspace:FindFirstChild("Markers")
@@ -203,7 +203,7 @@ local function build()
 	label.Text = NAME
 	label.Parent = gui
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Поговорить"
+	prompt.ActionText = "Talk"
 	prompt.ObjectText = NAME
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 12

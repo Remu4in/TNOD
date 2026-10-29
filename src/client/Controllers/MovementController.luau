@@ -143,7 +143,7 @@ local function tryDodge(want: string?)
 		return
 	end
 	if os.clock() - lastDodge < P.DodgeCooldown then
-		deny("Рано: пауза между подкатом и кувырком")
+		deny("Too early: pause between slide and roll")
 		return
 	end
 	local serverNow = workspace:GetServerTimeNow()
@@ -151,7 +151,7 @@ local function tryDodge(want: string?)
 		return -- оглушён
 	end
 	if serverNow < ((player:GetAttribute("NoSprintUntil") :: number?) or 0) then
-		deny("Тьма: бег, подкат и кувырок отключены")
+		deny("Darkness: sprint, slide and roll are disabled")
 		return
 	end
 	local energy = (player:GetAttribute("Energy") :: number?) or 0
@@ -161,12 +161,12 @@ local function tryDodge(want: string?)
 	-- want: "slide" (Q) | "roll" (C) | nil (кнопка телефона и автотесты: на бегу подкат, иначе кувырок)
 	local slide = if want == "slide" then true elseif want == "roll" then false else running
 	if slide and not running then
-		deny("Подкат — только на бегу")
+		deny("Slide — only while sprinting")
 		return
 	end
 	local need = if slide then P.SlideEnergy else P.RollEnergy
 	if energy < need then
-		deny(string.format("Не хватает энергии (нужно %d)", need))
+		deny(string.format("Not enough energy (need %d)", need))
 		return
 	end
 	dodging = true
@@ -191,7 +191,7 @@ function MovementController.start()
 		end
 		return Enum.ContextActionResult.Pass
 	end, true, Enum.KeyCode.ButtonB)
-	ContextActionService:SetTitle("NotdDodge", "Кувырок")
+	ContextActionService:SetTitle("NotdDodge", "Roll")
 	ContextActionService:BindAction("NotdSlide", function(_, state)
 		if state == Enum.UserInputState.Begin then
 			tryDodge("slide")
@@ -289,7 +289,7 @@ function MovementController.start()
 		end
 		return Enum.ContextActionResult.Pass
 	end, true, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonL3)
-	ContextActionService:SetTitle("NotdSprint", "Бег")
+	ContextActionService:SetTitle("NotdSprint", "Sprint")
 
 	-- энергия кончилась: сервер уже остановил спринт, сбрасываем своё «хочу бежать»
 	player:GetAttributeChangedSignal("Energy"):Connect(function()

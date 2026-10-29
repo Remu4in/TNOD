@@ -192,9 +192,9 @@ function SfxController.start()
 			return
 		end
 		local id: string? = nil
-		if string.find(text, "пройдена") then
+		if string.find(text, "cleared: +", 1, true) then
 			id = ID.mission
-		elseif string.find(text, "Шатёр установлен") or string.find(text, "припасы доставлены") then
+		elseif string.find(text, "Tent set up") or string.find(text, "supplies delivered") then
 			id = ID.unlock
 		end
 		if id and cam then

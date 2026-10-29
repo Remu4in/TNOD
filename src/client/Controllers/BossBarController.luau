@@ -75,7 +75,7 @@ function BossBarController.start()
 	hint.TextSize = 14
 	hint.TextColor3 = Color3.fromRGB(190, 150, 255)
 	hint.TextStrokeTransparency = 0.4
-	hint.Text = "Неуязвим к огнестрелу — бейте холодным оружием"
+	hint.Text = "Immune to firearms — use melee weapons"
 	hint.Visible = false
 	hint.Parent = frame
 
@@ -89,7 +89,7 @@ function BossBarController.start()
 		end
 		frame.Visible = true
 		local name = ReplicatedStorage:GetAttribute("BossName")
-		title.Text = if typeof(name) == "string" then string.upper(name) else "БОСС"
+		title.Text = if typeof(name) == "string" then string.upper(name) else "BOSS"
 		local k = math.clamp(hp / maxHp, 0, 1)
 		TweenService:Create(fill, TweenInfo.new(0.15), { Size = UDim2.fromScale(k, 1) }):Play()
 		amount.Text = string.format("%d / %d", math.ceil(hp), math.floor(maxHp))

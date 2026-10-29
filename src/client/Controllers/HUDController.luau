@@ -30,10 +30,10 @@ local function label(parent: Instance, props: { [string]: any }): TextLabel
 end
 
 local PHASE_TEXT = {
-	Intermission = "Перерыв",
-	Day = "День",
-	Night = "Ночь",
-	GameOver = "Конец раунда",
+	Intermission = "Intermission",
+	Day = "Day",
+	Night = "Night",
+	GameOver = "Round over",
 }
 
 function HUDController.start()
@@ -190,7 +190,7 @@ function HUDController.start()
 			AnchorPoint = Vector2.new(0.5, 1),
 			Position = UDim2.fromScale(0.5, 0.985),
 			Size = UDim2.fromScale(0.42, 0.028),
-			Text = "Shift — бег   ·   Q на бегу — подкат   ·   C — кувырок",
+			Text = "Shift — sprint   ·   Q while sprinting — slide   ·   C — roll",
 			TextTransparency = 0.35,
 			TextStrokeTransparency = 0.7,
 			TextColor3 = Color3.fromRGB(230, 230, 230),
@@ -229,7 +229,7 @@ function HUDController.start()
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.6),
 		Size = UDim2.fromScale(0.5, 0.05),
-		Text = "Вы упали! Товарищ может поднять вас",
+		Text = "You're down! A teammate can pick you up",
 		TextColor3 = Color3.fromRGB(255, 90, 90),
 		Visible = false,
 	})
@@ -245,7 +245,7 @@ function HUDController.start()
 	giveUp.Font = Enum.Font.GothamBold
 	giveUp.TextScaled = true
 	giveUp.TextColor3 = Color3.new(1, 1, 1)
-	giveUp.Text = if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then "Сдаться" else "Сдаться (держите X)"
+	giveUp.Text = if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then "Give up" else "Give up (hold X)"
 	giveUp.Modal = true
 	giveUp.Visible = false
 	giveUp.Parent = gui
@@ -337,14 +337,14 @@ function HUDController.start()
 		local left = math.max(0, math.ceil(endsAt - workspace:GetServerTimeNow()))
 		local name = phase and PHASE_TEXT[phase] or "..."
 		if phase == "Night" then
-			top.Text = string.format("Ночь %d", wave)
-			sub.Text = string.format("Зомби: %d", (ReplicatedStorage:GetAttribute("ZombiesLeft") :: number?) or 0)
+			top.Text = string.format("Night %d", wave)
+			sub.Text = string.format("Zombies: %d", (ReplicatedStorage:GetAttribute("ZombiesLeft") :: number?) or 0)
 		elseif phase == "GameOver" then
 			top.Text = name
-			sub.Text = string.format("Продержались ночей: %d", (ReplicatedStorage:GetAttribute("LastRoundWave") :: number?) or 0)
+			sub.Text = string.format("Nights survived: %d", (ReplicatedStorage:GetAttribute("LastRoundWave") :: number?) or 0)
 		else
 			top.Text = string.format("%s  %d", name, left)
-			sub.Text = if wave > 0 then string.format("Пережито ночей: %d", wave) else string.format("Рекорд: %d", (player:GetAttribute("BestWave") :: number?) or 0)
+			sub.Text = if wave > 0 then string.format("Nights survived: %d", wave) else string.format("Best: %d", (player:GetAttribute("BestWave") :: number?) or 0)
 		end
 
 		local char = player.Character
@@ -357,7 +357,7 @@ function HUDController.start()
 		if isDown then
 			local untilAt = (player:GetAttribute("DownedUntil") :: number?) or 0
 			local leftDown = math.max(0, math.ceil(untilAt - workspace:GetServerTimeNow()))
-			downed.Text = string.format("Вы упали! Товарищ может поднять вас (E) · осталось %d с", leftDown)
+			downed.Text = string.format("You're down! A teammate can pick you up (E) · %d s left", leftDown)
 		end
 
 		-- энергия: синяя, при спринте ярче, на исходе — красная
@@ -368,10 +368,10 @@ function HUDController.start()
 			elseif player:GetAttribute("Sprinting") == true then Color3.fromRGB(130, 210, 255)
 			else Color3.fromRGB(80, 170, 255)
 
-		scoreLabel.Text = string.format("Очки: %d", (player:GetAttribute("Score") :: number?) or 0)
+		scoreLabel.Text = string.format("Score: %d", (player:GetAttribute("Score") :: number?) or 0)
 		local lives = (ReplicatedStorage:GetAttribute("TeamLives") :: number?) or 0
-		teamLabel.Text = string.format("Команда: %d", (ReplicatedStorage:GetAttribute("TeamPoints") :: number?) or 0)
-			.. (if lives > 0 then string.format("   ♥ жизнь: %d", lives) else "")
+		teamLabel.Text = string.format("Team: %d", (ReplicatedStorage:GetAttribute("TeamPoints") :: number?) or 0)
+			.. (if lives > 0 then string.format("   ♥ lives: %d", lives) else "")
 
 		local tool = currentTool()
 		if tool then

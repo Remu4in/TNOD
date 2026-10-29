@@ -49,7 +49,7 @@ local function loadMesh(meshId: string): MeshPart?
 			meshTemplates[meshId] = result
 			meshState[meshId] = "ok"
 		else
-			warn("[WeaponService] не удалось загрузить меш " .. meshId .. ": " .. tostring(result))
+			warn("[WeaponService] failed to load mesh " .. meshId .. ": " .. tostring(result))
 			meshState[meshId] = "failed"
 		end
 	end
@@ -569,14 +569,14 @@ local function onWallBuy(player: Player, weaponId: string)
 		return
 	end
 	if game:GetService("ReplicatedStorage"):GetAttribute("Phase") == "Night" then
-		Remotes.get("Notify"):FireClient(player, "Магазин закрыт ночью", 1.5)
+		Remotes.get("Notify"):FireClient(player, "The shop is closed at night", 1.5)
 		return
 	end
 	local def = Config.Weapons[weaponId]
 	local inv = owned[player]
 	if inv and inv[weaponId] and def.melee then
 		-- патроны не нужны: второй раз то же самое не покупаем
-		Remotes.get("Notify"):FireClient(player, "Уже есть", 1.5)
+		Remotes.get("Notify"):FireClient(player, "Already owned", 1.5)
 		return
 	end
 	if inv and inv[weaponId] then
@@ -584,17 +584,17 @@ local function onWallBuy(player: Player, weaponId: string)
 		local price = math.floor(def.price * Config.Economy.RefillPriceFactor)
 		if EconomyService.trySpend(player, price) then
 			grant(player, weaponId)
-			Remotes.get("Notify"):FireClient(player, "Патроны пополнены", 1.5)
+			Remotes.get("Notify"):FireClient(player, "Ammo refilled", 1.5)
 		else
-			Remotes.get("Notify"):FireClient(player, "Не хватает монет", 1.5)
+			Remotes.get("Notify"):FireClient(player, "Not enough coins", 1.5)
 		end
 		return
 	end
 	if EconomyService.trySpend(player, def.price) then
 		grant(player, weaponId)
-		Remotes.get("Notify"):FireClient(player, "Куплено: " .. def.name, 1.5)
+		Remotes.get("Notify"):FireClient(player, "Purchased: " .. def.name, 1.5)
 	else
-		Remotes.get("Notify"):FireClient(player, "Не хватает монет", 1.5)
+		Remotes.get("Notify"):FireClient(player, "Not enough coins", 1.5)
 	end
 end
 
@@ -661,7 +661,7 @@ local function onPickup(player: Player, drop: Model)
 	local reserve = (drop:GetAttribute("Reserve") :: number?) or 0
 	if hasWeapon(player, weaponId) then
 		if def.melee then
-			Remotes.get("Notify"):FireClient(player, "Уже есть", 1.5)
+			Remotes.get("Notify"):FireClient(player, "Already owned", 1.5)
 			return
 		end
 		-- такое оружие уже есть: забираем только патроны
@@ -672,7 +672,7 @@ local function onPickup(player: Player, drop: Model)
 			st.reserve = math.min(st.reserve + mag + math.max(reserve, 0), reserveCap(def))
 		end
 		syncAmmo(player, weaponId)
-		Remotes.get("Notify"):FireClient(player, "Патроны: " .. def.name, 1.5)
+		Remotes.get("Notify"):FireClient(player, "Ammo: " .. def.name, 1.5)
 	else
 		-- дроп гасим до выдачи: giveTool может уступить управление (загрузка меша), и второй игрок подобрал бы тот же ствол
 		drop:SetAttribute("Taken", true)
@@ -680,7 +680,7 @@ local function onPickup(player: Player, drop: Model)
 		giveWithAmmo(player, weaponId, mag, reserve)
 		equipWeapon(player, weaponId)
 		task.defer(compactBackpack, player)
-		Remotes.get("Notify"):FireClient(player, "Подобрано: " .. def.name, 1.5)
+		Remotes.get("Notify"):FireClient(player, "Picked up: " .. def.name, 1.5)
 	end
 end
 
@@ -707,7 +707,7 @@ local function spawnDrop(weaponId: string, mag: number, reserve: number, cf: CFr
 	model:SetAttribute("Mag", mag)
 	model:SetAttribute("Reserve", reserve)
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Подобрать"
+	prompt.ActionText = "Pick up"
 	prompt.ObjectText = def.name
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 9
@@ -760,7 +760,7 @@ local function onShopBuy(player: Player, weaponId: unknown)
 	-- купить можно только у магазина: военная палатка (платно, днём) или тестовый стенд (бесплатно)
 	local point = ShopService.pointFor(player)
 	if not point then
-		Remotes.get("Notify"):FireClient(player, "Оружие продаётся в военных палатках", 2)
+		Remotes.get("Notify"):FireClient(player, "Weapons are sold in military tents", 2)
 		return
 	end
 	if Config.Explore or point.free then
@@ -789,14 +789,14 @@ function WeaponService.canRefillHeld(player: Player): (boolean, string?)
 	local id = if tool then tool:GetAttribute("WeaponId") else nil
 	local def = if typeof(id) == "string" then Config.Weapons[id] else nil
 	if not def or def.melee then
-		return false, "Возьмите в руки огнестрельное оружие"
+		return false, "Equip a firearm"
 	end
 	if def.reserve < 0 then
-		return false, "Этому оружию патроны не нужны"
+		return false, "This weapon doesn't need ammo"
 	end
 	local st = owned[player] and owned[player][def.id]
 	if st and st.reserve >= reserveCap(def) and st.mag >= magCap(def) then
-		return false, "Патроны полные"
+		return false, "Ammo is full"
 	end
 	return true, nil
 end

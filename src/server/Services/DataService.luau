@@ -143,7 +143,7 @@ local function withRetry<T>(fn: () -> T): (boolean, T?)
 		if ok then
 			return true, result
 		end
-		warn(string.format("[DataService] попытка %d: %s", attempt, tostring(result)))
+		warn(string.format("[DataService] attempt %d: %s", attempt, tostring(result)))
 		if attempt < ATTEMPTS then
 			task.wait(2 ^ attempt)
 		end
@@ -216,9 +216,9 @@ local function acquire(s: Session)
 	end)
 	if not ok then
 		if RunService:IsStudio() then
-			warn("[DataService] профиль не загружен, играем без сохранения: " .. s.player.Name)
+			warn("[DataService] profile not loaded, playing without saving: " .. s.player.Name)
 		else
-			warn("[DataService] профиль не загружен, повтор через " .. LOCK_RETRY .. " с: " .. s.player.Name)
+			warn("[DataService] profile not loaded, retry in " .. LOCK_RETRY .. " s: " .. s.player.Name)
 			scheduleRetry(s)
 		end
 		return
@@ -263,7 +263,7 @@ local function write(s: Session, release: boolean)
 	if written then
 		s.base = clone(written)
 	elseif lost then
-		warn("[DataService] блокировку профиля перехватил другой сервер, пишем после повторного захвата: " .. s.player.Name)
+		warn("[DataService] profile lock taken by another server, writing after re-acquiring: " .. s.player.Name)
 		s.canSave = false
 		scheduleRetry(s)
 	end
@@ -305,7 +305,7 @@ kick = function(s: Session)
 	while true do
 		local ok, more = pcall(step, s)
 		if not ok then
-			warn("[DataService] ошибка очереди: " .. tostring(more))
+			warn("[DataService] queue error: " .. tostring(more))
 			if s.closing then
 				break
 			end
@@ -430,7 +430,7 @@ function DataService.init()
 			task.wait(0.2)
 		end
 		if inFlight > 0 then
-			warn("[DataService] остановка: не дождались сохранений: " .. inFlight)
+			warn("[DataService] shutdown: saves did not finish in time: " .. inFlight)
 		end
 	end)
 

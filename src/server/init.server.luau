@@ -72,32 +72,32 @@ local function buildTestStands(sp: Vector3)
 		prompt.Triggered:Connect(onTrigger)
 		return part
 	end
-	ShopService.addPoint("Тестовый стенд", Vector3.new(sp.X - 12, sp.Y, sp.Z + 8), 16, true, false, false)
-	pad("TestShop", Vector3.new(-12, 0, 8), Color3.fromRGB(255, 170, 40), "ОРУЖИЕ (тест)", "Открыть меню", function(player)
+	ShopService.addPoint("Test stand", Vector3.new(sp.X - 12, sp.Y, sp.Z + 8), 16, true, false, false)
+	pad("TestShop", Vector3.new(-12, 0, 8), Color3.fromRGB(255, 170, 40), "WEAPONS (test)", "Open menu", function(player)
 		Remotes.get("ShopOpen"):FireClient(player)
 	end)
 	local waves: { [string]: { string } } = {
-		["Волна"] = { "Walker", "Walker", "Walker", "Walker", "Walker", "Walker", "Runner", "Runner", "Runner", "Brute" },
-		["Особые"] = { "Military", "Military", "Chemist", "Dark", "Dark", "BucketHead", "BucketHead", "Crawler", "Crawler" },
+		["Wave"] = { "Walker", "Walker", "Walker", "Walker", "Walker", "Walker", "Runner", "Runner", "Runner", "Brute" },
+		["Special"] = { "Military", "Military", "Chemist", "Dark", "Dark", "BucketHead", "BucketHead", "Crawler", "Crawler" },
 	}
-	pad("TestWave", Vector3.new(-4, 0, 8), Color3.fromRGB(220, 60, 60), "ВОЛНА ЗОМБИ", "Вызвать волну", function()
-		ZombieService.enqueue(waves["Волна"]) -- без множителей: сила текущей ночи не сбрасывается
+	pad("TestWave", Vector3.new(-4, 0, 8), Color3.fromRGB(220, 60, 60), "ZOMBIE WAVE", "Call a wave", function()
+		ZombieService.enqueue(waves["Wave"]) -- без множителей: сила текущей ночи не сбрасывается
 	end)
-	pad("TestSpecial", Vector3.new(4, 0, 8), Color3.fromRGB(150, 60, 200), "ОСОБЫЕ ЗОМБИ", "Вызвать особых", function()
-		ZombieService.enqueue(waves["Особые"])
+	pad("TestSpecial", Vector3.new(4, 0, 8), Color3.fromRGB(150, 60, 200), "SPECIAL ZOMBIES", "Call specials", function()
+		ZombieService.enqueue(waves["Special"])
 	end)
 	-- вызывает босса (по кругу: Качок, Гаргантюа, Повелитель тёмных) — проверить его атаки и полоску здоровья, не дожидаясь 5-й ночи
 	local bossCycle, bossNext = { "BossBuff", "BossGarg", "BossStrong", "BossFinal" }, 0
-	pad("TestBoss", Vector3.new(28, 0, 8), Color3.fromRGB(160, 40, 40), "БОСС", "Вызвать босса", function()
+	pad("TestBoss", Vector3.new(28, 0, 8), Color3.fromRGB(160, 40, 40), "BOSS", "Call a boss", function()
 		bossNext = bossNext % #bossCycle + 1
 		ZombieService.enqueue({ bossCycle[bossNext] }, nil, nil, true)
 	end)
 	-- ночью честно завершает текущую ночь (как будто миссия выполнена: награды, рейтинг), днём сразу начинает ночь
-	pad("TestSkip", Vector3.new(12, 0, 8), Color3.fromRGB(70, 160, 90), "СКИП ВОЛНЫ", "Пропустить волну", function()
+	pad("TestSkip", Vector3.new(12, 0, 8), Color3.fromRGB(70, 160, 90), "SKIP WAVE", "Skip the wave", function()
 		RoundService.skip()
 	end)
 	-- открывает окно выбора ночи 1…20 (клиент: TestStandController); выбранную ночь присылают событием TestSetWave
-	local pickPad = pad("TestPick", Vector3.new(20, 0, 8), Color3.fromRGB(70, 130, 220), "ВЫБОР ВОЛНЫ", "Выбрать ночь", function(player)
+	local pickPad = pad("TestPick", Vector3.new(20, 0, 8), Color3.fromRGB(70, 130, 220), "PICK WAVE", "Pick a night", function(player)
 		Remotes.get("TestPickWave"):FireClient(player, #Config.Missions)
 	end)
 	Remotes.get("TestSetWave").OnServerEvent:Connect(function(player: Player, nightNumber: unknown)
@@ -113,7 +113,7 @@ local function buildTestStands(sp: Vector3)
 			return
 		end
 		if RoundService.setNextNight(nightNumber) then
-			Remotes.get("Notify"):FireClient(player, string.format("Следующая ночь: %d. Чтобы начать её сразу — «Скип волны»", nightNumber), 5)
+			Remotes.get("Notify"):FireClient(player, string.format("Next night: %d. To start it right away — «Skip wave»", nightNumber), 5)
 		end
 	end)
 end
@@ -182,7 +182,7 @@ if Config.Explore then
 	if testStandsOn then
 		buildTestStands(exploreMap.playerSpawn)
 	end
-	print("[NightOfTheDead] режим осмотра: " .. exploreMap.name)
+	print("[NightOfTheDead] inspection mode: " .. exploreMap.name)
 	return
 end
 
@@ -215,4 +215,4 @@ if testStandsOn then
 	buildTestStands(map.playerSpawn)
 end
 
-print("[NightOfTheDead] сервер запущен, локация: " .. first.name)
+print("[NightOfTheDead] server started, location: " .. first.name)

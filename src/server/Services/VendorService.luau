@@ -62,7 +62,7 @@ local function build(id: string, position: Vector3, facing: Vector3, index: numb
 	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("NPC")
 	local template = lib and lib:FindFirstChild(if index % 2 == 0 then "Survivor2" else "Survivor1")
 	if not def or not template then
-		warn("[VendorService] нет продавца или модели для " .. id)
+		warn("[VendorService] no vendor or model for " .. id)
 		return nil
 	end
 	local model = template:Clone()
@@ -91,7 +91,7 @@ local function build(id: string, position: Vector3, facing: Vector3, index: numb
 	label.Text = def.name
 	label.Parent = gui
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Торговать"
+	prompt.ActionText = "Trade"
 	prompt.ObjectText = def.name
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 12
@@ -162,7 +162,7 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 			if c then
 				for _, t in c:GetChildren() do
 					if t:IsA("Tool") and t:GetAttribute("WeaponId") == item.id and def2.melee then
-						notify:FireClient(player, "Уже есть", 1.5)
+						notify:FireClient(player, "Already owned", 1.5)
 						return
 					end
 				end
@@ -172,12 +172,12 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 	if item.kind == "ammo" then
 		local can, why = WeaponService.canRefillHeld(player)
 		if not can then
-			notify:FireClient(player, why or "Нельзя", 2)
+			notify:FireClient(player, why or "Not allowed", 2)
 			return
 		end
 	end
 	if not EconomyService.trySpend(player, item.price) then
-		notify:FireClient(player, "Не хватает монет", 1.5)
+		notify:FireClient(player, "Not enough coins", 1.5)
 		return
 	end
 	local ok = true
@@ -195,10 +195,10 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 		ok = false
 	end
 	if ok then
-		notify:FireClient(player, "Куплено: " .. item.name, 1.5)
+		notify:FireClient(player, "Purchased: " .. item.name, 1.5)
 	else
 		EconomyService.add(player, item.price) -- возврат монет
-		notify:FireClient(player, "Нельзя: достигнут лимит", 2)
+		notify:FireClient(player, "Not allowed: limit reached", 2)
 	end
 end
 
@@ -208,7 +208,7 @@ local function buildVending(marker: BasePart)
 	local template = lib and lib:FindFirstChild("Vending")
 	local def = Config.Vendors.Vending
 	if not template or not def then
-		warn("[VendorService] нет модели Assets.Props.Vending")
+		warn("[VendorService] no model Assets.Props.Vending")
 		return
 	end
 	local model = template:Clone() :: Model
@@ -234,7 +234,7 @@ local function buildVending(marker: BasePart)
 		return
 	end
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Купить"
+	prompt.ActionText = "Buy"
 	prompt.ObjectText = def.name
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 9

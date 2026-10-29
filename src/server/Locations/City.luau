@@ -239,7 +239,7 @@ function City.build(): Types.MapInfo
 		end
 	end
 
-	roomTower("Cafe", "Кафе", ROOMS.Cafe, { point = "Cafe", wallColor = Color3.fromRGB(190, 160, 110), floorColor = Color3.fromRGB(95, 70, 50), roof = true }, function(m, at, fx)
+	roomTower("Cafe", "Cafe", ROOMS.Cafe, { point = "Cafe", wallColor = Color3.fromRGB(190, 160, 110), floorColor = Color3.fromRGB(95, 70, 50), roof = true }, function(m, at, fx)
 		for _, z in { -17, -11.8, -6.6 } do -- стойка вдоль задней стены
 			prop(m, "cafe_counter", at(-10.5, z), fx)
 		end
@@ -251,29 +251,29 @@ function City.build(): Types.MapInfo
 		return {}
 	end)
 
-	roomTower("Pharmacy", "Медпункт", ROOMS.Pharmacy, { point = "Pharmacy", wallColor = Color3.fromRGB(205, 215, 205), floorColor = Color3.fromRGB(190, 195, 190), floorMaterial = Enum.Material.Marble, roof = true }, function(m, at, fx)
+	roomTower("Pharmacy", "Medical post", ROOMS.Pharmacy, { point = "Pharmacy", wallColor = Color3.fromRGB(205, 215, 205), floorColor = Color3.fromRGB(190, 195, 190), floorMaterial = Enum.Material.Marble, roof = true }, function(m, at, fx)
 		for _, z in { -8, 0, 8, 16 } do -- стеллажи с товаром вдоль задней стены
 			prop(m, "shelf", at(-11, z), fx)
 		end
 		prop(m, "medcabinet", at(-11, -17.5), fx)
 		prop(m, "pharm_counter", at(0, -12), fx)
-		local medkit = BuildKit.interact(m, "MedkitBox", at(0, -14) + V(0, 3.6, 0), V(1.4, 1, 1.8), Color3.fromRGB(240, 240, 240), "Взять аптечку", "Аптечки")
-		local energy = BuildKit.interact(m, "EnergyBox", at(0, -10) + V(0, 3.6, 0), V(1.4, 1, 1.8), Color3.fromRGB(60, 190, 255), "Взять энергетик", "Энергетики")
+		local medkit = BuildKit.interact(m, "MedkitBox", at(0, -14) + V(0, 3.6, 0), V(1.4, 1, 1.8), Color3.fromRGB(240, 240, 240), "Take medkit", "Medkits")
+		local energy = BuildKit.interact(m, "EnergyBox", at(0, -10) + V(0, 3.6, 0), V(1.4, 1, 1.8), Color3.fromRGB(60, 190, 255), "Take energy drink", "Energy drinks")
 		BuildKit.slot(m, at(8, 17), "Turret")
 		BuildKit.slot(m, at(-4, 17), "Trap")
 		return { { kind = "medkit", prompt = medkit }, { kind = "energy", prompt = energy } }
 	end)
 
-	roomTower("ColdStore", "Склад холодного оружия", ROOMS.ColdStore, { point = "ColdStore", wallColor = Color3.fromRGB(125, 105, 85), floorColor = Color3.fromRGB(70, 60, 50), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
+	roomTower("ColdStore", "Melee weapon depot", ROOMS.ColdStore, { point = "ColdStore", wallColor = Color3.fromRGB(125, 105, 85), floorColor = Color3.fromRGB(70, 60, 50), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
 		prop(m, "workbench", at(-10, 0), fx)
-		local bat = BuildKit.interact(m, "BatRack", at(-10, -3) + V(0, 3.4, 0), V(1.2, 0.8, 2.4), Color3.fromRGB(150, 110, 60), "Взять биту", "Холодное оружие")
-		local machete = BuildKit.interact(m, "MacheteRack", at(-10, 3) + V(0, 3.4, 0), V(1.2, 0.8, 2.4), Color3.fromRGB(130, 135, 140), "Взять мачете", "Холодное оружие")
+		local bat = BuildKit.interact(m, "BatRack", at(-10, -3) + V(0, 3.4, 0), V(1.2, 0.8, 2.4), Color3.fromRGB(150, 110, 60), "Take bat", "Melee weapons")
+		local machete = BuildKit.interact(m, "MacheteRack", at(-10, 3) + V(0, 3.4, 0), V(1.2, 0.8, 2.4), Color3.fromRGB(130, 135, 140), "Take machete", "Melee weapons")
 		prop(m, "crates", at(-10, 14), fx)
 		prop(m, "barrel", at(9, -16), fx)
 		return { { kind = "melee:Bat", prompt = bat }, { kind = "melee:Machete", prompt = machete } }
 	end)
 
-	roomTower("Garage", "Склад проволоки", ROOMS.Garage, { point = "Garage", wallColor = Color3.fromRGB(120, 125, 130), floorColor = Color3.fromRGB(70, 70, 72), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
+	roomTower("Garage", "Wire depot", ROOMS.Garage, { point = "Garage", wallColor = Color3.fromRGB(120, 125, 130), floorColor = Color3.fromRGB(70, 70, 72), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
 		local p = at(-2, 0)
 		BuildKit.car(m, p.X, p.Z, 0, Color3.fromRGB(150, 60, 50))
 		prop(m, "workbench", at(-11.5, 0), fx)
@@ -287,7 +287,7 @@ function City.build(): Types.MapInfo
 		return {}
 	end)
 
-	roomTower("Armory", "Оружейная", ROOMS.Armory, { point = "Armory", wallColor = Color3.fromRGB(120, 70, 60), floorColor = Color3.fromRGB(80, 70, 70), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
+	roomTower("Armory", "Armory", ROOMS.Armory, { point = "Armory", wallColor = Color3.fromRGB(120, 70, 60), floorColor = Color3.fromRGB(80, 70, 70), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
 		for _, z in { -10, 0, 10 } do
 			prop(m, "weapon_rack", at(-11, z), fx)
 		end
@@ -297,7 +297,7 @@ function City.build(): Types.MapInfo
 		return {}
 	end)
 
-	roomTower("Shelter", "Убежище", ROOMS.Shelter, { point = "Shelter", wallColor = Color3.fromRGB(95, 100, 115), floorColor = Color3.fromRGB(60, 62, 70), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
+	roomTower("Shelter", "Shelter", ROOMS.Shelter, { point = "Shelter", wallColor = Color3.fromRGB(95, 100, 115), floorColor = Color3.fromRGB(60, 62, 70), floorMaterial = Enum.Material.Concrete, roof = true }, function(m, at, fx)
 		for _, z in { -12, 0, 12 } do
 			prop(m, "bunk", at(-10, z), fx)
 		end
@@ -315,12 +315,12 @@ function City.build(): Types.MapInfo
 	local ALLEY_W = 8
 	local V3 = Vector3.new
 	local ALLEYS = {
-		{ id = "P1", name = "Паркур-1", bx = -150, bz = -150, shape = "NS" },
-		{ id = "S1", name = "Подкат-1", bx = -50, bz = -150, shape = "EW" },
-		{ id = "S2", name = "Подкат-2", bx = 50, bz = -50, shape = "L" },
-		{ id = "P2", name = "Паркур-2", bx = 50, bz = 150, shape = "Z" },
-		{ id = "M1", name = "Смешанный-Т", bx = -150, bz = 150, shape = "T" },
-		{ id = "M2", name = "Смешанный-2", bx = 150, bz = 150, shape = "NS" },
+		{ id = "P1", name = "Parkour-1", bx = -150, bz = -150, shape = "NS" },
+		{ id = "S1", name = "Slide-1", bx = -50, bz = -150, shape = "EW" },
+		{ id = "S2", name = "Slide-2", bx = 50, bz = -50, shape = "L" },
+		{ id = "P2", name = "Parkour-2", bx = 50, bz = 150, shape = "Z" },
+		{ id = "M1", name = "Mixed-T", bx = -150, bz = 150, shape = "T" },
+		{ id = "M2", name = "Mixed-2", bx = 150, bz = 150, shape = "NS" },
 	}
 
 	-- прямоугольники коридора {x0, x1, z0, z1}
@@ -450,7 +450,7 @@ function City.build(): Types.MapInfo
 			label.TextScaled = true
 			label.TextColor3 = Color3.fromRGB(240, 200, 40)
 			label.TextTransparency = 0.15
-			label.Text = "ПОДКАТ\n▼▼"
+			label.Text = "SLIDE\n▼▼"
 			label.Parent = gui
 		end
 	end
@@ -578,7 +578,7 @@ function City.build(): Types.MapInfo
 	local cafe = ROOMS.Cafe
 	return {
 		id = "City",
-		name = "Городской квартал",
+		name = "City block",
 		root = root,
 		windows = windows,
 		buildings = buildings,

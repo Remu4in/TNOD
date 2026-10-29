@@ -33,21 +33,21 @@ local function use(tool: Tool)
 	end
 	if def.heal then
 		if humanoid.Health >= humanoid.MaxHealth then
-			notify(player, "Здоровье полное")
+			notify(player, "Health is full")
 			return
 		end
 		humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + def.heal)
 	end
 	if def.energy then
 		if ((player:GetAttribute("Energy") :: number?) or Config.Player.EnergyMax) >= Config.Player.EnergyMax - 1 then
-			notify(player, "Энергия полная")
+			notify(player, "Energy is full")
 			return
 		end
 		StaminaService.addEnergy(player, def.energy)
 	end
 	if def.infiniteWaves then
 		StaminaService.grantInfinite(player, def.infiniteWaves)
-		notify(player, "Бесконечная энергия — до конца ближайшей ночи", 3)
+		notify(player, "Infinite energy — until the end of the next night", 3)
 	end
 	tool:SetAttribute("Used", true)
 	tool:Destroy()

@@ -95,8 +95,8 @@ local function entrance(parent: Instance, id: number, point: string, weight: num
 		CanQuery = false,
 	}, model)
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Починить"
-	prompt.ObjectText = "Баррикада"
+	prompt.ActionText = "Repair"
+	prompt.ObjectText = "Barricade"
 	prompt.HoldDuration = Config.Barricade.RepairHoldTime
 	prompt.MaxActivationDistance = 8
 	prompt.RequiresLineOfSight = false
@@ -105,8 +105,8 @@ local function entrance(parent: Instance, id: number, point: string, weight: num
 
 	-- «Разобрать» — игрок сам снимает баррикаду, чтобы выйти из укрытия (клавиша F, на геймпаде Y)
 	local dismantle = Instance.new("ProximityPrompt")
-	dismantle.ActionText = "Разобрать"
-	dismantle.ObjectText = "Баррикада"
+	dismantle.ActionText = "Dismantle"
+	dismantle.ObjectText = "Barricade"
 	dismantle.KeyboardKeyCode = Enum.KeyCode.F
 	dismantle.GamepadKeyCode = Enum.KeyCode.ButtonY
 	dismantle.HoldDuration = Config.Barricade.DismantleHoldTime
@@ -256,7 +256,7 @@ local function buildWallBuy(parent: Instance, weaponId: string, pos: Vector3, fa
 	label.Text = string.format("%s\n%d", def.name, def.price)
 	label.Parent = gui
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = string.format("Купить (%d)", def.price)
+	prompt.ActionText = string.format("Buy (%d)", def.price)
 	prompt.ObjectText = def.name
 	prompt.HoldDuration = 0.3
 	prompt.MaxActivationDistance = 7
@@ -373,7 +373,7 @@ local function loadMesh(meshId: string): MeshPart?
 			meshTemplates[meshId] = result
 			meshState[meshId] = "ok"
 		else
-			warn("[BuildKit] не удалось загрузить меш " .. meshId .. ": " .. tostring(result))
+			warn("[BuildKit] failed to load mesh " .. meshId .. ": " .. tostring(result))
 			meshState[meshId] = "failed"
 		end
 	end
@@ -419,7 +419,7 @@ function BuildKit.car(parent: Instance, x: number, z: number, yawDeg: number, co
 			car.Parent = parent
 			return
 		end
-		warn("[BuildKit] нет шаблона машины " .. modelDef.id .. " в ServerStorage.CarModels")
+		warn("[BuildKit] no vehicle template " .. modelDef.id .. " in ServerStorage.CarModels")
 	end
 	local v = variants[(pick - 1) % #variants + 1]
 	if BuildKit.meshProp(parent, "Car", v, CFrame.new(x, 0, z) * CFrame.Angles(0, math.rad(yawDeg), 0)) then
@@ -537,7 +537,7 @@ function BuildKit.sign(parent: Instance, text: string, pos: Vector3, facing: Vec
 	label.Text = text
 	label.Parent = gui
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Вложить монеты"
+	prompt.ActionText = "Invest coins"
 	prompt.ObjectText = text
 	prompt.HoldDuration = 0.3
 	prompt.MaxActivationDistance = 10

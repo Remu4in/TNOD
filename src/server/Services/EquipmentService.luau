@@ -294,7 +294,7 @@ local function onPlace(player: Player, position: unknown, yawArg: unknown)
 		end
 	end
 	if owned >= def.max then
-		Remotes.get("Notify"):FireClient(player, "Лимит: " .. def.name .. " " .. def.max, 2)
+		Remotes.get("Notify"):FireClient(player, "Limit: " .. def.name .. " " .. def.max, 2)
 		return
 	end
 	-- точка на земле под указанным местом

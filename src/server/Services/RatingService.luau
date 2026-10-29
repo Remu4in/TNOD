@@ -18,7 +18,7 @@ local BOARD_NAME = if RunService:IsStudio() then "Test_RatingBoard_v1" else "Rat
 
 local function refresh(player: Player)
 	local folder = player:FindFirstChild("leaderstats")
-	local stat = folder and folder:FindFirstChild("Рейтинг") :: IntValue?
+	local stat = folder and folder:FindFirstChild("Rating") :: IntValue?
 	if stat then
 		stat.Value = (player:GetAttribute("Rating") :: number?) or 0
 	end
@@ -28,9 +28,9 @@ local function setup(player: Player)
 	player:SetAttribute("Rating", 0)
 	task.defer(function()
 		local folder = player:WaitForChild("leaderstats", 10)
-		if folder and not folder:FindFirstChild("Рейтинг") then
+		if folder and not folder:FindFirstChild("Rating") then
 			local v = Instance.new("IntValue")
-			v.Name = "Рейтинг"
+			v.Name = "Rating"
 			v.Parent = folder
 		end
 		refresh(player)
@@ -113,7 +113,7 @@ function RatingService.finishRound(players: { Player })
 					end)
 				end)
 				if not ok then
-					warn("[RatingService] лидерборд: " .. tostring(err))
+					warn("[RatingService] leaderboard: " .. tostring(err))
 				end
 			end)
 		end

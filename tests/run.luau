@@ -60,7 +60,7 @@ local function test(name: string, fn: () -> ())
 end
 local function eq(a: any, b: any, msg: string)
 	if a ~= b then
-		error(string.format("%s (ожидали %s, получили %s)", msg, tostring(b), tostring(a)), 2)
+		error(string.format("%s (expected %s, got %s)", msg, tostring(b), tostring(a)), 2)
 	end
 end
 local function check(c: boolean, msg: string)
@@ -85,62 +85,62 @@ local function threatOf(loadouts: { { string } }, seed: number?)
 	return WaveMath.makeThreat(ClassDefs, Tiers, loadouts, seed or 1)
 end
 
-test("1-я волна без оружия: 20 / 30 / 35 / 40", function()
+test("wave 1 without weapons: 20 / 30 / 35 / 40", function()
 	local want = { 20, 30, 35, 40 }
 	for p = 1, 4 do
-		eq(WaveMath.zombieCount(Tuning, 1, p), want[p], "игроков " .. p)
+		eq(WaveMath.zombieCount(Tuning, 1, p), want[p], "players " .. p)
 	end
-	eq(WaveMath.zombieCount(Tuning, 1, 5), 44, "5 игроков")
+	eq(WaveMath.zombieCount(Tuning, 1, 5), 44, "5 players")
 end)
 
-test("кривая не убывает, начинается со старта и кончается потолком", function()
+test("the curve doesn't decrease, starts at the start and ends at the cap", function()
 	for p = 1, 6 do
 		local prev = 0
 		for w = 1, 30 do
 			local n = WaveMath.curveCount(Tuning, w, p)
-			check(n >= prev - 1e-9, string.format("игроков %d, волна %d", p, w))
+			check(n >= prev - 1e-9, string.format("players %d, wave %d", p, w))
 			prev = n
 		end
 	end
-	eq(WaveMath.curveCount(Tuning, 20, 1), 250, "соло, 20-я")
-	eq(math.floor(WaveMath.curveCount(Tuning, 20, 4) + 0.5), 500, "вчетвером, 20-я")
+	eq(WaveMath.curveCount(Tuning, 20, 1), 250, "solo, 20th")
+	eq(math.floor(WaveMath.curveCount(Tuning, 20, 4) + 0.5), 500, "four players, 20th")
 end)
 
-test("число зомби: в пределах ±10% от кривой (без оружия), не выше потолка", function()
+test("zombie count: within ±10% of the curve (no weapons), not above the cap", function()
 	for seed = 1, 30 do
 		for w = 2, 25 do
 			for _, p in { 1, 2, 4 } do
 				local n = WaveMath.zombieCount(Tuning, w, p, threatOf({ {} }, seed))
 				local curve = WaveMath.curveCount(Tuning, w, p)
-				check(n >= math.floor(curve * 0.9), string.format("seed %d w %d p %d: %d < 90%% от %.1f", seed, w, p, n, curve))
+				check(n >= math.floor(curve * 0.9), string.format("seed %d w %d p %d: %d < 90%% of %.1f", seed, w, p, n, curve))
 				check(n <= math.min(math.ceil(curve * 1.1), 250 * (1 + (p - 1) / 3)) + 1, string.format("seed %d w %d p %d: %d", seed, w, p, n))
 			end
 		end
 	end
 end)
 
-test("потолок: соло 250, вчетвером 500, с любым оружием", function()
+test("cap: solo 250, four players 500, with any weapon", function()
 	local full = { "SMG", "Shotgun", "Rifle", "MG" }
 	for w = 1, 40 do
-		check(WaveMath.zombieCount(Tuning, w, 1, threatOf({ full })) <= 250, "соло, волна " .. w)
-		check(WaveMath.zombieCount(Tuning, w, 4, threatOf({ full, full, full, full })) <= 500, "вчетвером, волна " .. w)
+		check(WaveMath.zombieCount(Tuning, w, 1, threatOf({ full })) <= 250, "solo, wave " .. w)
+		check(WaveMath.zombieCount(Tuning, w, 4, threatOf({ full, full, full, full })) <= 500, "four players, wave " .. w)
 	end
-	eq(WaveMath.zombieCount(Tuning, 25, 1, threatOf({ full })), 250, "соло, поздняя волна")
+	eq(WaveMath.zombieCount(Tuning, 25, 1, threatOf({ full })), 250, "solo, late wave")
 end)
 
-test("бросок воспроизводим", function()
-	eq(WaveMath.zombieCount(Tuning, 6, 2, threatOf({ {} }, 7)), WaveMath.zombieCount(Tuning, 6, 2, threatOf({ {} }, 7)), "повтор")
+test("the roll is reproducible", function()
+	eq(WaveMath.zombieCount(Tuning, 6, 2, threatOf({ {} }, 7)), WaveMath.zombieCount(Tuning, 6, 2, threatOf({ {} }, 7)), "repeat")
 end)
 
-test("больше игроков — больше зомби", function()
-	check(WaveMath.zombieCount(Tuning, 3, 4) > WaveMath.zombieCount(Tuning, 3, 1), "4 игрока против 1")
+test("more players — more zombies", function()
+	check(WaveMath.zombieCount(Tuning, 3, 4) > WaveMath.zombieCount(Tuning, 3, 1), "4 players against 1")
 end)
 
-test("0 игроков считается как 1", function()
-	eq(WaveMath.zombieCount(Tuning, 2, 0), WaveMath.zombieCount(Tuning, 2, 1), "0 игроков")
+test("0 players counts as 1", function()
+	eq(WaveMath.zombieCount(Tuning, 2, 0), WaveMath.zombieCount(Tuning, 2, 1), "0 players")
 end)
 
-test("добавка за оружие: ПП/дробовик 5–10, винтовка/пулемёт 10–20 (соло, волна 1)", function()
+test("weapon bonus: SMG/shotgun 5–10, rifle/machine gun 10–20 (solo, wave 1)", function()
 	for seed = 1, 30 do
 		for class, def in ClassDefs do
 			local n = WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { class } }, seed)) - 20
@@ -149,111 +149,111 @@ test("добавка за оружие: ПП/дробовик 5–10, винто
 	end
 end)
 
-test("класс считается один раз, сколько бы стволов ни было", function()
-	eq(WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { "SMG", "SMG", "SMG" } }, 5)), WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { "SMG" } }, 5)), "три ПП = один")
+test("a class counts once, no matter how many guns", function()
+	eq(WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { "SMG", "SMG", "SMG" } }, 5)), WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { "SMG" } }, 5)), "three SMGs = one")
 end)
 
-test("уровень угрозы: без оружия 1-й, с винтовкой 3-й, у всех всё — 4-й", function()
-	eq(threatOf({ {} }).tier.hp, 1.0, "нет оружия")
-	eq(threatOf({ { "SMG" } }).tier.hp, 1.1, "ПП")
-	eq(threatOf({ { "Rifle" } }).tier.hp, 1.2, "винтовка")
-	eq(threatOf({ { "SMG", "Shotgun", "Rifle", "MG" } }).tier.hp, 1.35, "всё")
-	eq(threatOf({ { "Rifle" }, {} }).tier.hp, 1.1, "у одного из двух: среднее 7,5")
+test("threat level: no weapons 1st, rifle 3rd, everything 4th", function()
+	eq(threatOf({ {} }).tier.hp, 1.0, "no weapons")
+	eq(threatOf({ { "SMG" } }).tier.hp, 1.1, "SMGs")
+	eq(threatOf({ { "Rifle" } }).tier.hp, 1.2, "rifle")
+	eq(threatOf({ { "SMG", "Shotgun", "Rifle", "MG" } }).tier.hp, 1.35, "everything")
+	eq(threatOf({ { "Rifle" }, {} }).tier.hp, 1.1, "one of two: average 7.5")
 end)
 
-test("HP и скорость: рост по волне, скорость не выше потолка", function()
-	check(WaveMath.hpMultiplier(Tuning, 5, threatOf({ { "Rifle" } })) > WaveMath.hpMultiplier(Tuning, 5), "оружие повышает HP")
+test("HP and speed: grow by wave, speed not above the cap", function()
+	check(WaveMath.hpMultiplier(Tuning, 5, threatOf({ { "Rifle" } })) > WaveMath.hpMultiplier(Tuning, 5), "weapons raise HP")
 	for w = 1, 40 do
-		check(WaveMath.speedOf(Tuning, 14, w) <= 18, "ходок на волне " .. w)
-		check(WaveMath.speedOf(Tuning, 14, w) >= 14, "не медленнее базы")
+		check(WaveMath.speedOf(Tuning, 14, w) <= 18, "walker on wave " .. w)
+		check(WaveMath.speedOf(Tuning, 14, w) >= 14, "not slower than base")
 	end
-	eq(WaveMath.speedOf(Tuning, 19, 30), 19, "бегун быстрее потолка не замедляется")
+	eq(WaveMath.speedOf(Tuning, 19, 30), 19, "a runner faster than the cap doesn't slow down")
 end)
 
-test("множитель HP: волна 1 = 1, растёт", function()
-	eq(WaveMath.hpMultiplier(Tuning, 1), 1, "волна 1")
-	check(WaveMath.hpMultiplier(Tuning, 10) > WaveMath.hpMultiplier(Tuning, 9), "рост")
+test("HP multiplier: wave 1 = 1, grows", function()
+	eq(WaveMath.hpMultiplier(Tuning, 1), 1, "wave 1")
+	check(WaveMath.hpMultiplier(Tuning, 10) > WaveMath.hpMultiplier(Tuning, 9), "growth")
 end)
 
-test("боссы только на каждой 5-й волне", function()
+test("bosses only on every 5th wave", function()
 	for w = 1, 20 do
 		local isBoss = w % 5 == 0
-		eq(WaveMath.isBossWave(Tuning, w), isBoss, "волна " .. w)
-		eq(WaveMath.bossCount(Tuning, w) > 0, isBoss, "число боссов на волне " .. w)
+		eq(WaveMath.isBossWave(Tuning, w), isBoss, "wave " .. w)
+		eq(WaveMath.bossCount(Tuning, w) > 0, isBoss, "number of bosses on wave " .. w)
 	end
 end)
 
-test("состав в сумме равен числу зомби", function()
+test("the composition adds up to the zombie count", function()
 	for w = 1, 40 do
 		for p = 1, 6 do
 			local threat = threatOf({ { "SMG", "Rifle" } }, w * 3 + p)
 			local c = WaveMath.composition(Tuning, w, p, threat)
-			eq(WaveMath.total(c), WaveMath.zombieCount(Tuning, w, p, threat), string.format("волна %d, игроков %d", w, p))
+			eq(WaveMath.total(c), WaveMath.zombieCount(Tuning, w, p, threat), string.format("wave %d, players %d", w, p))
 			for id, n in c do
-				check(n > 0, "неположительное число " .. id)
+				check(n > 0, "non-positive number " .. id)
 			end
 		end
 	end
 end)
 
-test("10-я волна: все обычные — бронированные, боссы Гаргантюа и Повелитель тёмных", function()
+test("wave 10: all regulars are armored, bosses Gargantua and Dark Lord", function()
 	local c = WaveMath.composition(Tuning, 10, 3)
-	eq(c.Walker, nil, "нет ходоков")
-	eq(c.Runner, nil, "нет бегунов")
-	eq(c.Military, nil, "нет военных")
-	check((c.BucketHead or 0) > 0, "есть бронированные")
-	eq(c.BossGarg, 1, "Гаргантюа")
-	eq(c.BossStrong, 1, "Повелитель тёмных")
+	eq(c.Walker, nil, "no walkers")
+	eq(c.Runner, nil, "no runners")
+	eq(c.Military, nil, "no soldiers")
+	check((c.BucketHead or 0) > 0, "armored present")
+	eq(c.BossGarg, 1, "Gargantua")
+	eq(c.BossStrong, 1, "Dark Lord")
 end)
 
-test("военные с 11-й: 2–4 штуки, до 11-й нет", function()
+test("soldiers from the 11th: 2–4 of them, none before the 11th", function()
 	for w = 1, 10 do
-		eq(WaveMath.composition(Tuning, w, 2).Military, nil, "волна " .. w)
+		eq(WaveMath.composition(Tuning, w, 2).Military, nil, "wave " .. w)
 	end
 	for w = 11, 19 do
 		local n = WaveMath.composition(Tuning, w, 1).Military or 0
-		check(n >= 2 and n <= 4, "волна " .. w .. ": " .. n)
+		check(n >= 2 and n <= 4, "wave " .. w .. ": " .. n)
 	end
 end)
 
-test("20-я волна: военные — основная группа", function()
+test("wave 20: soldiers are the main group", function()
 	local c = WaveMath.composition(Tuning, 20, 2)
-	check((c.Military or 0) >= WaveMath.total(c) * 0.4, "военных мало")
+	check((c.Military or 0) >= WaveMath.total(c) * 0.4, "few soldiers")
 end)
 
-test("тёмные вместо бегунов на 11–15", function()
+test("dark ones instead of runners on 11–15", function()
 	for w = 11, 15 do
 		local c = WaveMath.composition(Tuning, w, 2)
-		eq(c.Runner, nil, "бегунов нет на волне " .. w)
-		check((c.Dark or 0) > 0, "тёмные на волне " .. w)
+		eq(c.Runner, nil, "no runners on wave " .. w)
+		check((c.Dark or 0) > 0, "dark ones on wave " .. w)
 	end
-	check(WaveMath.composition(Tuning, 16, 2).Dark == nil, "после 15-й тёмных нет")
-	check(WaveMath.composition(Tuning, 10, 2).Dark == nil, "до 11-й тёмных нет")
+	check(WaveMath.composition(Tuning, 16, 2).Dark == nil, "no dark ones after the 15th")
+	check(WaveMath.composition(Tuning, 10, 2).Dark == nil, "no dark ones before the 11th")
 end)
 
-test("боссы по кругу: 5 — Качок, 10 — Гаргантюа, 15 — Повелитель тёмных", function()
+test("bosses in rotation: 5 — Jock, 10 — Gargantua, 15 — Dark Lord", function()
 	eq(WaveMath.bossTypes(Tuning, 5)[1], "BossBuff", "5")
 	eq(WaveMath.bossTypes(Tuning, 10)[1], "BossGarg", "10")
 	eq(WaveMath.bossTypes(Tuning, 15)[1], "BossStrong", "15")
-	eq(#WaveMath.bossTypes(Tuning, 7), 0, "7 — без босса")
+	eq(#WaveMath.bossTypes(Tuning, 7), 0, "7 — no boss")
 end)
 
-test("особые зомби появляются по расписанию", function()
-	eq(WaveMath.composition(Tuning, 5, 1).Chemist, nil, "химик до 7-й")
-	check((WaveMath.composition(Tuning, 9, 1).Chemist or 0) > 0, "химик на 9-й")
-	check((WaveMath.composition(Tuning, 8, 1).Crawler or 0) > 0, "ползуны на 8-й")
+test("special zombies appear on schedule", function()
+	eq(WaveMath.composition(Tuning, 5, 1).Chemist, nil, "chemist before the 7th")
+	check((WaveMath.composition(Tuning, 9, 1).Chemist or 0) > 0, "chemist on the 9th")
+	check((WaveMath.composition(Tuning, 8, 1).Crawler or 0) > 0, "crawlers on the 8th")
 end)
 
-test("очередь спавна: те же типы, боссы в конце", function()
+test("spawn queue: same types, bosses at the end", function()
 	local c = WaveMath.composition(Tuning, 15, 3)
 	local q = WaveMath.spawnQueue(c, FakeRng.new(42) :: any)
-	eq(#q, WaveMath.total(c), "длина очереди")
+	eq(#q, WaveMath.total(c), "queue length")
 	local counts: { [string]: number } = {}
 	for _, t in q do
 		counts[t] = (counts[t] or 0) + 1
 	end
 	for id, n in c do
-		eq(counts[id], n, "тип " .. id)
+		eq(counts[id], n, "type " .. id)
 	end
 	local bosses = 0
 	for id, n in c do
@@ -262,60 +262,60 @@ test("очередь спавна: те же типы, боссы в конце"
 		end
 	end
 	for i = #q - bosses + 1, #q do
-		check(WaveMath.isBossType(q[i]), "босс в конце, позиция " .. i)
+		check(WaveMath.isBossType(q[i]), "boss at the end, position " .. i)
 	end
 	for i = 1, #q - bosses do
-		check(not WaveMath.isBossType(q[i]), "обычный в начале, позиция " .. i)
+		check(not WaveMath.isBossType(q[i]), "regular at the start, position " .. i)
 	end
 end)
 
-test("состав по плану: 1-я — одни ходоки, 2-я — бегуны со 2-й", function()
+test("composition per plan: 1st — walkers only, 2nd — runners from the 2nd", function()
 	local c1 = WaveMath.composition(Tuning, 1, 1)
-	eq(c1.Walker, 20, "1-я: только ходоки")
-	check(WaveMath.composition(Tuning, 2, 1).Runner ~= nil, "бегуны на 2-й")
+	eq(c1.Walker, 20, "1st: walkers only")
+	check(WaveMath.composition(Tuning, 2, 1).Runner ~= nil, "runners on the 2nd")
 end)
 
-test("особые в команде растут вместе с волной", function()
-	check((WaveMath.composition(Tuning, 12, 4).Brute or 0) > (WaveMath.composition(Tuning, 12, 1).Brute or 0), "громил больше у команды")
+test("specials in the party grow with the wave", function()
+	check((WaveMath.composition(Tuning, 12, 4).Brute or 0) > (WaveMath.composition(Tuning, 12, 1).Brute or 0), "more brutes with a bigger party")
 end)
 
-test("уровень угрозы 3+ приближает особых на волну", function()
+test("threat level 3+ brings specials a wave earlier", function()
 	local threat = threatOf({ { "Rifle" } }, 3)
-	check((WaveMath.composition(Tuning, 5, 1, threat).Brute or 0) > 0, "громилы уже на 5-й при винтовке")
-	eq(WaveMath.composition(Tuning, 5, 1).Brute, nil, "без оружия — нет")
+	check((WaveMath.composition(Tuning, 5, 1, threat).Brute or 0) > 0, "brutes already on the 5th with a rifle")
+	eq(WaveMath.composition(Tuning, 5, 1).Brute, nil, "without weapons — no")
 end)
 
-test("уровень угрозы добавляет бегунов, только где они есть по плану", function()
+test("threat level adds runners, only where they're in the plan", function()
 	local threat = threatOf({ { "Rifle" } }, 3) -- 3-й уровень: runners = 0,1
 	local plain = WaveMath.composition(Tuning, 4, 1)
 	local armed = WaveMath.composition(Tuning, 4, 1, threat)
 	local plainShare = (plain.Runner or 0) / WaveMath.total(plain)
 	local armedShare = (armed.Runner or 0) / WaveMath.total(armed)
-	check(armedShare > plainShare + 0.03, string.format("доля бегунов выросла (%.2f → %.2f)", plainShare, armedShare))
-	eq(WaveMath.total(armed), WaveMath.zombieCount(Tuning, 4, 1, threat), "сумма состава не меняется")
-	eq(WaveMath.composition(Tuning, 1, 1, threat).Runner, nil, "1-я волна — без бегунов и с оружием")
-	eq(WaveMath.composition(Tuning, 12, 1, threat).Runner, nil, "11–15: бегунов нет по плану — и не добавляем")
+	check(armedShare > plainShare + 0.03, string.format("runner share grew (%.2f → %.2f)", plainShare, armedShare))
+	eq(WaveMath.total(armed), WaveMath.zombieCount(Tuning, 4, 1, threat), "the composition sum doesn't change")
+	eq(WaveMath.composition(Tuning, 1, 1, threat).Runner, nil, "wave 1 — no runners, with a weapon")
+	eq(WaveMath.composition(Tuning, 12, 1, threat).Runner, nil, "11–15: no runners in the plan — and we don't add any")
 end)
 
-test("урон зомби +3% за волну", function()
-	eq(WaveMath.damageMultiplier(Tuning, 1), 1, "волна 1")
-	check(math.abs(WaveMath.damageMultiplier(Tuning, 11) - 1.3) < 1e-9, "волна 11 = 1,3")
+test("zombie damage +3% per wave", function()
+	eq(WaveMath.damageMultiplier(Tuning, 1), 1, "wave 1")
+	check(math.abs(WaveMath.damageMultiplier(Tuning, 11) - 1.3) < 1e-9, "wave 11 = 1.3")
 end)
 
-test("экономика: награда за миссии за 1–15 ночи равна заданным итогам и растёт", function()
+test("economy: mission rewards for nights 1–15 equal the set totals and grow", function()
 	local personal, team, prev = 0, 0, 0
 	for w = 1, 15 do
 		local p, t = WaveMath.missionReward(Economy, w)
 		personal += p
 		team += t
-		check(p > prev, "рост на ночи " .. w)
+		check(p > prev, "growth on night " .. w)
 		prev = p
 	end
-	check(math.abs(personal - Economy.MissionPersonalTotal) < 1e-6, "личная часть " .. personal)
-	check(math.abs(team - Economy.MissionTeamTotal) < 1e-6, "командная часть " .. team)
+	check(math.abs(personal - Economy.MissionPersonalTotal) < 1e-6, "personal part " .. personal)
+	check(math.abs(team - Economy.MissionTeamTotal) < 1e-6, "team part " .. team)
 end)
 
-test("экономика: доход игрока к 15-й ночи ≈ 0,9 корзины при 1, 2, 4 и 6 игроках", function()
+test("economy: player income by night 15 ≈ 0.9 basket with 1, 2, 4 and 6 players", function()
 	local killPoolFull = 0
 	for w = 1, 15 do
 		killPoolFull += WaveMath.killPool(Economy, w, 1)
@@ -323,18 +323,18 @@ test("экономика: доход игрока к 15-й ночи ≈ 0,9 ко
 	for _, n in { 1, 2, 4, 6 } do
 		local income = Economy.MissionPersonalTotal + killPoolFull + Economy.MissionTeamTotal / n
 		local target = 0.9 * (5250 + 14500 / n)
-		check(math.abs(income - target) < target * 0.01, n .. " игроков: " .. income .. " против " .. target)
+		check(math.abs(income - target) < target * 0.01, n .. " players: " .. income .. " vs " .. target)
 	end
 end)
 
-test("экономика: потолок монет за убийства за ночь 200–300 и растёт", function()
-	eq(WaveMath.killCap(Economy, 1), 200, "ночь 1")
-	eq(WaveMath.killCap(Economy, 15), 300, "ночь 15")
-	eq(WaveMath.killCap(Economy, 40), 300, "дальше потолок не растёт")
-	check(WaveMath.killCap(Economy, 8) > WaveMath.killCap(Economy, 3), "рост")
+test("economy: kill coin cap per night 200–300 and growing", function()
+	eq(WaveMath.killCap(Economy, 1), 200, "night 1")
+	eq(WaveMath.killCap(Economy, 15), 300, "night 15")
+	eq(WaveMath.killCap(Economy, 40), 300, "the cap doesn't grow further")
+	check(WaveMath.killCap(Economy, 8) > WaveMath.killCap(Economy, 3), "growth")
 end)
 
-test("экономика: сумма единиц за убийство равна пулу волны", function()
+test("economy: the sum of kill units equals the wave pool", function()
 	for w = 1, 20 do
 		for _, players in { 1, 3 } do
 			local comp = WaveMath.composition(Tuning, w, players)
@@ -343,12 +343,12 @@ test("экономика: сумма единиц за убийство равн
 			for id, n in comp do
 				sum += units[id] * n
 			end
-			check(math.abs(sum - WaveMath.killPool(Economy, w, players)) < 1e-6, "волна " .. w)
+			check(math.abs(sum - WaveMath.killPool(Economy, w, players)) < 1e-6, "wave " .. w)
 		end
 	end
 end)
 
-test("экономика: пул убийств не зависит от размера толпы и растёт с числом игроков", function()
+test("economy: the kill pool doesn't depend on crowd size and grows with player count", function()
 	local function total(players: number, crowdPlayers: number): number
 		local comp = WaveMath.composition(Tuning, 10, crowdPlayers)
 		local units = WaveMath.killUnits(Economy, 10, comp, players)
@@ -358,8 +358,8 @@ test("экономика: пул убийств не зависит от раз�
 		end
 		return sum
 	end
-	check(math.abs(total(2, 1) - total(2, 4)) < 1e-6, "пул при той же команде одинаков для толп разного размера")
-	check(math.abs(total(4, 4) - 4 * total(1, 1)) < 1e-6, "пул пропорционален числу игроков")
+	check(math.abs(total(2, 1) - total(2, 4)) < 1e-6, "the pool is equal for the same party with crowds of different sizes")
+	check(math.abs(total(4, 4) - 4 * total(1, 1)) < 1e-6, "the pool is proportional to the player count")
 end)
 
 -- Ballistics ---------------------------------------------------------------------------------------------------------
@@ -373,144 +373,144 @@ local function stateOf(over: { ads: boolean?, speed: number?, airborne: boolean?
 	return { ads = o.ads or false, speed = o.speed or 0, airborne = o.airborne or false, burst = o.burst or 0 }
 end
 
-test("баллистика: первый одиночный выстрел точно в центр", function()
+test("ballistics: the first single shot hits dead center", function()
 	local x, y = Ballistics.pelletOffset(1, 0, 1)
 	eq(x, 0, "x")
 	eq(y, 0, "y")
 end)
 
-test("баллистика: одиночные выстрелы 1..50 в круге радиуса 0,85", function()
+test("ballistics: single shots 1..50 within a circle of radius 0.85", function()
 	for i = 1, 50 do
 		local x, y = Ballistics.pelletOffset(1, i, 1)
-		check(math.sqrt(x * x + y * y) <= 0.85 + 1e-9, "выстрел " .. i)
+		check(math.sqrt(x * x + y * y) <= 0.85 + 1e-9, "shot " .. i)
 	end
 end)
 
-test("баллистика: у дроби первая дробина в центре, остальные в единичном круге", function()
+test("ballistics: for pellets the first pellet is in the center, the rest in the unit circle", function()
 	local x, y = Ballistics.pelletOffset(1, 0, 8)
 	eq(x, 0, "x")
 	eq(y, 0, "y")
 	for i = 2, 8 do
 		local px, py = Ballistics.pelletOffset(i, 0, 8)
-		check(math.sqrt(px * px + py * py) <= 1, "дробина " .. i)
+		check(math.sqrt(px * px + py * py) <= 1, "pellet " .. i)
 	end
 end)
 
-test("баллистика: две дробины — без деления на 0", function()
+test("ballistics: two pellets — no division by 0", function()
 	local x, y = Ballistics.pelletOffset(2, 0, 2)
-	check(x == x and y == y and math.abs(x) < math.huge and math.abs(y) < math.huge, "конечное смещение")
+	check(x == x and y == y and math.abs(x) < math.huge and math.abs(y) < math.huge, "finite offset")
 end)
 
-test("баллистика: смещение воспроизводимо", function()
+test("ballistics: the offset is reproducible", function()
 	local x1, y1 = Ballistics.pelletOffset(3, 7, 1)
 	local x2, y2 = Ballistics.pelletOffset(3, 7, 1)
 	eq(x1, x2, "x")
 	eq(y1, y2, "y")
 end)
 
-test("разброс: стоя = база; прицел умножает на adsSpreadMul; в воздухе ×2,5", function()
+test("spread: standing = base; aiming multiplies by adsSpreadMul; in the air ×2.5", function()
 	local base = 2
-	check(math.abs(Ballistics.spreadDeg(base, Aim, stateOf(), 14) - base) < 1e-9, "стоя")
+	check(math.abs(Ballistics.spreadDeg(base, Aim, stateOf(), 14) - base) < 1e-9, "standing")
 	check(math.abs(Ballistics.spreadDeg(base, Aim, stateOf({ ads = true }), 14) - base * Aim.adsSpreadMul) < 1e-9, "ADS")
-	check(math.abs(Ballistics.spreadDeg(base, Aim, stateOf({ airborne = true }), 14) - base * 2.5) < 1e-9, "в воздухе")
+	check(math.abs(Ballistics.spreadDeg(base, Aim, stateOf({ airborne = true }), 14) - base * 2.5) < 1e-9, "in the air")
 end)
 
-test("разброс: скорость увеличивает, walkSpeed = 0 без деления на 0", function()
-	check(Ballistics.spreadDeg(2, Aim, stateOf({ speed = 14 }), 14) > Ballistics.spreadDeg(2, Aim, stateOf(), 14), "шаг шире стойки")
+test("spread: speed increases it, walkSpeed = 0 without division by 0", function()
+	check(Ballistics.spreadDeg(2, Aim, stateOf({ speed = 14 }), 14) > Ballistics.spreadDeg(2, Aim, stateOf(), 14), "a step is wider than standing")
 	local v = Ballistics.spreadDeg(2, Aim, stateOf({ speed = 14 }), 0)
 	check(v == v and v < math.huge, "walkSpeed = 0")
 end)
 
-test("разброс: раздутие очереди не выше bloomMax", function()
+test("spread: burst bloom not above bloomMax", function()
 	local base = 2
 	local capped = Ballistics.spreadDeg(base, Aim, stateOf({ burst = 1000 }), 14)
-	check(math.abs(capped - (base + Aim.bloomMax)) < 1e-9, "потолок раздутия")
-	check(Ballistics.spreadDeg(base, Aim, stateOf({ burst = 3 }), 14) < capped, "ниже потолка")
+	check(math.abs(capped - (base + Aim.bloomMax)) < 1e-9, "bloom cap")
+	check(Ballistics.spreadDeg(base, Aim, stateOf({ burst = 3 }), 14) < capped, "below the cap")
 end)
 
-test("отдача: в начале очереди нет рыскания, зигзаг воспроизводим", function()
+test("recoil: no yaw drift at the start of a burst, the zigzag is reproducible", function()
 	local pitch, yaw = Ballistics.recoilStep(Aim, 0)
-	eq(yaw, 0, "рыскание на выстреле 0")
-	check(math.abs(pitch - Aim.recoilPitch) < 1e-9, "подъём в начале = recoilPitch")
+	eq(yaw, 0, "yaw drift on shot 0")
+	check(math.abs(pitch - Aim.recoilPitch) < 1e-9, "initial climb = recoilPitch")
 	for i = 0, 20 do
 		local p1, y1 = Ballistics.recoilStep(Aim, i)
 		local p2, y2 = Ballistics.recoilStep(Aim, i)
-		check(p1 == p2 and y1 == y2, "повтор " .. i)
+		check(p1 == p2 and y1 == y2, "repeat " .. i)
 	end
 	local p12 = Ballistics.recoilStep(Aim, 12)
-	check(math.abs(p12 - Aim.recoilPitch * (1 + Aim.recoilGrow)) < 1e-9, "рост к 12-му выстрелу")
+	check(math.abs(p12 - Aim.recoilPitch * (1 + Aim.recoilGrow)) < 1e-9, "growth up to the 12th shot")
 end)
 
 -- RateLimit (игрок подменён таблицей) -------------------------------------------------------------------------------
 
-test("RateLimit: первый вызов проходит, повтор в интервале — нет", function()
+test("RateLimit: the first call passes, a repeat within the interval doesn't", function()
 	local p: any = {}
-	check(RateLimit.allow(p, "A", 1000), "первый")
-	check(not RateLimit.allow(p, "A", 1000), "повтор в интервале")
+	check(RateLimit.allow(p, "A", 1000), "first")
+	check(not RateLimit.allow(p, "A", 1000), "repeat within the interval")
 	RateLimit.forget(p)
 end)
 
-test("RateLimit: ключи и игроки независимы", function()
+test("RateLimit: keys and players are independent", function()
 	local p1: any, p2: any = {}, {}
 	check(RateLimit.allow(p1, "A", 1000), "p1 A")
 	check(RateLimit.allow(p1, "B", 1000), "p1 B")
 	check(RateLimit.allow(p2, "A", 1000), "p2 A")
-	check(not RateLimit.allow(p1, "A", 1000), "p1 A повтор")
+	check(not RateLimit.allow(p1, "A", 1000), "p1 A repeat")
 	RateLimit.forget(p1)
 	RateLimit.forget(p2)
 end)
 
-test("RateLimit: после forget снова разрешено, нулевой интервал не блокирует", function()
+test("RateLimit: after forget it's allowed again, a zero interval doesn't block", function()
 	local p: any = {}
-	check(RateLimit.allow(p, "A", 1000), "первый")
+	check(RateLimit.allow(p, "A", 1000), "first")
 	RateLimit.forget(p)
-	check(RateLimit.allow(p, "A", 1000), "после forget")
-	check(RateLimit.allow(p, "Z", 0), "интервал 0, первый")
-	check(RateLimit.allow(p, "Z", 0), "интервал 0, второй")
+	check(RateLimit.allow(p, "A", 1000), "after forget")
+	check(RateLimit.allow(p, "Z", 0), "interval 0, first")
+	check(RateLimit.allow(p, "Z", 0), "interval 0, second")
 	RateLimit.forget(p)
 end)
 
-test("Rewind: проход вперёд, возврат при повторном нажатии и запуск заново", function()
+test("Rewind: forward pass, return on a repeat press and restart", function()
 	local s = Rewind.new(1, 4)
 	Rewind.press(s)
 	local u = Rewind.step(s, 0.5)
-	check(u ~= nil and math.abs((u :: number) - 0.5) < 1e-6, "полпути вперёд")
+	check(u ~= nil and math.abs((u :: number) - 0.5) < 1e-6, "halfway forward")
 	Rewind.press(s) -- второе нажатие: возврат с последующим повтором
 	u = Rewind.step(s, 0.1)
-	check(u ~= nil and (u :: number) < 0.5 and (u :: number) > 0, "едет назад, без скачка")
+	check(u ~= nil and (u :: number) < 0.5 and (u :: number) > 0, "going back, no jump")
 	u = Rewind.step(s, 0.2) -- до нуля, дальше разворот вперёд
-	check(s.active and s.dir == 1, "после возврата идёт заново")
+	check(s.active and s.dir == 1, "after returning it plays again")
 	Rewind.release(s)
 	local guard = 0
 	while Rewind.step(s, 0.1) ~= nil and guard < 100 do
 		guard += 1
 	end
-	check(not s.active, "доиграл и закончил")
+	check(not s.active, "finished playing and ended")
 end)
 
-test("Rewind: отмена едет назад и заканчивается, нажатие во время возврата разворачивает", function()
+test("Rewind: cancel goes back and ends, a press during the return turns it around", function()
 	local s = Rewind.new(2, 4)
 	Rewind.press(s)
 	Rewind.release(s)
 	Rewind.step(s, 1)
 	Rewind.cancel(s)
 	local u = Rewind.step(s, 0.1)
-	check(u ~= nil and (u :: number) < 0.5, "возврат")
+	check(u ~= nil and (u :: number) < 0.5, "return")
 	Rewind.press(s)
-	check(s.dir == 1 and s.active, "разворот вперёд из текущей позы")
+	check(s.dir == 1 and s.active, "turn forward from the current pose")
 	Rewind.cancel(s)
-	check(Rewind.step(s, 10) == nil and not s.active, "возврат закончился")
+	check(Rewind.step(s, 10) == nil and not s.active, "the return ended")
 end)
 
-test("Rewind: пока держат, проход повторяется", function()
+test("Rewind: while held, the pass repeats", function()
 	local s = Rewind.new(1, 4)
 	Rewind.press(s)
 	Rewind.step(s, 0.9)
 	local u = Rewind.step(s, 0.3)
-	check(s.active and u ~= nil and (u :: number) < 0.5, "второй круг")
+	check(s.active and u ~= nil and (u :: number) < 0.5, "second lap")
 end)
 
-print(string.format("\nИТОГО: %d тестов, упало %d", total, failed))
+print(string.format("\nTOTAL: %d tests, %d failed", total, failed))
 if failed > 0 then
-	error("есть упавшие тесты", 0)
+	error("some tests failed", 0)
 end

@@ -51,13 +51,13 @@ local function updateSign(id: string)
 	local open = unlocked[id] == true
 	if info.signLabel then
 		info.signLabel.Text = if open
-			then def.name .. "\nоткрыто"
+			then def.name .. "\nopen"
 			else string.format("%s\n● %d / %d", def.name, funded[id] or 0, def.cost)
 	end
 	if info.signPrompt then
 		info.signPrompt.Enabled = not open and not isNight
 		info.signPrompt.ObjectText = def.name
-		info.signPrompt.ActionText = string.format("Вложить %d ●", stepOf(def))
+		info.signPrompt.ActionText = string.format("Invest %d ●", stepOf(def))
 	end
 end
 
@@ -72,7 +72,7 @@ local function updateSpots(id: string)
 		if spot.kind == "medkit" or spot.kind == "energy" then
 			local left = if stock[id] then (stock[id][spot.kind] or 0) else 0
 			enabled = open and left > 0
-			spot.prompt.ObjectText = string.format("%s: %d", if spot.kind == "medkit" then "Аптечки" else "Энергетики", left)
+			spot.prompt.ObjectText = string.format("%s: %d", if spot.kind == "medkit" then "Medkits" else "Energy drinks", left)
 		end
 		spot.prompt.Enabled = enabled
 	end
@@ -104,7 +104,7 @@ local function unlock(id: string)
 	updateSign(id)
 	updateSpots(id)
 	if def then
-		notify(nil, string.format("Открыто: %s — %s", def.name, def.info), 5)
+		notify(nil, string.format("Opened: %s — %s", def.name, def.info), 5)
 	end
 end
 
@@ -116,7 +116,7 @@ local function contribute(player: Player, id: string)
 	local remaining = def.cost - (funded[id] or 0)
 	local amount = math.min(stepOf(def), remaining, EconomyService.get(player))
 	if amount <= 0 or not EconomyService.trySpend(player, amount) then
-		notify(player, "Не хватает монет", 1.5)
+		notify(player, "Not enough coins", 1.5)
 		return
 	end
 	funded[id] = (funded[id] or 0) + amount
@@ -137,7 +137,7 @@ local function onSpot(player: Player, id: string, spot: Types.Spot)
 	if spot.kind == "medkit" or spot.kind == "energy" then
 		local s = stock[id]
 		if not s or (s[spot.kind] or 0) <= 0 then
-			notify(player, "Закончились", 1.5)
+			notify(player, "Sold out", 1.5)
 			return
 		end
 		s[spot.kind] -= 1
@@ -150,12 +150,12 @@ local function onSpot(player: Player, id: string, spot: Types.Spot)
 			return
 		end
 		if who[player] then
-			notify(player, "Со склада можно взять только одно оружие", 2)
+			notify(player, "You can only take one weapon from the depot", 2)
 			return
 		end
 		who[player] = true
 		WeaponService.give(player, weaponId)
-		notify(player, "Получено: " .. Config.Weapons[weaponId].name, 2)
+		notify(player, "Received: " .. Config.Weapons[weaponId].name, 2)
 	end
 end
 
@@ -227,7 +227,7 @@ local function expelFromShop()
 					then Vector3.new(shop.center.X + sx * (shop.halfX + 8), 3, root.Position.Z)
 					else Vector3.new(root.Position.X, 3, shop.center.Z + sz * (shop.halfZ + 8))
 				char:PivotTo(CFrame.new(target))
-				notify(player, "Магазин закрыт на ночь", 3)
+				notify(player, "The shop is closed for the night", 3)
 			end
 		end
 	end
@@ -256,7 +256,7 @@ local function expelFromBase()
 					if hum.Health > 0 and char.Parent then
 						char:PivotTo(CFrame.new(m.nightSpawn + Vector3.new(math.random(-6, 6), 0, math.random(-4, 4))))
 						root.AssemblyLinearVelocity = Vector3.zero
-						notify(player, "Ночь: база закрыта, вы у точки сбора", 4)
+						notify(player, "Night: the base is closed, you're at the rally point", 4)
 					end
 				end)
 			end
@@ -293,7 +293,7 @@ local function expelFromBuilding(info: Types.BuildingInfo)
 			if math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z then
 				local exit = info.exit or Vector3.new(zone.center.X + half.X + 6, zone.center.Y, zone.center.Z)
 				player.Character:PivotTo(CFrame.new(exit + Vector3.new(0, 3, 0)))
-				notify(player, info.name .. " закрыто на ночь", 3)
+				notify(player, info.name .. " closed for the night", 3)
 			end
 		end
 	end

@@ -69,7 +69,7 @@ local function finish(player: Player, offer: Offer, id: string)
 	addStack(id)
 	local def = Perks.byId(id)
 	if def then
-		Remotes.get("Notify"):FireAllClients(string.format("%s выбрал перк: %s (%s)", player.DisplayName, def.name, def.desc), 4)
+		Remotes.get("Notify"):FireAllClients(string.format("%s chose a perk: %s (%s)", player.DisplayName, def.name, def.desc), 4)
 	end
 end
 

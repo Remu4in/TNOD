@@ -137,7 +137,7 @@ local function place(assets: Instance, parent: Instance, folder: string, name: s
 	local f = assets:FindFirstChild(folder)
 	local src = f and f:FindFirstChild(name)
 	if not src then
-		warn("[World] нет ассета " .. folder .. "/" .. name)
+		warn("[World] no asset " .. folder .. "/" .. name)
 		return nil, 0
 	end
 	local opts: Opts = o or {}
@@ -610,20 +610,20 @@ function World.build(): Types.MapInfo
 	spawn.Parent = root
 
 	local tp: { { any } } = {
-		{ "База (старт)", V3(0, 4, spawnZ) },
-		{ "Центр города", V3(0, 4, 40) },
-		{ "Кафе", V3(B[2][4].x0 + 30, 4, B[2][4].z1 + 20) },
-		{ "Аптека", V3(B[3][4].x0 + 30, 4, B[3][4].z1 + 20) },
-		{ "Оружейная", V3(B[3][2].x0 + 30, 4, B[3][2].z1 + 20) },
-		{ "Холодное оружие", V3(B[1][2].x0 + 30, 4, B[1][2].z0 - 18) },
-		{ "Гараж", V3(B[2][1].x0 + 30, 4, B[2][1].z0 - 18) },
-		{ "Убежище", V3(B[4][1].x0 + 30, 4, B[4][1].z1 + 20) },
-		{ "Военная база", V3(0, 4, BASE_Z) },
-		{ "Шатёр", V3(70, 4, BASE_Z + 40) },
-		{ "Вертолётка", V3(-250, 4, BASE_Z - 40) },
-		{ "Вход в бункер", V3(0, 4, BUNKER_Z - 40) },
-		{ "Северный тоннель", V3(0, 4, WALL_N - 40) },
-		{ "Восточный тоннель", V3(WALL_X + 40, 4, 0) },
+		{ "Base (start)", V3(0, 4, spawnZ) },
+		{ "City center", V3(0, 4, 40) },
+		{ "Cafe", V3(B[2][4].x0 + 30, 4, B[2][4].z1 + 20) },
+		{ "Pharmacy", V3(B[3][4].x0 + 30, 4, B[3][4].z1 + 20) },
+		{ "Armory", V3(B[3][2].x0 + 30, 4, B[3][2].z1 + 20) },
+		{ "Melee weapons", V3(B[1][2].x0 + 30, 4, B[1][2].z0 - 18) },
+		{ "Garage", V3(B[2][1].x0 + 30, 4, B[2][1].z0 - 18) },
+		{ "Shelter", V3(B[4][1].x0 + 30, 4, B[4][1].z1 + 20) },
+		{ "Military base", V3(0, 4, BASE_Z) },
+		{ "Tent", V3(70, 4, BASE_Z + 40) },
+		{ "Helipad", V3(-250, 4, BASE_Z - 40) },
+		{ "Bunker entrance", V3(0, 4, BUNKER_Z - 40) },
+		{ "North tunnel", V3(0, 4, WALL_N - 40) },
+		{ "East tunnel", V3(WALL_X + 40, 4, 0) },
 	}
 	for i, e in tp do
 		local col = (i - 1) % 7
@@ -634,7 +634,7 @@ function World.build(): Types.MapInfo
 		att.Position = V3(0, 1.2, 0)
 		att.Parent = pad
 		local prompt = Instance.new("ProximityPrompt")
-		prompt.ActionText = "Телепорт"
+		prompt.ActionText = "Teleport"
 		prompt.ObjectText = e[1] :: string
 		prompt.HoldDuration = 0
 		prompt.MaxActivationDistance = 6
@@ -670,7 +670,7 @@ function World.build(): Types.MapInfo
 
 	return {
 		id = "World",
-		name = "Большой мир",
+		name = "Big world",
 		root = root,
 		windows = {},
 		buildings = {},

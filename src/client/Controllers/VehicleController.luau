@@ -30,7 +30,7 @@ end
 -- Панель мест вместо панели оружия: 1 водитель, 2 переднее пассажирское, 3–4 задние, 0 турель (если есть).
 -- Клик/касание или клавиша с номером места пересаживает на свободное место (сервер проверяет).
 -- Геймпад: крестовина влево/вправо — на предыдущее/следующее свободное место (кнопки оружия и движения не заняты).
-local SEAT_LABELS: { [number]: string } = { [1] = "Водитель", [2] = "Пассажир", [3] = "Сзади слева", [4] = "Сзади справа", [0] = "Турель" }
+local SEAT_LABELS: { [number]: string } = { [1] = "Driver", [2] = "Passenger", [3] = "Rear left", [4] = "Rear right", [0] = "Turret" }
 local SEAT_ORDER = { 1, 2, 3, 4, 0 }
 local SEAT_KEYS: { [Enum.KeyCode]: number } = {
 	[Enum.KeyCode.One] = 1, [Enum.KeyCode.Two] = 2, [Enum.KeyCode.Three] = 3, [Enum.KeyCode.Four] = 4, [Enum.KeyCode.Zero] = 0,
@@ -66,7 +66,7 @@ local function startSeatPanel(player: Player)
 	padHint.TextSize = 14
 	padHint.TextColor3 = Color3.new(1, 1, 1)
 	padHint.TextStrokeTransparency = 0.5
-	padHint.Text = "◀ ▶ — пересесть"
+	padHint.Text = "◀ ▶ — change seat"
 	padHint.Visible = false
 	padHint.Parent = gui
 

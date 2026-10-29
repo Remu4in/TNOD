@@ -135,7 +135,7 @@ Config.Round = {
 
 -- Локации идут по порядку; смена каждые LocationNights ночей (= 2 босса при BossEvery = 5).
 Config.Locations = {
-	{ id = "Custom", name = "Своя карта" }, -- карту Руслан собрал в Studio; код её не строит (Locations/Custom читает маркеры)
+	{ id = "Custom", name = "Custom map" }, -- карту Руслан собрал в Studio; код её не строит (Locations/Custom читает маркеры)
 }
 Config.LocationNights = 10
 
@@ -182,13 +182,13 @@ export type VehicleType = {
 	turret: { seat: Vector3, gunPivot: Vector3? }?, -- seat — смещение сиденья стрелка от люка; gunPivot — ось встроенного пулемёта (детали MG шаблона), в родных координатах шаблона
 }
 Config.VehicleTypes = {
-	Car = { id = "Car", name = "Легковая", maxSpeed = 105, reverseSpeed = 30, accel = 55, brake = 110, drag = 22, turn = 2.4, density = 0.5, hp = 300, ramMult = 1, price = 0, seats = 4 },
-	Jeep = { id = "Jeep", name = "Военный джип", maxSpeed = 92, reverseSpeed = 28, accel = 46, brake = 105, drag = 22, turn = 2.2, density = 0.9, hp = 700, ramMult = 1.4, price = 3000, seats = 0 },
-	Van = { id = "Van", name = "Фургон", maxSpeed = 82, reverseSpeed = 26, accel = 38, brake = 95, drag = 22, turn = 1.9, density = 1.1, hp = 800, ramMult = 1.5, price = 2500, seats = 0 },
-	Truck = { id = "Truck", name = "Грузовик", maxSpeed = 72, reverseSpeed = 22, accel = 28, brake = 85, drag = 20, turn = 1.6, density = 1.6, hp = 1100, ramMult = 2, price = 4500, seats = 0 },
-	Bus = { id = "Bus", name = "Автобус", maxSpeed = 62, reverseSpeed = 20, accel = 22, brake = 75, drag = 20, turn = 1.3, density = 2.0, hp = 1400, ramMult = 2.4, price = 5500, seats = 0 },
+	Car = { id = "Car", name = "Sedan", maxSpeed = 105, reverseSpeed = 30, accel = 55, brake = 110, drag = 22, turn = 2.4, density = 0.5, hp = 300, ramMult = 1, price = 0, seats = 4 },
+	Jeep = { id = "Jeep", name = "Military jeep", maxSpeed = 92, reverseSpeed = 28, accel = 46, brake = 105, drag = 22, turn = 2.2, density = 0.9, hp = 700, ramMult = 1.4, price = 3000, seats = 0 },
+	Van = { id = "Van", name = "Van", maxSpeed = 82, reverseSpeed = 26, accel = 38, brake = 95, drag = 22, turn = 1.9, density = 1.1, hp = 800, ramMult = 1.5, price = 2500, seats = 0 },
+	Truck = { id = "Truck", name = "Truck", maxSpeed = 72, reverseSpeed = 22, accel = 28, brake = 85, drag = 20, turn = 1.6, density = 1.6, hp = 1100, ramMult = 2, price = 4500, seats = 0 },
+	Bus = { id = "Bus", name = "Bus", maxSpeed = 62, reverseSpeed = 20, accel = 22, brake = 75, drag = 20, turn = 1.3, density = 2.0, hp = 1400, ramMult = 2.4, price = 5500, seats = 0 },
 	GunJeep = {
-		id = "GunJeep", name = "Джип с турелью", maxSpeed = 92, reverseSpeed = 28, accel = 46, brake = 105, drag = 22, turn = 2.2, density = 0.9, hp = 900, ramMult = 1.4, price = 10000, seats = 4,
+		id = "GunJeep", name = "Turret jeep", maxSpeed = 92, reverseSpeed = 28, accel = 46, brake = 105, drag = 22, turn = 2.2, density = 0.9, hp = 900, ramMult = 1.4, price = 10000, seats = 4,
 		-- пулемёт уже есть в модели машины (детали «MG»): отдельную турель не ставим, а оживляем встроенный; параметры — Config.TurretGun
 		turret = { seat = Vector3.new(0, -2.2, 0.8), gunPivot = Vector3.new(-0.9, 3.55, -1.6) },
 	},
@@ -271,14 +271,14 @@ export type BuildingDef = {
 }
 
 local Buildings: { BuildingDef } = {
-	{ id = "Cafe", name = "Кафе", cost = 0, info = "Стартовое укрытие" },
+	{ id = "Cafe", name = "Cafe", cost = 0, info = "Starting shelter" },
 	-- Открытие здания за монеты (вывеска) даёт доступ к НПС-продавцу внутри: он торгует только днём (Config.Vendors)
-	{ id = "Pharmacy", name = "Медпункт", cost = 500, info = "Продавец: аптечки и энергетики" },
-	{ id = "Armory", name = "Оружейная", cost = 1000, info = "Продавец: холодное оружие" },
-	{ id = "Garage", name = "Гараж", cost = 2000, info = "Продавец: колючая и электро-проволока" },
-	{ id = "GunShop", name = "Магазин турелей", cost = 3000, info = "Продавец: турели" },
-	{ id = "Shelter", name = "Убежище", cost = 4000, bonus = "teamLife", info = "Дополнительная жизнь команды и продавец" },
-	{ id = "Factory", name = "Завод", cost = 4000, info = "Внутри военный автомобиль с пулемётом на крыше" },
+	{ id = "Pharmacy", name = "Medical post", cost = 500, info = "Vendor: medkits and energy drinks" },
+	{ id = "Armory", name = "Armory", cost = 1000, info = "Vendor: melee weapons" },
+	{ id = "Garage", name = "Garage", cost = 2000, info = "Vendor: barbed and electric wire" },
+	{ id = "GunShop", name = "Turret shop", cost = 3000, info = "Vendor: turrets" },
+	{ id = "Shelter", name = "Shelter", cost = 4000, bonus = "teamLife", info = "Team extra life and vendor" },
+	{ id = "Factory", name = "Factory", cost = 4000, info = "Inside: a military vehicle with a roof-mounted machine gun" },
 }
 Config.Buildings = Buildings
 
@@ -291,8 +291,8 @@ export type ItemDef = {
 }
 
 local Items: { [string]: ItemDef } = {
-	Medkit = { name = "Аптечка", heal = 60, color = Color3.fromRGB(235, 235, 235) },
-	EnergyDrink = { name = "Энергетик", infiniteWaves = 1, color = Color3.fromRGB(60, 190, 255) },
+	Medkit = { name = "Medkit", heal = 60, color = Color3.fromRGB(235, 235, 235) },
+	EnergyDrink = { name = "Energy drink", infiniteWaves = 1, color = Color3.fromRGB(60, 190, 255) },
 }
 Config.Items = Items
 
@@ -345,64 +345,64 @@ Config.Barricade = {
 
 local Weapons: { [string]: WeaponDef } = {
 	Pistol = {
-		id = "Pistol", name = "Пистолет", price = 0,
+		id = "Pistol", name = "Pistol", price = 0,
 		damage = 20, pellets = 1, spreadDeg = 1, fireRate = 4, automatic = false,
 		magSize = 12, reserve = -1, reloadTime = 1.2, range = 250,
 		color = Color3.fromRGB(70, 70, 75),
 	},
 	SMG = {
-		id = "SMG", name = "Пистолет-пулемёт", price = 500,
+		id = "SMG", name = "Submachine gun", price = 500,
 		damage = 14, pellets = 1, spreadDeg = 2.2, fireRate = 10, automatic = true,
 		magSize = 30, reserve = 180, reloadTime = 1.6, range = 200,
 		color = Color3.fromRGB(40, 60, 90),
 	},
 	Shotgun = {
-		id = "Shotgun", name = "Дробовик", price = 750,
+		id = "Shotgun", name = "Shotgun", price = 750,
 		damage = 12, pellets = 6, spreadDeg = 7, fireRate = 1.2, automatic = false,
 		magSize = 6, reserve = 36, reloadTime = 2.2, range = 60,
 		color = Color3.fromRGB(110, 70, 40),
 	},
 	Rifle = {
-		id = "Rifle", name = "Винтовка", price = 1200,
+		id = "Rifle", name = "Rifle", price = 1200,
 		damage = 45, pellets = 1, spreadDeg = 0.5, fireRate = 3, automatic = true,
 		magSize = 20, reserve = 120, reloadTime = 2.0, range = 400,
 		color = Color3.fromRGB(60, 80, 50),
 	},
 	Revolver = {
-		id = "Revolver", name = "Револьвер", price = 400,
+		id = "Revolver", name = "Revolver", price = 400,
 		damage = 55, pellets = 1, spreadDeg = 0.8, fireRate = 1.6, automatic = false,
 		magSize = 6, reserve = 42, reloadTime = 2.4, range = 300,
 		color = Color3.fromRGB(90, 90, 95),
 	},
 	LMG = {
-		id = "LMG", name = "Пулемёт", price = 1800,
+		id = "LMG", name = "Machine gun", price = 1800,
 		damage = 22, pellets = 1, spreadDeg = 2.8, fireRate = 11, automatic = true,
 		magSize = 75, reserve = 300, reloadTime = 4.2, range = 250,
 		color = Color3.fromRGB(50, 55, 60),
 	},
 	Sniper = {
-		id = "Sniper", name = "Снайперская винтовка", price = 1500,
+		id = "Sniper", name = "Sniper rifle", price = 1500,
 		damage = 150, pellets = 1, spreadDeg = 0.1, fireRate = 0.9, automatic = false,
 		magSize = 5, reserve = 30, reloadTime = 3.0, range = 600,
 		color = Color3.fromRGB(70, 60, 45),
 	},
 	-- Ближний бой: патронов нет, бьёт по сектору перед игроком
 	Knife = {
-		id = "Knife", name = "Нож", price = 0,
+		id = "Knife", name = "Knife", price = 0,
 		damage = 25, pellets = 1, spreadDeg = 0, fireRate = 2.5, automatic = false,
 		magSize = 0, reserve = -1, reloadTime = 0, range = 5.5,
 		color = Color3.fromRGB(150, 150, 155),
 		melee = true, arcDeg = 70, maxTargets = 1, knockback = 20,
 	},
 	Bat = {
-		id = "Bat", name = "Бита", price = 300,
+		id = "Bat", name = "Bat", price = 300,
 		damage = 45, pellets = 1, spreadDeg = 0, fireRate = 1.4, automatic = false,
 		magSize = 0, reserve = -1, reloadTime = 0, range = 6.5,
 		color = Color3.fromRGB(150, 110, 60),
 		melee = true, arcDeg = 110, maxTargets = 3, knockback = 45,
 	},
 	Machete = {
-		id = "Machete", name = "Мачете", price = 600,
+		id = "Machete", name = "Machete", price = 600,
 		damage = 70, pellets = 1, spreadDeg = 0, fireRate = 1.8, automatic = false,
 		magSize = 0, reserve = -1, reloadTime = 0, range = 6.5,
 		color = Color3.fromRGB(130, 135, 140),
@@ -561,51 +561,51 @@ export type WeaponDraft = {
 }
 Config.WeaponDraft = {
 	-- Пистолеты
-	{ id = "Pistol", name = "Glock 19", ref = "Pistols/Glock19", tier = "start", price = 0, damage = 20, fireRate = 4, magSize = 12, reserve = -1, reloadTime = 1.2, note = "как сейчас" },
+	{ id = "Pistol", name = "Glock 19", ref = "Pistols/Glock19", tier = "start", price = 0, damage = 20, fireRate = 4, magSize = 12, reserve = -1, reloadTime = 1.2, note = "as it is now" },
 	{ id = "M1911", name = "M1911", ref = "Pistols/M1911A1", tier = "wall", slot = 1, price = 250, damage = 28, fireRate = 3.2, magSize = 8, reserve = 56, reloadTime = 1.4 },
 	{ id = "FiveSeven", name = "Five-seveN", ref = "Pistols/FiveSeveN", tier = "wall", slot = 2, price = 350, damage = 17, fireRate = 5.5, magSize = 20, reserve = 120, reloadTime = 1.5 },
-	{ id = "DesertEagle", name = "Desert Eagle", ref = "Pistols/DesertEagle", tier = "wall", slot = 6, price = 900, damage = 62, fireRate = 2.0, magSize = 8, reserve = 48, reloadTime = 2.0, note = "мощнее револьвера, мало патронов" },
+	{ id = "DesertEagle", name = "Desert Eagle", ref = "Pistols/DesertEagle", tier = "wall", slot = 6, price = 900, damage = 62, fireRate = 2.0, magSize = 8, reserve = 48, reloadTime = 2.0, note = "stronger than the revolver, little ammo" },
 	-- Револьверы
-	{ id = "Revolver", name = "Colt Python", ref = "Revolvers/ColtPython", tier = "wall", slot = 3, price = 400, damage = 55, fireRate = 1.6, magSize = 6, reserve = 42, reloadTime = 2.4, note = "как сейчас" },
-	{ id = "Model29", name = "S&W Model 29", ref = "Revolvers/SWModel29", tier = "donate", price = 0, damage = 70, fireRate = 1.3, magSize = 6, reserve = 36, reloadTime = 2.6, note = "магнум .44, косметика-бонус" },
+	{ id = "Revolver", name = "Colt Python", ref = "Revolvers/ColtPython", tier = "wall", slot = 3, price = 400, damage = 55, fireRate = 1.6, magSize = 6, reserve = 42, reloadTime = 2.4, note = "as it is now" },
+	{ id = "Model29", name = "S&W Model 29", ref = "Revolvers/SWModel29", tier = "donate", price = 0, damage = 70, fireRate = 1.3, magSize = 6, reserve = 36, reloadTime = 2.6, note = "a .44 magnum, cosmetic bonus" },
 	-- ПП
-	{ id = "SMG", name = "MP5", ref = "SMG/MP5", tier = "wall", slot = 4, price = 500, damage = 14, fireRate = 10, magSize = 30, reserve = 180, reloadTime = 1.6, note = "как сейчас" },
+	{ id = "SMG", name = "MP5", ref = "SMG/MP5", tier = "wall", slot = 4, price = 500, damage = 14, fireRate = 10, magSize = 30, reserve = 180, reloadTime = 1.6, note = "as it is now" },
 	{ id = "Uzi", name = "Uzi", ref = "SMG/Uzi", tier = "wall", slot = 3, price = 450, damage = 12, fireRate = 12, magSize = 32, reserve = 192, reloadTime = 1.7 },
-	{ id = "Thompson", name = "Thompson M1A1", ref = "SMG/M1A1Thompson", tier = "wall", slot = 5, price = 800, damage = 18, fireRate = 9, magSize = 50, reserve = 200, reloadTime = 2.4, note = "барабан" },
+	{ id = "Thompson", name = "Thompson M1A1", ref = "SMG/M1A1Thompson", tier = "wall", slot = 5, price = 800, damage = 18, fireRate = 9, magSize = 50, reserve = 200, reloadTime = 2.4, note = "drum" },
 	{ id = "Vector", name = "Kriss Vector", ref = "SMG/KrissVector", tier = "late", price = 1700, damage = 13, fireRate = 15, magSize = 25, reserve = 200, reloadTime = 1.6 },
 	-- Дробовики
-	{ id = "Shotgun", name = "Mossberg 500", ref = "Shotguns/Mossberg500", tier = "wall", slot = 5, price = 750, damage = 12, pellets = 6, fireRate = 1.2, magSize = 6, reserve = 36, reloadTime = 2.2, note = "как сейчас" },
-	{ id = "Sawnoff", name = "Обрез", ref = "Shotguns/SawnOffShotgun", tier = "wall", slot = 2, price = 350, damage = 14, pellets = 7, fireRate = 0.9, magSize = 2, reserve = 24, reloadTime = 1.8, note = "дёшево, 2 выстрела, дальность 40" },
-	{ id = "SPAS12", name = "SPAS-12", ref = "Shotguns/SPAS12", tier = "wall", slot = 8, price = 1400, damage = 11, pellets = 7, fireRate = 2.0, magSize = 8, reserve = 48, reloadTime = 2.8, note = "полуавто" },
-	{ id = "AA12", name = "AA-12", ref = "Shotguns/AA12", tier = "late", price = 2800, damage = 10, pellets = 7, fireRate = 5.0, magSize = 20, reserve = 120, reloadTime = 3.4, note = "автоматический" },
+	{ id = "Shotgun", name = "Mossberg 500", ref = "Shotguns/Mossberg500", tier = "wall", slot = 5, price = 750, damage = 12, pellets = 6, fireRate = 1.2, magSize = 6, reserve = 36, reloadTime = 2.2, note = "as it is now" },
+	{ id = "Sawnoff", name = "Sawed-off", ref = "Shotguns/SawnOffShotgun", tier = "wall", slot = 2, price = 350, damage = 14, pellets = 7, fireRate = 0.9, magSize = 2, reserve = 24, reloadTime = 1.8, note = "cheap, 2 shots, range 40" },
+	{ id = "SPAS12", name = "SPAS-12", ref = "Shotguns/SPAS12", tier = "wall", slot = 8, price = 1400, damage = 11, pellets = 7, fireRate = 2.0, magSize = 8, reserve = 48, reloadTime = 2.8, note = "semi-auto" },
+	{ id = "AA12", name = "AA-12", ref = "Shotguns/AA12", tier = "late", price = 2800, damage = 10, pellets = 7, fireRate = 5.0, magSize = 20, reserve = 120, reloadTime = 3.4, note = "automatic" },
 	-- Винтовки / карабины
-	{ id = "Rifle", name = "AK-12", ref = "Rifles/AK12", tier = "wall", slot = 7, price = 1200, damage = 45, fireRate = 3, magSize = 20, reserve = 120, reloadTime = 2.0, note = "как сейчас" },
+	{ id = "Rifle", name = "AK-12", ref = "Rifles/AK12", tier = "wall", slot = 7, price = 1200, damage = 45, fireRate = 3, magSize = 20, reserve = 120, reloadTime = 2.0, note = "as it is now" },
 	{ id = "M4A1", name = "M4A1", ref = "Carbines/M4A1", tier = "wall", slot = 6, price = 1000, damage = 36, fireRate = 4.2, magSize = 30, reserve = 180, reloadTime = 2.0 },
 	{ id = "SCAR", name = "SCAR-L", ref = "Rifles/SCARL", tier = "late", price = 2200, damage = 52, fireRate = 3.4, magSize = 25, reserve = 150, reloadTime = 2.2 },
-	{ id = "SKS", name = "СКС", ref = "Carbines/SKS", tier = "wall", slot = 9, price = 1300, damage = 80, fireRate = 1.8, magSize = 10, reserve = 60, reloadTime = 2.6, note = "полуавто, заменит снайперку, пока нет модели снайперки" },
+	{ id = "SKS", name = "SKS", ref = "Carbines/SKS", tier = "wall", slot = 9, price = 1300, damage = 80, fireRate = 1.8, magSize = 10, reserve = 60, reloadTime = 2.6, note = "semi-auto, replaces the sniper until there's a sniper model" },
 	-- Тяжёлое (моделей в паках нет — старые сгенерированные)
-	{ id = "LMG", name = "Пулемёт", ref = "", tier = "late", price = 1800, damage = 22, fireRate = 11, magSize = 75, reserve = 300, reloadTime = 4.2, note = "как сейчас; модель из WeaponVisuals" },
-	{ id = "Sniper", name = "Снайперская винтовка", ref = "", tier = "late", price = 1500, damage = 150, fireRate = 0.9, magSize = 5, reserve = 30, reloadTime = 3.0, note = "как сейчас; модель из WeaponVisuals" },
+	{ id = "LMG", name = "Machine gun", ref = "", tier = "late", price = 1800, damage = 22, fireRate = 11, magSize = 75, reserve = 300, reloadTime = 4.2, note = "as it is now; model from WeaponVisuals" },
+	{ id = "Sniper", name = "Sniper rifle", ref = "", tier = "late", price = 1500, damage = 150, fireRate = 0.9, magSize = 5, reserve = 30, reloadTime = 3.0, note = "as it is now; model from WeaponVisuals" },
 	-- Гранатомёты (после этапа «Оборудование»; взрывы и урон по площади — новая механика)
-	{ id = "M79", name = "M79", ref = "Launchers/M79", tier = "late", price = 5000, damage = 180, fireRate = 0.5, magSize = 1, reserve = 8, reloadTime = 2.5, note = "радиус 8, не бьёт по своим" },
+	{ id = "M79", name = "M79", ref = "Launchers/M79", tier = "late", price = 5000, damage = 180, fireRate = 0.5, magSize = 1, reserve = 8, reloadTime = 2.5, note = "radius 8, doesn't hurt teammates" },
 	-- Ближний бой
-	{ id = "Knife", name = "Боевой нож", ref = "Melee/CombatKnife", tier = "start", price = 0, damage = 25, fireRate = 2.5, note = "как сейчас" },
-	{ id = "Bat", name = "Бита", ref = "Melee/BaseballBat", tier = "wall", slot = 1, price = 300, damage = 45, fireRate = 1.4, note = "как сейчас" },
-	{ id = "Crowbar", name = "Монтировка", ref = "Melee/Crowbar", tier = "wall", price = 450, damage = 55, fireRate = 1.6 },
-	{ id = "Machete", name = "Мачете", ref = "Melee/StandardMachete", tier = "wall", slot = 2, price = 600, damage = 70, fireRate = 1.8, note = "как сейчас" },
-	{ id = "FireAxe", name = "Пожарный топор", ref = "Melee/FireAxe", tier = "wall", price = 900, damage = 95, fireRate = 1.1 },
-	{ id = "Katana", name = "Катана", ref = "Melee/Katana", tier = "late", price = 1800, damage = 110, fireRate = 2.0 },
-	{ id = "Sledge", name = "Кувалда", ref = "Melee/Sledgehammer", tier = "late", price = 1500, damage = 160, fireRate = 0.7, note = "сильное отбрасывание" },
-	{ id = "Karambit", name = "Керамбит", ref = "Melee/Karambit", tier = "donate", price = 0, damage = 30, fireRate = 3.0, note = "косметика, чуть быстрее ножа" },
-	{ id = "Balisong", name = "Бабочка", ref = "Melee/Balisong", tier = "donate", price = 0, damage = 25, fireRate = 2.5, note = "косметика" },
+	{ id = "Knife", name = "Combat knife", ref = "Melee/CombatKnife", tier = "start", price = 0, damage = 25, fireRate = 2.5, note = "as it is now" },
+	{ id = "Bat", name = "Bat", ref = "Melee/BaseballBat", tier = "wall", slot = 1, price = 300, damage = 45, fireRate = 1.4, note = "as it is now" },
+	{ id = "Crowbar", name = "Crowbar", ref = "Melee/Crowbar", tier = "wall", price = 450, damage = 55, fireRate = 1.6 },
+	{ id = "Machete", name = "Machete", ref = "Melee/StandardMachete", tier = "wall", slot = 2, price = 600, damage = 70, fireRate = 1.8, note = "as it is now" },
+	{ id = "FireAxe", name = "Fire axe", ref = "Melee/FireAxe", tier = "wall", price = 900, damage = 95, fireRate = 1.1 },
+	{ id = "Katana", name = "Katana", ref = "Melee/Katana", tier = "late", price = 1800, damage = 110, fireRate = 2.0 },
+	{ id = "Sledge", name = "Sledgehammer", ref = "Melee/Sledgehammer", tier = "late", price = 1500, damage = 160, fireRate = 0.7, note = "strong knockback" },
+	{ id = "Karambit", name = "Karambit", ref = "Melee/Karambit", tier = "donate", price = 0, damage = 30, fireRate = 3.0, note = "cosmetic, slightly faster than the knife" },
+	{ id = "Balisong", name = "Butterfly knife", ref = "Melee/Balisong", tier = "donate", price = 0, damage = 25, fireRate = 2.5, note = "cosmetic" },
 } :: { WeaponDraft }
 
 -- Обвесы (только описание и модели; логика обвесов — следующий этап). ref — ServerStorage.Assets.Weapons.Sights.<имя>
 -- Модель стоит основанием на рельсе: начало координат — центр основания, перёд — в -Z. aimY — высота линии прицеливания над рельсой.
 Config.WeaponSights = {
-	{ id = "RedDot", name = "Красная точка", ref = "Sights/RedDot", price = 300, zoom = 1.0, note = "по умолчанию на ПП" },
-	{ id = "EOTech", name = "Голографический EOTech", ref = "Sights/EOTech", price = 600, zoom = 1.0 },
-	{ id = "Holo", name = "Голографический простой", ref = "Sights/Holo", price = 450, zoom = 1.0 },
+	{ id = "RedDot", name = "Red dot", ref = "Sights/RedDot", price = 300, zoom = 1.0, note = "default on SMGs" },
+	{ id = "EOTech", name = "EOTech holographic", ref = "Sights/EOTech", price = 600, zoom = 1.0 },
+	{ id = "Holo", name = "Simple holographic", ref = "Sights/Holo", price = 450, zoom = 1.0 },
 	-- 4× и 8× (оптика для снайперки) — моделей нет, искать (ACOG и снайперский прицел из списка Руслана не берём)
 } :: { { id: string, name: string, ref: string, price: number, zoom: number, note: string? } }
 
@@ -680,7 +680,7 @@ local DRAFT_LENGTH = { Pistols = 1.4, Revolvers = 1.7, SMG = 2.2, Shotguns = 3.3
 local DRAFT_BASE = { Pistols = "Pistol", Revolvers = "Revolver", SMG = "SMG", Shotguns = "Shotgun", Rifles = "Rifle", Carbines = "Rifle" }
 local MELEE_LENGTH: { [string]: number } = { Crowbar = 2.8, FireAxe = 3.2, Sledge = 3.4, Katana = 3.8, Karambit = 1.4, Balisong = 1.7 } -- длина модели в руках, студов
 local MELEE_BASE: { [string]: string } = { Karambit = "Knife", Balisong = "Knife", Crowbar = "Bat", Sledge = "Bat", FireAxe = "Machete", Katana = "Machete" }
-local SHOP_CATEGORIES = { "Пистолеты", "ПП", "Дробовики", "Винтовки", "Тяжёлое", "Ближний бой" }
+local SHOP_CATEGORIES = { "Pistols", "SMGs", "Shotguns", "Rifles", "Heavy", "Melee" }
 local CATEGORY_OF = { Pistols = 1, Revolvers = 1, SMG = 2, Shotguns = 3, Rifles = 4, Carbines = 4, Melee = 6 }
 export type ShopItem = { id: string, category: number }
 local shopList: { ShopItem } = {}
@@ -840,48 +840,48 @@ Config.WallBuys = { "Bat", "Machete", "Revolver", "SMG", "Shotgun", "Rifle", "LM
 
 local Zombies: { [string]: ZombieDef } = {
 	Walker = {
-		id = "Walker", name = "Ходок", hp = 30, speed = 14, damage = 15, attackCooldown = 2.2, windup = 0.55, breakCooldown = 1,
+		id = "Walker", name = "Walker", hp = 30, speed = 14, damage = 15, attackCooldown = 2.2, windup = 0.55, breakCooldown = 1,
 		reward = 50, points = 10, scale = 1, color = Color3.fromRGB(95, 140, 80), planksPerHit = 1,
 	},
 	Runner = {
-		id = "Runner", name = "Бегун", hp = 20, speed = 19, damage = 10, attackCooldown = 1.8, windup = 0.4, breakCooldown = 0.8,
+		id = "Runner", name = "Runner", hp = 20, speed = 19, damage = 10, attackCooldown = 1.8, windup = 0.4, breakCooldown = 0.8,
 		reward = 60, points = 15, scale = 0.9, color = Color3.fromRGB(150, 160, 70), planksPerHit = 1,
 	},
 	Brute = {
-		id = "Brute", name = "Громила", hp = 300, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
+		id = "Brute", name = "Brute", hp = 300, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 400, points = 100, scale = 1.8, color = Color3.fromRGB(110, 50, 50), planksPerHit = 5,
 	},
 	-- Особые зомби (2026-10-19). Числа черновые: расписание по волнам и баланс — следующий шаг.
 	Military = {
-		id = "Military", name = "Заражённый военный", hp = 90, speed = 13, damage = 22, attackCooldown = 2.2, windup = 0.5, breakCooldown = 1,
+		id = "Military", name = "Infected soldier", hp = 90, speed = 13, damage = 22, attackCooldown = 2.2, windup = 0.5, breakCooldown = 1,
 		reward = 150, points = 40, scale = 1.05, color = Color3.fromRGB(80, 100, 70), planksPerHit = 2,
 	},
 	Chemist = {
-		id = "Chemist", name = "Химик", hp = 45, speed = 12, damage = 10, attackCooldown = 2.4, windup = 0.5, breakCooldown = 1,
+		id = "Chemist", name = "Chemist", hp = 45, speed = 12, damage = 10, attackCooldown = 2.4, windup = 0.5, breakCooldown = 1,
 		reward = 120, points = 35, scale = 1, color = Color3.fromRGB(120, 200, 90), planksPerHit = 1,
 		flask = { range = 40, minRange = 10, cooldown = 5, damage = 20, tick = 4, radius = 7 },
 	},
 	Dark = {
-		id = "Dark", name = "Тёмный", hp = 75, speed = 17, damage = 20, attackCooldown = 2, windup = 0.4, breakCooldown = 0.8,
+		id = "Dark", name = "Dark one", hp = 75, speed = 17, damage = 20, attackCooldown = 2, windup = 0.4, breakCooldown = 0.8,
 		reward = 140, points = 40, scale = 1, color = Color3.fromRGB(25, 25, 30), planksPerHit = 1,
 		teleport = { cooldown = 7, distance = 18 },
 	},
 	BucketHead = {
-		id = "BucketHead", name = "Бронированный", hp = 150, speed = 12, damage = 18, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
+		id = "BucketHead", name = "Armored", hp = 150, speed = 12, damage = 18, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
 		reward = 130, points = 40, scale = 1.15, color = Color3.fromRGB(120, 120, 120), planksPerHit = 2,
 	},
 	Crawler = {
-		id = "Crawler", name = "Ползун", hp = 25, speed = 11, damage = 8, attackCooldown = 1.6, windup = 0.35, breakCooldown = 0.8,
+		id = "Crawler", name = "Crawler", hp = 25, speed = 11, damage = 8, attackCooldown = 1.6, windup = 0.35, breakCooldown = 0.8,
 		reward = 40, points = 12, scale = 0.6, color = Color3.fromRGB(110, 120, 90), planksPerHit = 1,
 	},
 	BossBuff = {
-		id = "BossBuff", name = "Качок", hp = 2667, speed = 11, damage = 50, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
+		id = "BossBuff", name = "Jock", hp = 2667, speed = 11, damage = 50, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 2000, points = 500, scale = 2.0, color = Color3.fromRGB(110, 60, 60), planksPerHit = 6,
 			jump = { windup = 3, flight = 0.9, cooldown = 13, range = 70, minRange = 8, radius = 13, damage = 60, first = 6 },
 			rock = { windup = 1.6, flight = 1.3, cooldown = 9, range = 75, minRange = 14, radius = 8, damage = 40, first = 4 },
 	},
 	BossGarg = {
-		id = "BossGarg", name = "Гаргантюа", hp = 5000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
+		id = "BossGarg", name = "Gargantua", hp = 5000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
 		reward = 4000, points = 800, scale = 2.5, color = Color3.fromRGB(70, 100, 60), planksPerHit = 8,
 			-- (2026-10-28) вместо прыжка и броска камня: удар по земле, ползун со спины, бросок знака (rock со stun), обычный удар
 			rock = { windup = 1.5, flight = 1.4, cooldown = 9, range = 75, minRange = 14, radius = 6, damage = 30, first = 4, stun = 2 },
@@ -891,7 +891,7 @@ local Zombies: { [string]: ZombieDef } = {
 			},
 	},
 	BossStrong = {
-		id = "BossStrong", name = "Повелитель тёмных", hp = 3000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
+		id = "BossStrong", name = "Dark Lord", hp = 3000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
 		reward = 3000, points = 650, scale = 1.7, color = Color3.fromRGB(40, 30, 50), planksPerHit = 6,
 			-- (2026-10-28) разбег, чёрный взмах, прыжок с волной тьмы (jump.wave), обычный удар дубинкой
 			jump = { windup = 3, flight = 0.8, cooldown = 11, range = 70, minRange = 8, radius = 13, damage = 70, first = 6, wave = { extra = 10, noSprint = 3 } },
@@ -903,7 +903,7 @@ local Zombies: { [string]: ZombieDef } = {
 	-- Финальный босс (ночь 20, решение Руслана 2026-10-29: новая модель, ассет 5794917487, свой набор механик). Фаза 1: порез + способности; фаза 2 (HP ≤ 50%):
 	-- только способности и неуязвимость к огнестрелу. Тени (clones) повторяют способности, кроме раздвоения, и в 20 раз слабее.
 	BossFinal = {
-		id = "BossFinal", name = "Страж бункера", hp = 6000, speed = 13, damage = 70, attackCooldown = 2.6, windup = 0.8, breakCooldown = 1.4,
+		id = "BossFinal", name = "Bunker Guardian", hp = 6000, speed = 13, damage = 70, attackCooldown = 2.6, windup = 0.8, breakCooldown = 1.4,
 		reward = 5000, points = 1000, scale = 1.9, color = Color3.fromRGB(30, 24, 36), planksPerHit = 7,
 			phase2 = { hpFraction = 0.5 },
 			attacks = {
@@ -1104,15 +1104,15 @@ Config.Threat = {
 -- power (+доля урона), reload (−доля времени перезарядки), ammo (+доля запаса патронов), revive (−доля времени подъёма), coins (+доля монет).
 -- per — прирост за один стак, max — сколько раз можно взять.
 Config.Perks = {
-	{ id = "Vigor", name = "Закалка", desc = "+50 к здоровью", kind = "health", per = 50, max = 3, color = Color3.fromRGB(230, 90, 90) },
-	{ id = "Endurance", name = "Выносливость", desc = "+10 к энергии спринта", kind = "stamina", per = 0.10, max = 5, color = Color3.fromRGB(90, 190, 255) },
-	{ id = "Mag", name = "Расширенный магазин", desc = "+30% к магазину оружия", kind = "mag", per = 0.30, max = 2, color = Color3.fromRGB(240, 200, 80) },
-	{ id = "Swift", name = "Лёгкая поступь", desc = "+5% к скорости", kind = "speed", per = 0.05, max = 3, color = Color3.fromRGB(120, 230, 150) },
-	{ id = "Power", name = "Убойная сила", desc = "+10% к урону", kind = "power", per = 0.10, max = 3, color = Color3.fromRGB(255, 140, 60) },
-	{ id = "Reload", name = "Быстрые руки", desc = "Перезарядка на 15% быстрее", kind = "reload", per = 0.15, max = 3, color = Color3.fromRGB(200, 160, 255) },
-	{ id = "Ammo", name = "Запас патронов", desc = "+25% к запасу патронов", kind = "ammo", per = 0.25, max = 3, color = Color3.fromRGB(220, 200, 140) },
-	{ id = "Medic", name = "Полевой медик", desc = "Поднимаете на 30% быстрее", kind = "revive", per = 0.30, max = 2, color = Color3.fromRGB(240, 240, 240) },
-	{ id = "Greed", name = "Мародёр", desc = "+10% монет", kind = "coins", per = 0.10, max = 3, color = Color3.fromRGB(255, 215, 0) },
+	{ id = "Vigor", name = "Toughness", desc = "+50 health", kind = "health", per = 50, max = 3, color = Color3.fromRGB(230, 90, 90) },
+	{ id = "Endurance", name = "Stamina", desc = "+10 sprint energy", kind = "stamina", per = 0.10, max = 5, color = Color3.fromRGB(90, 190, 255) },
+	{ id = "Mag", name = "Extended mag", desc = "+30% weapon magazine", kind = "mag", per = 0.30, max = 2, color = Color3.fromRGB(240, 200, 80) },
+	{ id = "Swift", name = "Light step", desc = "+5% speed", kind = "speed", per = 0.05, max = 3, color = Color3.fromRGB(120, 230, 150) },
+	{ id = "Power", name = "Killing power", desc = "+10% damage", kind = "power", per = 0.10, max = 3, color = Color3.fromRGB(255, 140, 60) },
+	{ id = "Reload", name = "Quick hands", desc = "15% faster reload", kind = "reload", per = 0.15, max = 3, color = Color3.fromRGB(200, 160, 255) },
+	{ id = "Ammo", name = "Ammo reserve", desc = "+25% ammo reserve", kind = "ammo", per = 0.25, max = 3, color = Color3.fromRGB(220, 200, 140) },
+	{ id = "Medic", name = "Field medic", desc = "Pick teammates up 30% faster", kind = "revive", per = 0.30, max = 2, color = Color3.fromRGB(240, 240, 240) },
+	{ id = "Greed", name = "Looter", desc = "+10% coins", kind = "coins", per = 0.10, max = 3, color = Color3.fromRGB(255, 215, 0) },
 }
 
 -- Перки команды (Shared/Perks, PerkService): после каждого босса каждый игрок выбирает 1 из 3 случайных своих перков, выбранные действуют на всю
@@ -1120,15 +1120,15 @@ Config.Perks = {
 -- power (+доля урона), reload (−доля времени перезарядки), ammo (+доля запаса патронов), revive (−доля времени подъёма), coins (+доля монет).
 -- per — прирост за один стак, max — сколько раз можно взять.
 Config.Perks = {
-	{ id = "Vigor", name = "Закалка", desc = "+50 к здоровью", kind = "health", per = 50, max = 3, color = Color3.fromRGB(230, 90, 90) },
-	{ id = "Endurance", name = "Выносливость", desc = "+10 к энергии спринта", kind = "stamina", per = 0.10, max = 5, color = Color3.fromRGB(90, 190, 255) },
-	{ id = "Mag", name = "Расширенный магазин", desc = "+30% к магазину оружия", kind = "mag", per = 0.30, max = 2, color = Color3.fromRGB(240, 200, 80) },
-	{ id = "Swift", name = "Лёгкая поступь", desc = "+5% к скорости", kind = "speed", per = 0.05, max = 3, color = Color3.fromRGB(120, 230, 150) },
-	{ id = "Power", name = "Убойная сила", desc = "+10% к урону", kind = "power", per = 0.10, max = 3, color = Color3.fromRGB(255, 140, 60) },
-	{ id = "Reload", name = "Быстрые руки", desc = "Перезарядка на 15% быстрее", kind = "reload", per = 0.15, max = 3, color = Color3.fromRGB(200, 160, 255) },
-	{ id = "Ammo", name = "Запас патронов", desc = "+25% к запасу патронов", kind = "ammo", per = 0.25, max = 3, color = Color3.fromRGB(220, 200, 140) },
-	{ id = "Medic", name = "Полевой медик", desc = "Поднимаете на 30% быстрее", kind = "revive", per = 0.30, max = 2, color = Color3.fromRGB(240, 240, 240) },
-	{ id = "Greed", name = "Мародёр", desc = "+10% монет", kind = "coins", per = 0.10, max = 3, color = Color3.fromRGB(255, 215, 0) },
+	{ id = "Vigor", name = "Toughness", desc = "+50 health", kind = "health", per = 50, max = 3, color = Color3.fromRGB(230, 90, 90) },
+	{ id = "Endurance", name = "Stamina", desc = "+10 sprint energy", kind = "stamina", per = 0.10, max = 5, color = Color3.fromRGB(90, 190, 255) },
+	{ id = "Mag", name = "Extended mag", desc = "+30% weapon magazine", kind = "mag", per = 0.30, max = 2, color = Color3.fromRGB(240, 200, 80) },
+	{ id = "Swift", name = "Light step", desc = "+5% speed", kind = "speed", per = 0.05, max = 3, color = Color3.fromRGB(120, 230, 150) },
+	{ id = "Power", name = "Killing power", desc = "+10% damage", kind = "power", per = 0.10, max = 3, color = Color3.fromRGB(255, 140, 60) },
+	{ id = "Reload", name = "Quick hands", desc = "15% faster reload", kind = "reload", per = 0.15, max = 3, color = Color3.fromRGB(200, 160, 255) },
+	{ id = "Ammo", name = "Ammo reserve", desc = "+25% ammo reserve", kind = "ammo", per = 0.25, max = 3, color = Color3.fromRGB(220, 200, 140) },
+	{ id = "Medic", name = "Field medic", desc = "Pick teammates up 30% faster", kind = "revive", per = 0.30, max = 2, color = Color3.fromRGB(240, 240, 240) },
+	{ id = "Greed", name = "Looter", desc = "+10% coins", kind = "coins", per = 0.10, max = 3, color = Color3.fromRGB(255, 215, 0) },
 }
 
 -- Миссии ночей (сюжет: docs/story.md, MissionService). anchor — номер шатра/точки района по удалению от базы (1 — ближайший);
@@ -1170,76 +1170,76 @@ Config.SoldierTalk = {
 	playerInterval = 1,
 	distance = 9,
 	lines = {
-		"Боец, а ты точно не зомби? Покажи документы. Лучше зубы покажи.",
-		"Генерал Нурсултан сказал держать позицию. Я держу. Уже третий час. Ногу не чувствую.",
-		"Устав гласит: не стой там, где сложно бегать.",
-		"Мутанты ночью, мы днём. Всё по графику, как в профсоюзе.",
-		"Хочешь совет? Целься в голову. Если голова есть.",
-		"Сухпаёк закончился. Остались только лавровый лист и надежда.",
-		"Я не боюсь зомби. Я боюсь, что генерал заставит чистить картошку.",
-		"Говорят, где-то есть тихая ночь. Не верю.",
-		"Береги патроны, боец. Мы их не печатаем.",
-		"Я бы сходил в увольнение, но город сейчас занят.",
-		"Если встретишь босса, беги. Если не встретишь, всё равно беги.",
-		"Старшина учил: один выстрел — один зомби. Старшина не видел толпу.",
-		"На базе безопасно. По крайней мере, до рассвета, потом тоже безопасно.",
-		"Тут недавно один зомби попросил прикурить. Мы ему отказали из принципа.",
-		"Не забывай перезаряжаться. Это тебе не кино, там магазины бесконечные.",
-		"Нурсултан сегодня в хорошем настроении. Расстрелял только одну ведомость.",
-		"Знаешь, почему мы не спим? Потому что ночью приходят мутанты. И ещё кофе.",
-		"Мой дедушка воевал, отец воевал. А я тут с зомби. Эволюция.",
-		"Каску надел? Нет? Ну, значит, будешь героем. Посмертно.",
-		"Лучшая защита — это забор. Лучше забора только двойной забор.",
-		"Видишь тот шатёр? Раньше он был палаткой, теперь это стратегический объект.",
-		"Я тут записался в добровольцы. Не знал, что нас никто не спрашивал.",
-		"Зомби медленные? Расскажи это тому, что ночью меня догнал.",
-		"Не геройствуй. Герои у нас долго не служат, зато красиво.",
-		"Дежурство, боец, это когда ты стоишь и стараешься не заснуть. Вот этим я и занят.",
-		"Главное в армии — уметь вовремя сказать «так точно» и вовремя убежать.",
-		"Разведка доложила: впереди очень много зомби. Разведка не вернулась.",
-		"Вчера нашёл в кармане конфету. Это был лучший день в моей жизни.",
-		"Бить прикладом — не по уставу. Но зомби об уставе не знают.",
-		"Рация молчит уже сутки. Или все спят, или нас забыли.",
-		"Сержант сказал, что я похож на героя. Потом добавил: «издалека».",
-		"Береги базу, боец. Тут тепло, сухо и почти не едят.",
-		"Если упадёшь, не волнуйся: товарищ поднимет. Если успеет.",
-		"Мне бы отпуск на море. Хотя бы на лужу после дождя.",
+		"Soldier, are you sure you're not a zombie? Show me your papers. Better yet, show me your teeth.",
+		"General Nursultan said to hold the position. I'm holding it. Third hour now. Can't feel my leg.",
+		"Regulations say: don't stand where it's hard to run.",
+		"Mutants at night, us by day. Everything on schedule, like in a union.",
+		"Want some advice? Aim for the head. If there is a head.",
+		"Out of rations. All that's left is a bay leaf and hope.",
+		"I'm not afraid of zombies. I'm afraid the general will make me peel potatoes.",
+		"They say somewhere there's a quiet night. I don't believe it.",
+		"Save your ammo, soldier. We don't print it.",
+		"I'd take some leave, but the city is currently occupied.",
+		"If you meet a boss, run. If you don't meet one, run anyway.",
+		"The sergeant taught us: one shot, one zombie. The sergeant never saw a crowd.",
+		"The base is safe. At least until dawn. And after dawn too.",
+		"A zombie asked me for a light the other day. We refused on principle.",
+		"Don't forget to reload. This isn't the movies, where the mags are endless.",
+		"Nursultan's in a good mood today. Only shot one roster.",
+		"Know why we don't sleep? Because mutants come at night. And coffee.",
+		"My grandfather fought, my father fought. And here I am with zombies. Evolution.",
+		"Got your helmet on? No? Well, then you'll be a hero. Posthumously.",
+		"The best defense is a fence. Better than a fence is only a double fence.",
+		"See that tent? It used to be a tent, now it's a strategic asset.",
+		"I volunteered here. Didn't know nobody had asked us.",
+		"Zombies are slow? Tell that to the one that caught me last night.",
+		"Don't play the hero. Heroes don't serve long here, but it looks great.",
+		"Guard duty, soldier, is when you stand there trying not to fall asleep. That's what I'm doing.",
+		"The main thing in the army is to say «yes, sir» on time and run on time.",
+		"Recon reports: lots and lots of zombies ahead. Recon hasn't come back.",
+		"Yesterday I found a candy in my pocket. Best day of my life.",
+		"Hitting with the butt isn't by the book. But the zombies don't know the book.",
+		"The radio's been silent for a day. Either everyone's asleep or we've been forgotten.",
+		"The sergeant said I look like a hero. Then he added: «from far away».",
+		"Guard the base, soldier. It's warm, dry and hardly anyone eats you.",
+		"If you fall, don't worry: a buddy will pick you up. If they make it.",
+		"I could use a vacation by the sea. Even a puddle after the rain.",
 	},
 }
 
 -- Тексты генерала Нурсултана по типам миссий ({points}, {radius}, {kills}, {seconds}, {hold} подставляются из Config.Missions и Config.Convoy)
 Config.Briefs = {
 	scout = {
-		"Нужна разведка. Вокруг места будущего шатра отмечены контрольные точки — {points} синих кругов света в {radius} шагах от него.",
-		"Обойдите их все. Мутанты пойдут со всех сторон без остановки: не стойте на месте и держитесь вместе.",
+		"We need recon. Checkpoints are marked around the future tent site — {points} blue circles of light, {radius} paces from it.",
+		"Visit them all. Mutants will come from every side without a break: don't stand still and stick together.",
 	},
 	build = {
-		"Здесь встанет наш шатёр. Сначала зачистите зону: убейте {kills} мутантов.",
-		"Затем встаньте на золотую метку и удерживайте E {hold} секунд — шатёр установится. Он даст нам магазин, автомат и плацдарм в районе.",
+		"Our tent will go up here. First clear the zone: kill {kills} mutants.",
+		"Then stand on the golden marker and hold E for {hold} seconds — the tent will be set up. It gives us a shop, a weapon rack and a foothold in the district.",
 	},
 	escort = {
-		"Конвой с припасами. Грузовик выедет от точки сбора, объедет контрольные точки района и остановится на дороге у места шатра.",
-		"Едет он только пока рядом с ним (в {follow} шагах) есть кто-то из вас: ушли далеко — колонна встанет и будет ждать.",
-		"С ним идут двое моих бойцов: по 150 здоровья, стреляют несильно — основная работа на вас. Мутанты нападают и на них, и на грузовик (1000 прочности) — прикрывайте.",
-		"Потеряем грузовик — задание провалено.",
+		"A supply convoy. The truck leaves the rally point, goes round the district's checkpoints and stops on the road by the tent site.",
+		"It only moves while one of you is near it (within {follow} paces): wander off and the column stops and waits.",
+		"Two of my soldiers go with it: 150 health each, weak shots — the main work is yours. Mutants attack them and the truck (1000 durability) — cover them.",
+		"Lose the truck and the mission fails.",
 	},
 	defend = {
-		"Мутанты идут на шатёр. Держите оборону {seconds} секунд рядом с ним — не уходите далеко, отсчёт идёт, только пока вы рядом.",
+		"Mutants are heading for the tent. Hold the defense for {seconds} seconds near it — don't wander far, the countdown only runs while you're close.",
 	},
 	clear = {
-		"Зачистите зону: уничтожьте всех мутантов этой ночи. Берегите патроны, поднимайте упавших.",
+		"Clear the zone: destroy all of tonight's mutants. Save ammo, pick up the fallen.",
 	},
 	metro = {
-		"Под городом заброшенная станция метро — там гнёзда мутантов. Вход у лестницы, вот на этой отметке на карте.",
-		"Спуститесь по лестнице: внизу вас перенесёт на станцию. Зачистите её: убейте {kills} мутантов. Они лезут из тоннелей со всех сторон — держитесь платформ и укрытий.",
-		"Когда зачистим, вернётесь на базу.",
+		"Beneath the city there's an abandoned metro station — mutant nests. The entrance is by the stairs, at this mark on the map.",
+		"Go down the stairs: below, you'll be moved to the station. Clear it: kill {kills} mutants. They come out of the tunnels from every side — stick to the platforms and cover.",
+		"Once it's cleared, you'll return to the base.",
 	},
 	bossfight = {
-		"Финал, боец. Это не ночь: босс выходит днём, обычных мутантов не будет — только он.",
-		"Держитесь вместе, не стойте на месте: у него хватает приёмов, а кувырок спасает от большинства. Победим его — и город наш.",
+		"This is the finale, soldier. Not a night: the boss comes out by day, no regular mutants — only him.",
+		"Stick together, don't stand still: he has plenty of moves, and the roll saves you from most of them. Beat him and the city is ours.",
 	},
 	classic = {
-		"Уничтожьте всех мутантов этой ночи. Магазин на ночь закрыт — берегите патроны, поднимайте упавших.",
+		"Destroy all of tonight's mutants. The shop is closed for the night — save ammo, pick up the fallen.",
 	},
 } :: { [string]: { string } }
 -- Оповещение днём о ближайшей ночи (GeneralService.announceDay → атрибуты NextBrief*, клиент DayBriefController): панель, строки в чате и напоминание.
@@ -1249,27 +1249,27 @@ Config.DayBrief = {
 	RemindBefore = 30, -- за сколько секунд до ночи напоминаем
 	RemindSeconds = 6, -- сколько держится напоминание
 	Task = {
-		scout = "Разведка: обойти {points} контрольные точки вокруг места шатра",
-		build = "Зачистить зону ({kills} убийств) и поставить шатёр: удерживать E на золотой метке",
-		escort = "Конвой: довезти грузовик с припасами до места шатра",
-		defend = "Оборона шатра: продержаться {seconds} секунд рядом с ним",
-		clear = "Зачистка: убить всех мутантов ночи",
-		metro = "Метро: спуститься по лестнице и зачистить станцию ({kills} убийств)",
-		classic = "Убить всех мутантов ночи",
-		bossfight = "Финал: босс-файт — убить финального босса",
+		scout = "Recon: visit {points} checkpoints around the tent site",
+		build = "Clear the zone ({kills} kills) and set up the tent: hold E on the golden marker",
+		escort = "Convoy: bring the supply truck to the tent site",
+		defend = "Tent defense: hold out for {seconds} seconds near it",
+		clear = "Clear-out: kill all of the night's mutants",
+		metro = "Metro: go down the stairs and clear the station ({kills} kills)",
+		classic = "Kill all of the night's mutants",
+		bossfight = "Finale: boss fight — kill the final boss",
 	},
 	Tip = {
-		scout = "Мутанты идут со всех сторон без остановки — держитесь вместе.",
-		build = "Пока шатёр не стоит, магазина в районе нет — защищайте золотую метку.",
-		escort = "Конвой стартует от места появления игроков (спавна) и едет, только пока рядом кто-то из вас (в {follow} шагах). Соберитесь у спавна заранее и прикрывайте грузовик!",
-		defend = "Отсчёт идёт, только пока вы рядом с шатром.",
-		clear = "Магазин на ночь закрыт — купите всё днём.",
-		metro = "Внизу тесно и темно: держитесь платформ и укрытий, берите побольше патронов.",
-		classic = "Магазин на ночь закрыт — купите всё днём и поднимайте упавших.",
-		bossfight = "Бой днём и без обычных зомби: только босс. Запаситесь патронами и аптечками, держитесь вместе.",
+		scout = "Mutants come from every side without a break — stick together.",
+		build = "Until the tent is up there's no shop in the district — defend the golden marker.",
+		escort = "The convoy starts from where players spawn and only moves while one of you is near it (within {follow} paces). Gather at the spawn in advance and cover the truck!",
+		defend = "The countdown only runs while you're near the tent.",
+		clear = "The shop is closed for the night — buy everything by day.",
+		metro = "It's cramped and dark down there: stick to the platforms and cover, bring plenty of ammo.",
+		classic = "The shop is closed for the night — buy everything by day and pick up the fallen.",
+		bossfight = "A daytime fight without regular zombies: only the boss. Stock up on ammo and medkits, stick together.",
 	},
-	Boss = "Ночью придёт босс: {name}.",
-	Here = "на базе",
+	Boss = "A boss comes tonight: {name}.",
+	Here = "at the base",
 } :: { ShowSeconds: number, RemindBefore: number, RemindSeconds: number, Task: { [string]: string }, Tip: { [string]: string }, Boss: string, Here: string }
 Config.AmbienceVolume = 0.7 -- общая громкость звуков окружения (зомби, машины); по слуху держим тихо
 Config.DebugStartNight = 1 -- для проверок: с какой ночи начинается раунд (в релизе всегда 1)
@@ -1305,10 +1305,10 @@ Config.BaseBattle = {
 -- (Workspace.Bunker.BunkerEntrance); когда все живые игроки в Radius студов от входа — всем окно поздравления, через EndSeconds раунд заканчивается
 Config.Finale = {
 	Radius = 22, EndSeconds = 25,
-	Title = "Акт 1 пройден!",
+	Title = "Act 1 complete!",
 	Lines = {
-		"Вы дошли до бункера и победили Стража. Первый акт закончен: город держится, база цела, а за бронёй бункера — новые вопросы.",
-		"Второй акт — в разработке. Спасибо, что играли: ждите продолжения!",
+		"You reached the bunker and defeated the Guardian. The first act is over: the city holds, the base is intact, and behind the bunker's armor there are new questions.",
+		"Act 2 is in development. Thanks for playing — stay tuned for the sequel!",
 	},
 }
 -- Метро (ночь 18, MissionService): внизу нужно сжечь гнёзда мутантов (маркеры Workspace.Metro.Markers.Metro_Objective_1…n, удержание E NestHold секунд),
@@ -1338,14 +1338,14 @@ Config.Metro = {
 			Vector3.new(-898, 0, 52), Vector3.new(-862, 0, 52), Vector3.new(-898, 0, 38),
 			Vector3.new(-862, 0, 38), Vector3.new(-898, 0, 28), Vector3.new(-862, 0, 28),
 		},
-		OfficerName = "Майор Громов",
-		BriefTitle = "Военная база потеряна",
+		OfficerName = "Major Gromov",
+		BriefTitle = "The military base is lost",
 		BriefLines = {
-			"Боец, вы выбрались из катакомб — это тоннель под горой. Он выходит прямо к военной базе.",
-			"Плохие новости: база пала. Мутанты прорвали периметр, и теперь волна идёт оттуда на город.",
-			"Наши держат оборону у точки сбора, но долго не продержатся. Нужно спешить: заберите джип с турелью у выхода из тоннеля.",
-			"Вдоль дороги разложены ящики с боеприпасами: каждый может пополнить одно оружие на свой выбор — возьмите нужное в руки и нажмите E у ящика.",
-			"Ночью на базе зачистка: убейте 150 мутантов и вернём базу. Удачи!",
+			"Soldier, you made it out of the catacombs — this is the tunnel under the mountain. It leads straight to the military base.",
+			"Bad news: the base has fallen. The mutants breached the perimeter, and now the wave is rolling from there toward the city.",
+			"Our men are holding the rally point, but they won't last long. We need to hurry: take the turret jeep at the tunnel exit.",
+			"Ammo crates are laid out along the road: each of you can refill one weapon of your choice — take the one you need in your hands and press E at a crate.",
+			"Tonight at the base it's a clear-out: kill 150 mutants and we take the base back. Good luck!",
 		},
 	},
 	InsideMaxY = -200,
@@ -1365,30 +1365,30 @@ Config.Metro = {
 	},
 }
 Config.Missions = {
-	[1] = { type = "scout", title = "Разведка района", anchor = 1, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
-	[2] = { type = "build", title = "Зачистка зоны и установка шатра", anchor = 1, kills = 15, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
+	[1] = { type = "scout", title = "Area recon", anchor = 1, points = 3, hint = "Visit the checkpoints around the tent" },
+	[2] = { type = "build", title = "Clear the zone and set up the tent", anchor = 1, kills = 15, hint = "Clear the zone and set up the tent at the marked spot" },
 	-- Первый конвой: выезжает из начальной зоны (мешки с песком на эту ночь убираются), едет не быстро (6,5 студа/с — маршрут ~600 студов за ~90 с, решение Руслана 2026-10-26; было 3,5;
 	-- Config.Convoy.TruckSpeed = 9,5 — тестовая, на неё ночи 8, 12, 17 не меняем) и только пока рядом игрок
-	[3] = { type = "escort", title = "Сопровождение конвоя с припасами", anchor = 1, points = 3, convoySpeed = 6.5, clearSandbags = true, hint = "Не дайте уничтожить грузовик: он объедет контрольные точки и встанет у шатра" },
-	[4] = { type = "scout", title = "Разведка ближайших зданий", anchor = 1, points = 4, radius = { 100, 200 }, hint = "Обойдите контрольные точки" },
-	[5] = { type = "classic", title = "Защита шатра от босса", anchor = 1, planned = "defend-boss", hint = "Убейте босса и волну" },
-	[6] = { type = "scout", title = "Разведка второго района", anchor = 2, points = 3, hint = "Обойдите контрольные точки вокруг шатра" },
-	[7] = { type = "build", title = "Зачистка и установка шатра", anchor = 2, kills = 20, hint = "Зачистите зону и установите шатёр на отмеченном месте" },
-	[8] = { type = "escort", title = "Сопровождение конвоя", anchor = 2, points = 3, hint = "Не дайте уничтожить грузовик" },
-	[9] = { type = "scout", title = "Разведка территории третьего шатра", anchor = 3, points = 4 },
-	[10] = { type = "classic", title = "Босс: зомби против растений", anchor = 2, planned = "boss", hint = "Убейте босса и волну" },
-	[11] = { type = "scout", title = "Изучение локаций вокруг шатров", anchor = 2, points = 5 },
-	[12] = { type = "escort", title = "Конвой до третьего шатра", anchor = 3, points = 3, install = true, hint = "Доведите грузовик и установите шатёр у места" },
-	[13] = { type = "defend", title = "Аномалии и нападения на магазины", anchor = 1, seconds = 150, planned = "anomaly" },
-	[14] = { type = "defend", title = "Нападение на все шатры", anchor = 2, seconds = 200, planned = "multi-defend" },
-	[15] = { type = "classic", title = "Босс нападает на основную базу", anchor = 1, planned = "boss", hint = "Убейте босса и волну" },
-	[16] = { type = "scout", title = "Разведка территории", anchor = 4, points = 4, planned = "daytime" },
-	[17] = { type = "escort", title = "Установка шатра и конвой", anchor = 4, points = 3, install = true, hint = "Доведите грузовик и установите шатёр у места" },
-	[18] = { type = "metro", title = "Катакомбы: зачистка метро", anchor = 6, kills = 40, nests = 3, boss = "BossBuff", hint = "Спуститесь по лестнице у входа в метро, сожгите гнёзда (E) и убейте босса станции" },
-	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, baseBattle = true, hint = "Отбейте базу: убейте 150 мутантов, идущих со стороны базы, солдаты у точки сбора помогают" },
+	[3] = { type = "escort", title = "Supply convoy escort", anchor = 1, points = 3, convoySpeed = 6.5, clearSandbags = true, hint = "Don't let the truck be destroyed: it will pass the checkpoints and stop by the tent" },
+	[4] = { type = "scout", title = "Recon of nearby buildings", anchor = 1, points = 4, radius = { 100, 200 }, hint = "Visit the checkpoints" },
+	[5] = { type = "classic", title = "Defend the tent from the boss", anchor = 1, planned = "defend-boss", hint = "Kill the boss and the wave" },
+	[6] = { type = "scout", title = "Recon of the second district", anchor = 2, points = 3, hint = "Visit the checkpoints around the tent" },
+	[7] = { type = "build", title = "Clear-out and tent setup", anchor = 2, kills = 20, hint = "Clear the zone and set up the tent at the marked spot" },
+	[8] = { type = "escort", title = "Convoy escort", anchor = 2, points = 3, hint = "Don't let the truck be destroyed" },
+	[9] = { type = "scout", title = "Recon of the third tent's territory", anchor = 3, points = 4 },
+	[10] = { type = "classic", title = "Boss: zombies vs plants", anchor = 2, planned = "boss", hint = "Kill the boss and the wave" },
+	[11] = { type = "scout", title = "Surveying the locations around the tents", anchor = 2, points = 5 },
+	[12] = { type = "escort", title = "Convoy to the third tent", anchor = 3, points = 3, install = true, hint = "Bring the truck and set up the tent at the site" },
+	[13] = { type = "defend", title = "Anomalies and attacks on shops", anchor = 1, seconds = 150, planned = "anomaly" },
+	[14] = { type = "defend", title = "Attack on all tents", anchor = 2, seconds = 200, planned = "multi-defend" },
+	[15] = { type = "classic", title = "The boss attacks the main base", anchor = 1, planned = "boss", hint = "Kill the boss and the wave" },
+	[16] = { type = "scout", title = "Territory recon", anchor = 4, points = 4, planned = "daytime" },
+	[17] = { type = "escort", title = "Tent setup and convoy", anchor = 4, points = 3, install = true, hint = "Bring the truck and set up the tent at the site" },
+	[18] = { type = "metro", title = "Catacombs: metro clear-out", anchor = 6, kills = 40, nests = 3, boss = "BossBuff", hint = "Go down the stairs at the metro entrance, burn the nests (E) and kill the station boss" },
+	[19] = { type = "clear", title = "Military base: clear-out and capture", anchor = 5, baseBattle = true, hint = "Retake the base: kill 150 mutants coming from the base side, soldiers at the rally point help" },
 	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,
 	-- пока Повелитель тёмных); победа — убит последний босс (RoundService: атрибут Victory и сообщение; титры и награда — после решения Руслана)
-	[20] = { type = "bossfight", title = "Финал: босс-файт", anchor = 5, day = true, bosses = { "BossFinal" }, hint = "Днём, без зомби: убейте финального босса" },
+	[20] = { type = "bossfight", title = "Finale: boss fight", anchor = 5, day = true, bosses = { "BossFinal" }, hint = "By day, no zombies: kill the final boss" },
 } :: { [number]: MissionDef }
 
 -- Рейтинговые очки (не монеты): копятся за раунд, идут в профиль и в глобальный лидерборд (RatingService)
@@ -1410,7 +1410,7 @@ local function weaponItems(ids: { string }): { VendorItem }
 	for _, id in ids do
 		local d = Weapons[id]
 		if d then
-			table.insert(list, { id = id, name = d.name, desc = string.format("Урон %d · %.1f уд/с", d.damage, d.fireRate), price = d.price, kind = "weapon" })
+			table.insert(list, { id = id, name = d.name, desc = string.format("Damage %d · %.1f hits/s", d.damage, d.fireRate), price = d.price, kind = "weapon" })
 		end
 	end
 	return list
@@ -1419,41 +1419,41 @@ Config.Vendors = {
 	-- Вендинговые автоматы (маркеры Vending_<n>: кафе, военная база, палатки): работают днём и ночью, не зависят от зданий.
 	-- kind "ammo" — патроны к оружию в руках. Монеты общие, как везде; донатные цены (robux) добавим вместе с магазином за робуксы.
 	Vending = {
-		name = "Автомат", greeting = "Работает от резервного питания. Сдачи нет.",
+		name = "Rifle", greeting = "Runs on backup power. No change given.",
 		items = {
-			{ id = "Medkit", name = "Аптечка", desc = "+60 здоровья", price = 150, kind = "item", robux = 25 },
-			{ id = "EnergyDrink", name = "Энергетик", desc = "бесконечная энергия на 1 волну", price = 100, kind = "item", robux = 20 },
-			{ id = "Ammo", name = "Патроны", desc = "полный запас к оружию в руках", price = 150, kind = "ammo", robux = 15 },
+			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item", robux = 25 },
+			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite energy for 1 wave", price = 100, kind = "item", robux = 20 },
+			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo", robux = 15 },
 		},
 	},
 	Pharmacy = {
-		name = "Аптекарь", greeting = "Мутанты боятся солнца — а мы боимся ночи. Берите, пока светло.",
+		name = "Pharmacist", greeting = "Mutants fear the sun — and we fear the night. Take it while it's light.",
 		items = {
-			{ id = "Medkit", name = "Аптечка", desc = "+60 здоровья", price = 150, kind = "item" },
-			{ id = "EnergyDrink", name = "Энергетик", desc = "бесконечная энергия спринта на 1 волну", price = 100, kind = "item" },
+			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item" },
+			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite sprint energy for 1 wave", price = 100, kind = "item" },
 		},
 	},
 	Armory = {
-		name = "Оружейник", greeting = "Холодное оружие не кончается, как патроны.",
+		name = "Armorer", greeting = "Melee weapons never run out, unlike ammo.",
 		items = weaponItems({ "Bat", "Crowbar", "Machete", "FireAxe", "Sledge", "Katana" }),
 	},
 	Garage = {
-		name = "Механик", greeting = "Проволока держит их у стены. Ставь с умом.",
+		name = "Mechanic", greeting = "Wire holds them at the wall. Place it wisely.",
 		items = {
-			{ id = "BarbedWire", name = "Колючая проволока", desc = "Ранит и держит мутантов, пока не порвётся", price = 250, kind = "equip" },
-			{ id = "ElectricWire", name = "Электро-проволока", desc = "Бьёт током и оглушает; до рассвета", price = 600, kind = "equip" },
+			{ id = "BarbedWire", name = "Barbed wire", desc = "Wounds and holds mutants until it breaks", price = 250, kind = "equip" },
+			{ id = "ElectricWire", name = "Electric wire", desc = "Shocks and stuns; lasts until dawn", price = 600, kind = "equip" },
 		},
 	},
 	GunShop = {
-		name = "Торговец турелями", greeting = "Пулемёт сам не устанет. Пока есть патроны.",
+		name = "Turret dealer", greeting = "A machine gun doesn't get tired. As long as there's ammo.",
 		items = {
-			{ id = "Turret", name = "Турель", desc = "50 урона раз в 2–4 с, 300 выстрелов", price = 1500, kind = "equip" },
+			{ id = "Turret", name = "Turret", desc = "50 damage every 2–4 s, 300 shots", price = 1500, kind = "equip" },
 		},
 	},
 	Shelter = {
-		name = "Смотритель", greeting = "Каждая жизнь на счету.",
+		name = "Warden", greeting = "Every life counts.",
 		items = {
-			{ id = "TeamLife", name = "Жизнь команды", desc = "Если все упадут, команда поднимется", price = 2500, kind = "life" },
+			{ id = "TeamLife", name = "Team life", desc = "If everyone goes down, the team gets back up", price = 2500, kind = "life" },
 		},
 	},
 } :: { [string]: VendorDef }
@@ -1475,9 +1475,9 @@ Config.TurretGun = {
 
 -- Оборудование (EquipmentService): покупается у продавцов, ставится кликом на землю
 Config.Equipment = {
-	BarbedWire = { name = "Колючая проволока", damage = 8, tick = 0.5, hits = 60, max = 6, size = Vector3.new(10, 1.4, 2.5), reach = 22 },
-	ElectricWire = { name = "Электро-проволока", damage = 25, tick = 2, stun = 2.5, max = 4, size = Vector3.new(10, 0.6, 2.5), reach = 22 },
-	Turret = { name = "Турель", damage = 50, minCooldown = 2, maxCooldown = 4, range = 90, ammo = 300, max = 2, length = 3.4, reach = 22 },
+	BarbedWire = { name = "Barbed wire", damage = 8, tick = 0.5, hits = 60, max = 6, size = Vector3.new(10, 1.4, 2.5), reach = 22 },
+	ElectricWire = { name = "Electric wire", damage = 25, tick = 2, stun = 2.5, max = 4, size = Vector3.new(10, 0.6, 2.5), reach = 22 },
+	Turret = { name = "Turret", damage = 50, minCooldown = 2, maxCooldown = 4, range = 90, ammo = 300, max = 2, length = 3.4, reach = 22 },
 }
 
 return Config

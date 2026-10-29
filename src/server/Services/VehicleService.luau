@@ -253,7 +253,7 @@ function VehicleService.spawn(modelName: string, cf: CFrame): Model?
 	local store = ServerStorage:FindFirstChild("CarModels")
 	local template = store and store:FindFirstChild(templateName)
 	if not template or not template:IsA("Model") or not template.PrimaryPart then
-		warn("[VehicleService] нет шаблона машины " .. templateName)
+		warn("[VehicleService] no vehicle template " .. templateName)
 		return nil
 	end
 	local model = template:Clone()
@@ -376,7 +376,7 @@ function VehicleService.spawn(modelName: string, cf: CFrame): Model?
 
 	-- посадка по кнопке E: первое свободное место 1–4, потом турель
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Сесть"
+	prompt.ActionText = "Get in"
 	prompt.ObjectText = tune.name
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = math.max(root.Size.X, root.Size.Z) / 2 + 6
@@ -698,7 +698,7 @@ function VehicleService.init()
 				tagged += 1
 			end
 		end
-		print("[VehicleService] бордюров/тротуаров помечено: " .. tagged)
+		print("[VehicleService] curbs/sidewalks marked: " .. tagged)
 	end
 	Remotes.get("SwitchSeat").OnServerEvent:Connect(onSwitchSeat)
 	Remotes.get("TurretAim").OnServerEvent:Connect(onTurretAim)

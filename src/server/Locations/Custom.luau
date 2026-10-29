@@ -80,7 +80,7 @@ function Custom.build(): Types.MapInfo
 		local center = if cafe and cafe:IsA("Model") then cafe:GetPivot().Position else Vector3.new(0, 0, 0)
 		local ground = groundNear(center)
 		playerSpawn = (ground or Vector3.new(center.X, 0, center.Z)) + Vector3.new(0, 4, 0)
-		warn("[Custom] нет Workspace.Markers.PlayerSpawn — игроки появятся у " .. tostring(playerSpawn))
+		warn("[Custom] no Workspace.Markers.PlayerSpawn — players will appear at " .. tostring(playerSpawn))
 	end
 
 	local zombieSpawns: { Vector3 } = {}
@@ -116,7 +116,7 @@ function Custom.build(): Types.MapInfo
 		else
 			return
 		end
-		table.insert(shops, { name = "Военная палатка", center = center, radius = math.max(size.X, size.Z) / 2 + 18 })
+		table.insert(shops, { name = "Military tent", center = center, radius = math.max(size.X, size.Z) / 2 + 18 })
 	end
 	for _, folderName in { "Base", "Decor", "Buildings" } do
 		local f = workspace:FindFirstChild(folderName)
@@ -190,7 +190,7 @@ function Custom.build(): Types.MapInfo
 						table.insert(info.windows, addWindow(m, id, 0.5))
 						info.exit = Vector3.new(m.Position.X, m.Position.Y, m.Position.Z) + axisNormal(m.CFrame.LookVector) * 10
 					else
-						warn("[Custom] нет здания для маркера " .. name)
+						warn("[Custom] no building for marker " .. name)
 					end
 				elseif string.sub(name, 1, 5) == "Sign_" then
 					local info = infoById[string.sub(name, 6)]
@@ -234,7 +234,7 @@ function Custom.build(): Types.MapInfo
 	root.Name = "CustomMapInfo"
 	return {
 		id = "Custom",
-		name = "Своя карта",
+		name = "Custom map",
 		root = root,
 		windows = windows,
 		buildings = buildings,
