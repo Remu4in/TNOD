@@ -1297,7 +1297,7 @@ Config.PlaceBeacon = { Radius = 16, Color = Color3.fromRGB(255, 200, 60) }
 -- Defenders живых солдат (HP из DefenderHp, урон DefenderDps, шаг DefenderInterval, дальность DefenderRange) — зомби их атакуют и могут убить;
 -- по базе Debris.Clusters куч мусора (Wrecks из них — с остовами машин).
 Config.BaseBattle = {
-	Total = 200, AliveCap = 45, SpawnPoints = 14, DeadFraction = 1 / 3,
+	Total = 150, AliveCap = 45, SpawnPoints = 14, DeadFraction = 1 / 3,
 	Defenders = 10, DefenderHp = { 200, 250 }, DefenderDps = 30, DefenderInterval = 0.4, DefenderRange = 55, PostRadius = 14,
 	Debris = { Clusters = 16, Radius = 11, Chunks = 16, Crates = 3, Planks = 6, Barrels = 2, Tires = 2, Cloth = 3, Wrecks = 3 },
 }
@@ -1314,24 +1314,41 @@ Config.Finale = {
 -- Метро (ночь 18, MissionService): внизу нужно сжечь гнёзда мутантов (маркеры Workspace.Metro.Markers.Metro_Objective_1…n, удержание E NestHold секунд),
 -- затем выходит босс станции (Missions[18].boss, у маркера Metro_Boss), после его смерти и набранных убийств миссия выполнена. Звуки — тихие зацикленные
 -- (id проверены 2026-10-29: загружаются, длины 1,3–77 с); играют на клиенте, пока игрок ниже InsideMaxY (станция и пещера лежат под картой, пол y ≈ -400)
--- Выход из метро (решение Руслана 2026-10-29): 5 груд костей по станции (удержание E BoneHold с) → костяной ключ → костяная дверь у маркера Metro_Exit
--- (открывается, когда есть ключ, сожжены гнёзда и убит босс) → вся команда оказывается в тоннеле в горе («The Hub Map (For Apeirophobia)», Hub.spawn) — миссия
--- выполнена. Груды стоят в точках BoneSpots (x, z, y старта луча вниз до пола; мировые координаты метро), пол ищется лучом по Workspace.Metro и Terrain.
--- Пещера за станцией B (Terrain, 2026-10-29): кишка → большой зал → верхний уровень с костяной дверью (маркер Metro_Exit). Первый, кто входит в зал
--- (Metro_CaveRoom, CaveRadius), запускает «последний рубеж»: зомби идут из пещерных маркеров, нужно CaveKills убийств, только потом открывается дверь.
--- Освещение: в метро клиент приглушает Lighting (Dark.station) и в пещере темнее (Dark.cave, x > Cave.minX и z > Cave.minZ), включается фонарик у камеры.
--- Hub.halfWidth — по x от Hub.spawn «зона тоннеля»: оттуда команду на рассвете возвращает на базу.
+-- Финал метро (решение Руслана 2026-10-30): запустить Gens генераторов (Workspace.Metro.Generators, удержание E GenHold с), поставить Tnt зарядов на места
+-- Metro_Tnt_<n> (удержание E TntHold с; метки и «призрак» видны в радиусе MarkDistance), включить детонатор (Workspace.Metro.Cave.Detonator) и DefendSeconds секунд
+-- защищать его зону (радиус DefendRadius) — затем, набрав нужные убийства, команда получает SkeletonKey, он открывает костяную дверь (маркер Metro_Exit, терраса пещеры)
+-- → вся команда оказывается в тоннеле в горе («The Hub Map (For Apeirophobia)», Hub.spawn) — миссия выполнена.
+-- Пещера за станцией B (Terrain): кишка → большой зал → верхний уровень с костяной дверью. Освещение: в метро клиент приглушает Lighting (Dark.station), в пещере
+-- темнее (Dark.cave, x > Cave.minX и z > Cave.minZ), включается фонарик у камеры.
 Config.Metro = {
 	NestHold = 6,
-	Bones = 5,
-	BoneHold = 2,
-	BoneSpots = {
-		{ -130, 50, -390 }, { 130, -55, -390 }, { -100, -100, -393 }, { 100, 90, -390 }, { 892, 140, -385 },
+	Gens = 5,
+	GenHold = 4,
+	Tnt = 20,
+	TntHold = 2,
+	MarkDistance = 100,
+	DefendSeconds = 60,
+	DefendRadius = 45,
+	-- Тоннель в горе («The Hub Map»): команда появляется почти в конце (ближе к базе, +z), там военный джип с турелью, припасы и майор с брифингом
+	Hub = {
+		spawn = Vector3.new(-879, 3, 40),
+		vehicle = Vector3.new(-868, 0.4, 62),
+		officer = Vector3.new(-893, 0, 36),
+		supplies = {
+			Vector3.new(-893, 0, 52), Vector3.new(-865, 0, 48), Vector3.new(-890, 0, 24),
+			Vector3.new(-866, 0, 20), Vector3.new(-892, 0, 4), Vector3.new(-864, 0, 0),
+		},
+		OfficerName = "Майор Громов",
+		BriefTitle = "Военная база потеряна",
+		BriefLines = {
+			"Боец, вы выбрались из катакомб — это тоннель под горой. Он выходит прямо к военной базе.",
+			"Плохие новости: база пала. Мутанты прорвали периметр, и теперь волна идёт оттуда на город.",
+			"Наши держат оборону у точки сбора, но долго не продержатся. Нужно спешить: заберите джип с турелью у выхода из тоннеля.",
+			"Вдоль дороги разложены ящики с боеприпасами: каждый может пополнить одно оружие на свой выбор — возьмите нужное в руки и нажмите E у ящика.",
+			"Ночью на базе зачистка: убейте 150 мутантов и вернём базу. Удачи!",
+		},
 	},
-	Hub = { spawn = Vector3.new(-800, 4, -87), halfWidth = 230 },
 	InsideMaxY = -200,
-	CaveKills = 20,
-	CaveRadius = 60,
 	Cave = { minX = 640, minZ = 22 },
 	Dark = {
 		station = { Brightness = 0, Ambient = Color3.fromRGB(34, 36, 48), OutdoorAmbient = Color3.fromRGB(34, 36, 48), ExposureCompensation = -0.35, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
@@ -1368,7 +1385,7 @@ Config.Missions = {
 	[16] = { type = "scout", title = "Разведка территории", anchor = 4, points = 4, planned = "daytime" },
 	[17] = { type = "escort", title = "Установка шатра и конвой", anchor = 4, points = 3, install = true, hint = "Доведите грузовик и установите шатёр у места" },
 	[18] = { type = "metro", title = "Катакомбы: зачистка метро", anchor = 6, kills = 40, nests = 3, boss = "BossBuff", hint = "Спуститесь по лестнице у входа в метро, сожгите гнёзда (E) и убейте босса станции" },
-	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, baseBattle = true, hint = "Отбейте базу: мутанты идут со стороны базы, солдаты у точки сбора помогают" },
+	[19] = { type = "clear", title = "Военная база: зачистка и захват", anchor = 5, baseBattle = true, hint = "Отбейте базу: убейте 150 мутантов, идущих со стороны базы, солдаты у точки сбора помогают" },
 	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,
 	-- пока Повелитель тёмных); победа — убит последний босс (RoundService: атрибут Victory и сообщение; титры и награда — после решения Руслана)
 	[20] = { type = "bossfight", title = "Финал: босс-файт", anchor = 5, day = true, bosses = { "BossFinal" }, hint = "Днём, без зомби: убейте финального босса" },
