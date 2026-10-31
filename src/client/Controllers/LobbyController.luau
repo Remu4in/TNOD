@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 
@@ -601,8 +602,26 @@ function LobbyController.start()
 
 	-- ===== Режимы =====
 	local hidden: { ScreenGui } = {}
+	-- Руки от первого лица: стандартная камера прячет руки, пока в них нет предмета, а в лобби предметов нет — показываем сами
+	local function showArms()
+		local char = player.Character
+		if not char then
+			return
+		end
+		for _, d in char:GetChildren() do
+			if d:IsA("BasePart") and (string.find(d.Name, "Arm") or string.find(d.Name, "Hand")) then
+				d.LocalTransparencyModifier = 0
+			end
+		end
+	end
 	local function setLobbyVisible(on: boolean)
 		inLobby = on
+		pcall(function()
+			RunService:UnbindFromRenderStep("LobbyArms")
+		end)
+		if on then
+			RunService:BindToRenderStep("LobbyArms", Enum.RenderPriority.Camera.Value + 10, showArms)
+		end
 		gui.Enabled = on or results.Visible
 		stats.Visible = on
 		tip.Visible = on

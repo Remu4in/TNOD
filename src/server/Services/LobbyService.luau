@@ -710,6 +710,9 @@ end
 -- ===== Табло «Top survivors» =====
 
 local thumbCache: { [number]: string } = {}
+local lastBoardLeader = 0
+local rigHome: CFrame? = nil -- где и в каком размере стоит фигура ассета: после смены внешности возвращаем
+local rigScale = 1
 
 local SAMPLE_ROWS = {
 	{ name = "Sgt. Kowalski", wave = 17, rating = 9420 },
@@ -779,6 +782,47 @@ local function refreshBoard()
 		board.setNote("No records yet — be the first survivor!")
 	else
 		board.setNote("Global top by total rating · refreshed every " .. math.floor(L.BoardRefresh / 60) .. " min")
+	end
+	-- фигура «первого места» одевается в лидера (в Studio без данных — тестовый аккаунт, только для вида)
+	local leader = if top[1] then top[1].userId else (if sample then 1 else 0)
+	local rig = board.rig
+	local hum = if rig then rig:FindFirstChildOfClass("Humanoid") else nil
+	if rig and hum and leader > 0 and leader ~= lastBoardLeader then
+		lastBoardLeader = leader
+		task.spawn(function()
+			if not rigHome then
+				rigHome = rig:GetPivot()
+				rigScale = rig:GetScale()
+			end
+			local ok, desc = pcall(function()
+				return Players:GetHumanoidDescriptionFromUserId(leader)
+			end)
+			if not ok or not desc then
+				return
+			end
+			if not pcall(function()
+				hum:ApplyDescription(desc)
+			end) then
+				return
+			end
+			-- новая внешность сбрасывает размер: возвращаем размер и место, корень закреплён, остальное держится суставами
+			hum.AutomaticScalingEnabled = true
+			for _, n in { "BodyHeightScale", "BodyWidthScale", "BodyDepthScale", "HeadScale" } do
+				local v = hum:FindFirstChild(n)
+				if v and v:IsA("NumberValue") then
+					v.Value = rigScale
+				end
+			end
+			pcall(function()
+				rig:PivotTo(rigHome :: CFrame)
+			end)
+			for _, d in rig:GetDescendants() do
+				if d:IsA("BasePart") then
+					d.Anchored = d.Name == "HumanoidRootPart"
+					d.CanCollide = false
+				end
+			end
+		end)
 	end
 end
 
