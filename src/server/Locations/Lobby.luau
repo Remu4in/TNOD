@@ -267,8 +267,10 @@ function Lobby.build(): LobbyInfo
 		slab("ZonePath", zx - 3, -16, zx + 3, 19, 0.1, COL.cobble, Enum.Material.Cobblestone)
 	end
 	-- магазин (запад): плитка перед прилавками; Solo (восток): плитка и тропа
-	tiles("ShopTile", -128, -32, -100, 20, 6.4, 0.2, Enum.Material.Concrete, COL.tileA, Enum.Material.Concrete, COL.tileB)
+	tiles("ShopTile", -128, -26, -100, 14, 6.4, 0.2, Enum.Material.Concrete, COL.tileA, Enum.Material.Concrete, COL.tileB)
 	slab("ShopPath", -100, 8, -90, 14, 0.1, COL.cobble, Enum.Material.Cobblestone)
+	tiles("ShopTileSouth", 56, 94, 86, 126, 6.4, 0.2, Enum.Material.Concrete, COL.tileA, Enum.Material.Concrete, COL.tileB)
+	tiles("ShopTileEast", 116, -24, 142, 14, 6.4, 0.2, Enum.Material.Concrete, COL.tileA, Enum.Material.Slate, COL.tileB)
 	tiles("SoloTile", 88, -18, 116, 8, 6.4, 0.2, Enum.Material.Concrete, COL.tileA, Enum.Material.Slate, COL.tileB)
 	slab("SoloPath", 98, 8, 106, 19, 0.1, COL.cobble, Enum.Material.Cobblestone)
 	-- площадка под табло и грунт под колонну
@@ -510,19 +512,33 @@ function Lobby.build(): LobbyInfo
 		return pr
 	end
 
-	-- ===== Магазин: стена, вывеска, прилавки, ящики, торговцы =====
-	local wallX = -123
-	put("Lobby.Wall", wallX, -6, 0, { y = 0.2, name = "ShopWall" })
-	put("Lobby.ShopSign", wallX + 2.4, -6, -90, { y = 8.4, name = "ShopSign", scale = 1.5 })
-	local stallZ = { -20, -6, 8 }
-	for k, z in stallZ do
-		put("Lobby.Stall", -113, z, -90, { y = 0.2, name = "Stall" .. k })
-		table.insert(npcSpots, { kind = "trader", pos = at(-118.6, 0, z), yaw = 90, trader = k, label = "Trader " .. k })
+	-- ===== Магазины: три точки, в каждой стена с вывеской, 2 прилавка, ящики, по торговцу у прилавка =====
+	-- Локальная схема (магазин «смотрит» на +x при поворотe 0): стена lx=-10, торговцы lx=-5.6, прилавки lx=0 (lz=±7), покупатели с +x.
+	local traderCount = 0
+	local function shopAt(cx: number, cz: number, rot: number)
+		local r = math.rad(rot)
+		local function w(lx: number, lz: number): (number, number)
+			return cx + lx * math.cos(r) + lz * math.sin(r), cz - lx * math.sin(r) + lz * math.cos(r)
+		end
+		local wx, wz = w(-10, 0)
+		put("Lobby.Wall", wx, wz, rot, { y = 0.2, name = "ShopWall", scale = 0.7 })
+		local sx, sz = w(-10 + 2.2, 0)
+		put("Lobby.ShopSign", sx, sz, rot - 90, { y = 7, name = "ShopSign", scale = 1.2 })
+		for _, lz in { -7, 7 } do
+			traderCount += 1
+			local stx, stz = w(0, lz)
+			put("Lobby.Stall", stx, stz, rot - 90, { y = 0.2, name = "Stall" .. traderCount })
+			local tx, tz = w(-5.6, lz)
+			table.insert(npcSpots, { kind = "trader", pos = at(tx, 0, tz), yaw = 90 - rot, trader = traderCount, label = "Trader" })
+		end
+		local c1x, c1z = w(-6, -15.5)
+		local c2x, c2z = w(-6, 15.5)
+		put("Props.MilitaryCrates", c1x, c1z, 20 + rot, { y = 0.2, scale = 0.8 })
+		put("Props.MilitaryCrates", c2x, c2z, -15 + rot, { y = 0.2, scale = 0.8 })
 	end
-	put("Props.MilitaryCrates", wallX + 6, -28.5, 20, { y = 0.2, scale = 0.8 })
-	put("Props.MilitaryCrates", wallX + 6, 16.5, -15, { y = 0.2, scale = 0.8 })
-	put("Base.Crates", wallX + 6, -34, 10, { y = 0.2 })
-	put("Base.Crates", wallX + 6, 22, -10, { y = 0.2 })
+	shopAt(-113, -6, 0) -- запад: прежнее место
+	shopAt(70, 110, 180) -- юг: у табло «Top survivors»
+	shopAt(124, -5, 180) -- восток: у ворот Solo
 
 	-- ===== Автоматы с донатными предметами: у площади, лицом к спавну =====
 	for k, side in { -1, 1 } do

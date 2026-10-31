@@ -944,7 +944,7 @@ function LobbyService.initLobby(h: Handlers)
 		-- игрок должен стоять у прилавка: позицию берём из точки торговца
 		for _, spot in built.npcSpots do
 			if spot.trader == traderIndex then
-				openMenu(player, "shop", "Trader " .. traderIndex, spot.pos)
+				openMenu(player, "shop", "Trader", spot.pos)
 				return
 			end
 		end
