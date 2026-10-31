@@ -14,7 +14,9 @@ local DataService = require(script.Parent:WaitForChild("DataService"))
 local RatingService = {}
 
 local board: OrderedDataStore? = nil
+local waves: OrderedDataStore? = nil -- лучшая ночь игрока (для табло в лобби)
 local BOARD_NAME = if RunService:IsStudio() then "Test_RatingBoard_v1" else "RatingBoard_v1"
+local WAVES_NAME = if RunService:IsStudio() then "Test_BestWaveBoard_v1" else "BestWaveBoard_v1"
 
 local function refresh(player: Player)
 	local folder = player:FindFirstChild("leaderstats")
@@ -42,6 +44,10 @@ function RatingService.init()
 		return DataStoreService:GetOrderedDataStore(BOARD_NAME)
 	end)
 	board = if ok then store else nil
+	local okW, storeW = pcall(function()
+		return DataStoreService:GetOrderedDataStore(WAVES_NAME)
+	end)
+	waves = if okW then storeW else nil
 	for _, p in Players:GetPlayers() do
 		setup(p)
 	end
@@ -116,13 +122,31 @@ function RatingService.finishRound(players: { Player })
 					warn("[RatingService] leaderboard: " .. tostring(err))
 				end
 			end)
+			-- лучшая ночь: только вверх, как и рейтинг
+			local best = math.floor((p:GetAttribute("BestWave") :: number?) or 0)
+			local wstore = waves
+			if wstore and best > 0 then
+				task.spawn(function()
+					local okW, errW = pcall(function()
+						(wstore :: OrderedDataStore):UpdateAsync(tostring(p.UserId), function(old: any)
+							if typeof(old) == "number" and old >= best then
+								return nil
+							end
+							return best
+						end)
+					end)
+					if not okW then
+						warn("[RatingService] best wave: " .. tostring(errW))
+					end
+				end)
+			end
 		end
 	end
 end
 
--- Верх лидерборда: { { userId, rating } } по убыванию (для будущего окна)
-function RatingService.top(count: number): { { userId: number, rating: number } }
-	local list: { { userId: number, rating: number } } = {}
+-- Верх лидерборда: { { userId, rating, bestWave } } по убыванию (табло в лобби); bestWave — 0, если записи нет
+function RatingService.top(count: number): { { userId: number, rating: number, bestWave: number } }
+	local list: { { userId: number, rating: number, bestWave: number } } = {}
 	local store = board
 	if not store then
 		return list
@@ -132,7 +156,17 @@ function RatingService.top(count: number): { { userId: number, rating: number } 
 	end)
 	if ok and pages then
 		for _, entry in (pages :: DataStorePages):GetCurrentPage() do
-			table.insert(list, { userId = tonumber(entry.key) or 0, rating = entry.value :: number })
+			local best = 0
+			local wstore = waves
+			if wstore then
+				local okW, v = pcall(function()
+					return (wstore :: OrderedDataStore):GetAsync(entry.key)
+				end)
+				if okW and typeof(v) == "number" then
+					best = v
+				end
+			end
+			table.insert(list, { userId = tonumber(entry.key) or 0, rating = entry.value :: number, bestWave = best })
 		end
 	end
 	return list

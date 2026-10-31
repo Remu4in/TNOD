@@ -584,5 +584,6 @@ function SoldierService.reviveDead()
 end
 
 SoldierService.attachLooseParts = attachLooseParts
+SoldierService.removeLegacyJoints = removeLegacyJoints
 
 return SoldierService

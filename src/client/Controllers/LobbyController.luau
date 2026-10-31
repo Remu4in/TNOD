@@ -1,12 +1,15 @@
 --!strict
--- Интерфейс лобби: кнопки Squad / Play solo, окно отряда (создать, режим Public / Friends only / Invite only, вступить, пригласить,
--- Start), приглашения, личная статистика. Он же — экран итогов раунда с кнопкой «Back to lobby» (атрибут ReturnAt).
--- Все решения принимает сервер: клиент шлёт только LobbyCmd и рисует снимок LobbyState. Большие кнопки: работают мышью, пальцем и геймпадом.
+-- Интерфейс лобби: меню хоста зоны сбора (число игроков, доступ, приглашения; кнопки Open squad / Start now / Cancel), панель
+-- команды после открытия зоны (состав, отсчёт, Start now), окна торговца и автомата («Coming soon»), приглашения, личная статистика.
+-- Он же — экран итогов раунда с кнопкой «Back to lobby» (атрибут ReturnAt).
+-- Все решения принимает сервер: клиент шлёт только LobbyCmd и рисует снимок LobbyState. Единый военный стиль: тёмные панели с
+-- золотым акцентом, крупные кнопки (телефон — касание, геймпад — выбор через GuiService и SelectionImageObject).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 
@@ -14,299 +17,209 @@ local LobbyController = {}
 
 local player = Players.LocalPlayer
 
-local COLORS = {
-	panel = Color3.fromRGB(22, 26, 30),
-	row = Color3.fromRGB(38, 44, 50),
-	button = Color3.fromRGB(56, 66, 76),
-	good = Color3.fromRGB(60, 150, 80),
-	warn = Color3.fromRGB(190, 80, 60),
-	accent = Color3.fromRGB(230, 190, 70),
-	text = Color3.fromRGB(235, 238, 235),
-	dim = Color3.fromRGB(150, 158, 150),
+local C = {
+	panel = Color3.fromRGB(15, 19, 17),
+	panel2 = Color3.fromRGB(26, 32, 28),
+	row = Color3.fromRGB(34, 41, 36),
+	button = Color3.fromRGB(52, 62, 56),
+	good = Color3.fromRGB(62, 160, 92),
+	warn = Color3.fromRGB(190, 66, 56),
+	amber = Color3.fromRGB(226, 160, 44),
+	gold = Color3.fromRGB(255, 204, 92),
+	text = Color3.fromRGB(236, 238, 230),
+	dim = Color3.fromRGB(150, 158, 146),
+	dark = Color3.fromRGB(10, 12, 11),
 }
-local MODE_NAMES = { Public = "Public", Friends = "Friends only", Invite = "Invite only" }
-local MODE_ORDER = { "Public", "Friends", "Invite" }
+local HEAD = Enum.Font.Oswald
+local BODY = Enum.Font.GothamBold
+local ACCESS = { { id = "Public", name = "Public", desc = "Anyone can join" }, { id = "Friends", name = "Friends only", desc = "Only your friends" }, { id = "Invite", name = "Invite only", desc = "Only players you invite" } }
+local ACCESS_NAME = { Public = "Public", Friends = "Friends only", Invite = "Invite only" }
 
-local function corner(inst: GuiObject, radius: number?)
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, radius or 8)
-	c.Parent = inst
+local function mk(class: string, props: { [string]: any }, parent: Instance?): any
+	local inst = Instance.new(class)
+	for k, v in props do
+		(inst :: any)[k] = v
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
 end
 
-local function frame(parent: Instance, size: UDim2, pos: UDim2?, color: Color3?): Frame
-	local f = Instance.new("Frame")
-	f.Size = size
-	f.Position = pos or UDim2.new()
-	f.BackgroundColor3 = color or COLORS.panel
-	f.BorderSizePixel = 0
-	f.Parent = parent
-	return f
+local function corner(inst: Instance, radius: number?)
+	mk("UICorner", { CornerRadius = UDim.new(0, radius or 10) }, inst)
 end
 
-local function text(parent: Instance, str: string, size: UDim2, pos: UDim2?, textSize: number, color: Color3?, bold: boolean?): TextLabel
-	local t = Instance.new("TextLabel")
-	t.Size = size
-	t.Position = pos or UDim2.new()
-	t.BackgroundTransparency = 1
-	t.Text = str
-	t.TextColor3 = color or COLORS.text
-	t.TextSize = textSize
-	t.Font = if bold then Enum.Font.GothamBold else Enum.Font.Gotham
-	t.TextXAlignment = Enum.TextXAlignment.Left
-	t.TextTruncate = Enum.TextTruncate.AtEnd
-	t.Parent = parent
-	return t
+local function stroke(inst: Instance, color: Color3?, thickness: number?, transparency: number?)
+	mk("UIStroke", { Color = color or C.gold, Thickness = thickness or 1.5, Transparency = transparency or 0.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, inst)
 end
 
-local function button(parent: Instance, str: string, size: UDim2, pos: UDim2?, color: Color3?, onClick: () -> ()): TextButton
-	local b = Instance.new("TextButton")
-	b.Size = size
-	b.Position = pos or UDim2.new()
-	b.BackgroundColor3 = color or COLORS.button
-	b.AutoButtonColor = true
-	b.Text = str
-	b.TextColor3 = COLORS.text
-	b.TextSize = 20
-	b.Font = Enum.Font.GothamBold
-	b.BorderSizePixel = 0
-	b.Parent = parent
-	corner(b)
+local function gradient(inst: Instance, a: Color3, b: Color3, rotation: number?)
+	mk("UIGradient", { Color = ColorSequence.new(a, b), Rotation = rotation or 90 }, inst)
+end
+
+local function pad(inst: Instance, px: number)
+	mk("UIPadding", { PaddingTop = UDim.new(0, px), PaddingBottom = UDim.new(0, px), PaddingLeft = UDim.new(0, px), PaddingRight = UDim.new(0, px) }, inst)
+end
+
+-- Подсветка выбранной геймпадом кнопки
+local selection = mk("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), BorderSizePixel = 0 }, nil)
+corner(selection, 10)
+mk("UIStroke", { Color = Color3.fromRGB(255, 255, 255), Thickness = 3 }, selection)
+
+local function label(parent: Instance, text: string, size: number, color: Color3?, font: Enum.Font?, align: Enum.TextXAlignment?): TextLabel
+	return mk("TextLabel", {
+		BackgroundTransparency = 1,
+		Text = text,
+		TextSize = size,
+		TextColor3 = color or C.text,
+		Font = font or BODY,
+		TextXAlignment = align or Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	}, parent)
+end
+
+-- Большая кнопка: минимум 48 px по высоте для касания, геймпад выбирает рамкой
+local function button(parent: Instance, text: string, color: Color3, onClick: () -> ()): TextButton
+	local b = mk("TextButton", {
+		AutoButtonColor = false,
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Text = text,
+		TextColor3 = C.text,
+		TextSize = 22,
+		Font = HEAD,
+		SelectionImageObject = selection,
+	}, parent)
+	corner(b, 10)
+	stroke(b, Color3.new(1, 1, 1), 1, 0.8) -- без UIGradient: градиент красил бы и текст кнопки
 	b.Activated:Connect(onClick)
 	return b
 end
 
+local function setSelected(b: GuiObject?)
+	if UserInputService.GamepadEnabled and b then
+		task.defer(function()
+			GuiService.SelectedObject = b
+		end)
+	end
+end
+
+-- Появление окна: плавный подъём прозрачности и масштаба
+local function popIn(group: CanvasGroup, scale: UIScale, target: number)
+	group.GroupTransparency = 1
+	scale.Scale = target * 0.92
+	TweenService:Create(group, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { GroupTransparency = 0 }):Play()
+	TweenService:Create(scale, TweenInfo.new(0.22, Enum.EasingStyle.Back), { Scale = target }):Play()
+end
+
+-- Масштаб интерфейса под экран: крупно на телефоне и на 4K
+local function uiScale(): number
+	local cam = workspace.CurrentCamera
+	local vp = if cam then cam.ViewportSize else Vector2.new(1280, 720)
+	local s = math.min(vp.X / 1100, vp.Y / 640)
+	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+		s = math.min(vp.X / 900, vp.Y / 520)
+	end
+	return math.clamp(s, 0.62, 1.4)
+end
+
+local function window(gui: ScreenGui, name: string, width: number, height: number, anchor: Vector2, position: UDim2): (CanvasGroup, UIScale, Frame)
+	local group = mk("CanvasGroup", {
+		Name = name,
+		AnchorPoint = anchor,
+		Position = position,
+		Size = UDim2.fromOffset(width, height),
+		BackgroundColor3 = C.panel,
+		BackgroundTransparency = 0.06,
+		BorderSizePixel = 0,
+		Visible = false,
+	}, gui)
+	corner(group, 16)
+	gradient(group, Color3.fromRGB(30, 38, 33), Color3.fromRGB(12, 15, 13))
+	stroke(group, C.gold, 2, 0.35)
+	local scale = mk("UIScale", { Scale = uiScale() }, group)
+	local body = mk("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) }, group)
+	return group, scale, body
+end
+
 function LobbyController.start()
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "Lobby"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = false
-	gui.DisplayOrder = 40
-	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
-	gui.Enabled = false
-	gui.Parent = player:WaitForChild("PlayerGui")
+	local gui = mk("ScreenGui", {
+		Name = "Lobby",
+		ResetOnSpawn = false,
+		IgnoreGuiInset = false,
+		DisplayOrder = 40,
+		ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets,
+		Enabled = false,
+	}, player:WaitForChild("PlayerGui"))
 
 	local cmd = Remotes.get("LobbyCmd")
 	local state: { [string]: any } = {}
 	local inLobby = false
+	local rescale: { UIScale } = {}
 
 	-- ===== Верх слева: личная статистика =====
-	local stats = frame(gui, UDim2.fromOffset(250, 70), UDim2.fromOffset(12, 12))
-	corner(stats)
-	local statsTitle = text(stats, "", UDim2.new(1, -20, 0, 28), UDim2.fromOffset(10, 6), 20, COLORS.accent, true)
-	local statsLine = text(stats, "", UDim2.new(1, -20, 0, 26), UDim2.fromOffset(10, 36), 17, COLORS.dim)
+	local stats = mk("Frame", { Size = UDim2.fromOffset(270, 76), Position = UDim2.fromOffset(12, 12), BackgroundColor3 = C.panel, BackgroundTransparency = 0.15, BorderSizePixel = 0 }, gui)
+	corner(stats, 12)
+	stroke(stats, C.gold, 1.5, 0.6)
+	local statsTitle = label(stats, "", 24, C.gold, HEAD)
+	statsTitle.Size, statsTitle.Position = UDim2.new(1, -24, 0, 30), UDim2.fromOffset(12, 8)
+	local statsLine = label(stats, "", 17, C.dim)
+	statsLine.Size, statsLine.Position = UDim2.new(1, -24, 0, 26), UDim2.fromOffset(12, 40)
 	local function refreshStats()
-		statsTitle.Text = player.DisplayName
-		statsLine.Text = string.format("Best night: %d   Rating: %d", (player:GetAttribute("BestWave") :: number?) or 0, (player:GetAttribute("RatingTotal") :: number?) or 0)
+		statsTitle.Text = string.upper(player.DisplayName)
+		statsLine.Text = string.format("Best night %d   ·   Rating %d", (player:GetAttribute("BestWave") :: number?) or 0, (player:GetAttribute("RatingTotal") :: number?) or 0)
 	end
 	player:GetAttributeChangedSignal("BestWave"):Connect(refreshStats)
 	player:GetAttributeChangedSignal("RatingTotal"):Connect(refreshStats)
 	refreshStats()
 
-	-- ===== Низ: большие кнопки =====
-	local bar = frame(gui, UDim2.fromOffset(360, 76), UDim2.new(0.5, -180, 1, -92), COLORS.panel)
-	bar.BackgroundTransparency = 0.25
-	corner(bar, 12)
-	local panel: Frame -- окно отряда (создаётся ниже)
-	local function togglePanel(show: boolean?)
-		panel.Visible = if show == nil then not panel.Visible else show
-		if panel.Visible and UserInputService.GamepadEnabled then
-			task.defer(function()
-				local first = panel:FindFirstChildWhichIsA("TextButton", true)
-				if first then
-					GuiService.SelectedObject = first
-				end
-			end)
-		end
-	end
-	button(bar, "SQUAD", UDim2.new(0.5, -14, 1, -16), UDim2.fromOffset(8, 8), COLORS.button, function()
-		togglePanel(nil)
-	end)
-	button(bar, "PLAY SOLO", UDim2.new(0.5, -14, 1, -16), UDim2.new(0.5, 6, 0, 8), COLORS.good, function()
-		cmd:FireServer("solo")
-	end)
+	-- подсказка сверху по центру
+	local tip = mk("TextLabel", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		Size = UDim2.fromOffset(560, 30),
+		BackgroundTransparency = 1,
+		Text = "Step into a glowing zone to host a squad  ·  Solo mission: east gate",
+		TextColor3 = C.text,
+		TextStrokeTransparency = 0.5,
+		TextSize = 18,
+		Font = BODY,
+	}, gui)
 
-	-- ===== Окно отряда =====
-	panel = frame(gui, UDim2.fromOffset(380, 460), UDim2.new(1, -392, 0.5, -230))
-	panel.Visible = false
-	corner(panel, 12)
-	local pad = Instance.new("UIPadding")
-	pad.PaddingTop, pad.PaddingBottom, pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 12), UDim.new(0, 12), UDim.new(0, 12), UDim.new(0, 12)
-	pad.Parent = panel
-	local panelTitle = text(panel, "Squad", UDim2.new(1, -52, 0, 32), nil, 24, COLORS.accent, true)
-	button(panel, "X", UDim2.fromOffset(40, 32), UDim2.new(1, -40, 0, 0), COLORS.warn, function()
-		togglePanel(false)
-	end)
-	local body = Instance.new("ScrollingFrame")
-	body.Size = UDim2.new(1, 0, 1, -44)
-	body.Position = UDim2.fromOffset(0, 40)
-	body.BackgroundTransparency = 1
-	body.BorderSizePixel = 0
-	body.ScrollBarThickness = 5
-	body.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	body.CanvasSize = UDim2.new()
-	body.Parent = panel
-	local layout = Instance.new("UIListLayout")
-	layout.Padding = UDim.new(0, 6)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Parent = body
-
-	local order = 0
-	local function nextOrder(): number
-		order += 1
-		return order
-	end
-	local function row(height: number): Frame
-		local r = frame(body, UDim2.new(1, -8, 0, height), nil, COLORS.row)
-		r.LayoutOrder = nextOrder()
-		corner(r, 6)
-		return r
-	end
-	local function heading(str: string)
-		local t = text(body, str, UDim2.new(1, -8, 0, 24), nil, 17, COLORS.dim, true)
-		t.LayoutOrder = nextOrder()
-	end
-
-	local function render()
-		for _, c in body:GetChildren() do
-			if not c:IsA("UIListLayout") then
-				c:Destroy()
-			end
-		end
-		order = 0
-		local squad = state.squad
-		local myUid = player.UserId
-		if squad then
-			local leader = squad.owner == myUid
-			panelTitle.Text = string.format("Your squad  %d/%d", #squad.members, squad.max)
-			heading("MODE" .. (if leader then "" else "  (set by the leader)"))
-			local modes = row(46)
-			for i, m in MODE_ORDER do
-				local b = button(modes, MODE_NAMES[m], UDim2.new(1 / 3, -6, 1, -8), UDim2.new((i - 1) / 3, 4, 0, 4), if squad.mode == m then COLORS.accent else COLORS.button, function()
-					if leader and squad.mode ~= m then
-						cmd:FireServer("mode", m)
-					end
-				end)
-				b.TextSize = 15
-				b.TextColor3 = if squad.mode == m then Color3.new(0, 0, 0) else COLORS.text
-			end
-			heading("MEMBERS")
-			for _, m in squad.members do
-				local r = row(40)
-				text(r, (if m.uid == squad.owner then "★ " else "") .. m.name, UDim2.new(1, -90, 1, 0), UDim2.fromOffset(10, 0), 18)
-				if leader and m.uid ~= myUid then
-					button(r, "Kick", UDim2.fromOffset(70, 30), UDim2.new(1, -76, 0, 5), COLORS.warn, function()
-						cmd:FireServer("kick", m.uid)
-					end).TextSize = 16
-				end
-			end
-			if leader and #squad.members < squad.max then
-				heading("INVITE")
-				local inSquad: { [number]: boolean } = {}
-				for _, m in squad.members do
-					inSquad[m.uid] = true
-				end
-				local any = false
-				for _, other in Players:GetPlayers() do
-					if not inSquad[other.UserId] then
-						any = true
-						local r = row(40)
-						text(r, other.DisplayName, UDim2.new(1, -100, 1, 0), UDim2.fromOffset(10, 0), 18)
-						button(r, "Invite", UDim2.fromOffset(80, 30), UDim2.new(1, -86, 0, 5), COLORS.button, function()
-							cmd:FireServer("invite", other.UserId)
-						end).TextSize = 16
-					end
-				end
-				if not any then
-					text(body, "No one else in the lobby yet", UDim2.new(1, -8, 0, 24), nil, 16, COLORS.dim).LayoutOrder = nextOrder()
-				end
-			end
-			if leader then
-				local start = button(body, if squad.locked then "Starting…" else "START", UDim2.new(1, -8, 0, 54), nil, COLORS.good, function()
-					cmd:FireServer("start")
-				end)
-				start.LayoutOrder = nextOrder()
-				start.TextSize = 26
-			end
-			local leave = button(body, "Leave squad", UDim2.new(1, -8, 0, 40), nil, COLORS.warn, function()
-				cmd:FireServer("leave")
-			end)
-			leave.LayoutOrder = nextOrder()
-		else
-			panelTitle.Text = "Squad"
-			heading("CREATE A SQUAD")
-			local create = row(46)
-			for i, m in MODE_ORDER do
-				local b = button(create, MODE_NAMES[m], UDim2.new(1 / 3, -6, 1, -8), UDim2.new((i - 1) / 3, 4, 0, 4), COLORS.good, function()
-					cmd:FireServer("create", m)
-				end)
-				b.TextSize = 15
-			end
-			text(body, "Create: Public, Friends only or Invite only", UDim2.new(1, -8, 0, 20), nil, 14, COLORS.dim).LayoutOrder = nextOrder()
-			heading("OPEN SQUADS")
-			local list = state.squads or {}
-			if #list == 0 then
-				text(body, "None yet. Create one or step on a truck", UDim2.new(1, -8, 0, 24), nil, 16, COLORS.dim).LayoutOrder = nextOrder()
-			end
-			for _, sq in list do
-				local r = row(48)
-				text(r, sq.owner .. "'s squad", UDim2.new(1, -110, 0, 24), UDim2.fromOffset(10, 2), 18)
-				text(r, string.format("%s   %d/%d", MODE_NAMES[sq.mode] or sq.mode, sq.count, sq.max), UDim2.new(1, -110, 0, 18), UDim2.fromOffset(10, 26), 14, COLORS.dim)
-				local join = button(r, "Join", UDim2.fromOffset(84, 34), UDim2.new(1, -90, 0, 7), if sq.joinable then COLORS.good else COLORS.button, function()
-					cmd:FireServer("join", sq.id)
-				end)
-				join.TextSize = 17
-				join.Active = sq.joinable
-				join.AutoButtonColor = sq.joinable
-			end
-		end
-	end
-
-	-- ===== Приглашения и сообщения =====
-	local toasts = Instance.new("Frame")
-	toasts.Size = UDim2.fromOffset(340, 300)
-	toasts.Position = UDim2.new(0.5, -170, 0, 12)
-	toasts.BackgroundTransparency = 1
-	toasts.Parent = gui
-	local tl = Instance.new("UIListLayout")
-	tl.Padding = UDim.new(0, 6)
-	tl.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	tl.SortOrder = Enum.SortOrder.LayoutOrder
-	tl.Parent = toasts
-
+	-- ===== Тосты =====
+	local toasts = mk("Frame", { Size = UDim2.fromOffset(380, 360), Position = UDim2.new(0.5, -190, 0, 48), BackgroundTransparency = 1 }, gui)
+	mk("UIListLayout", { Padding = UDim.new(0, 6), HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }, toasts)
 	local function toast(msg: string, seconds: number)
-		local t = frame(toasts, UDim2.new(1, 0, 0, 40), nil, COLORS.panel)
-		t.BackgroundTransparency = 0.15
-		corner(t)
-		local label = text(t, msg, UDim2.new(1, -16, 1, 0), UDim2.fromOffset(8, 0), 17)
-		label.TextXAlignment = Enum.TextXAlignment.Center
-		label.TextWrapped = true
+		local t = mk("Frame", { Size = UDim2.new(1, 0, 0, 44), BackgroundColor3 = C.panel, BackgroundTransparency = 0.1, BorderSizePixel = 0 }, toasts)
+		corner(t, 10)
+		stroke(t, C.gold, 1.5, 0.55)
+		local l = label(t, msg, 18, C.text, BODY, Enum.TextXAlignment.Center)
+		l.Size, l.Position, l.TextWrapped = UDim2.new(1, -20, 1, 0), UDim2.fromOffset(10, 0), true
 		task.delay(seconds, function()
 			t:Destroy()
 		end)
 	end
-
 	Remotes.get("Notify").OnClientEvent:Connect(function(msg: string, seconds: number)
 		if inLobby then
 			toast(msg, seconds)
 		end
 	end)
-
-	Remotes.get("LobbyInvite").OnClientEvent:Connect(function(squadId: number, fromName: string, seconds: number)
+	Remotes.get("LobbyInvite").OnClientEvent:Connect(function(zoneIndex: number, fromName: string, seconds: number)
 		if not inLobby then
 			return
 		end
-		local t = frame(toasts, UDim2.new(1, 0, 0, 92), nil, COLORS.panel)
-		corner(t)
-		text(t, fromName .. " invites you to a squad", UDim2.new(1, -16, 0, 30), UDim2.fromOffset(8, 4), 17, COLORS.accent, true)
-		button(t, "Accept", UDim2.new(0.5, -14, 0, 40), UDim2.fromOffset(8, 42), COLORS.good, function()
-			cmd:FireServer("accept", squadId)
-			t:Destroy()
-			togglePanel(true)
-		end)
-		button(t, "Decline", UDim2.new(0.5, -14, 0, 40), UDim2.new(0.5, 6, 0, 42), COLORS.warn, function()
-			cmd:FireServer("decline", squadId)
+		local t = mk("Frame", { Size = UDim2.new(1, 0, 0, 96), BackgroundColor3 = C.panel, BackgroundTransparency = 0.05, BorderSizePixel = 0 }, toasts)
+		corner(t, 12)
+		stroke(t, C.gold, 2, 0.3)
+		local l = label(t, string.format("%s invites you to Squad %d", fromName, zoneIndex), 19, C.gold, HEAD)
+		l.Size, l.Position = UDim2.new(1, -20, 0, 30), UDim2.fromOffset(12, 8)
+		local l2 = label(t, "Walk into the zone to join", 16, C.dim)
+		l2.Size, l2.Position = UDim2.new(1, -20, 0, 24), UDim2.fromOffset(12, 38)
+		local ok = button(t, "Got it", C.good, function()
 			t:Destroy()
 		end)
+		ok.Size, ok.Position = UDim2.new(1, -24, 0, 36), UDim2.fromOffset(12, 56)
 		task.delay(seconds, function()
 			if t.Parent then
 				t:Destroy()
@@ -314,53 +227,377 @@ function LobbyController.start()
 		end)
 	end)
 
-	Remotes.get("LobbyState").OnClientEvent:Connect(function(s: { [string]: any })
-		state = s
-		if s.open then
-			togglePanel(true)
+	-- ===== Окно хоста: настройки зоны =====
+	local setupWin, setupScale, setupBody = window(gui, "SquadSetup", 540, 600, Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.5))
+	table.insert(rescale, setupScale)
+	local setupChoice = { size = 4, access = "Public" }
+	local setupKey = ""
+	local editing = false
+
+	local function renderSetup(zone: { [string]: any })
+		for _, c in setupBody:GetChildren() do
+			c:Destroy()
 		end
-		if panel.Visible then
-			render()
+		local isSetup = zone.state == "setup"
+		pad(setupBody, 18)
+		local title = label(setupBody, if isSetup then "SQUAD SETUP" else "SQUAD SETTINGS", 34, C.gold, HEAD)
+		title.Size = UDim2.new(1, 0, 0, 40)
+		local sub = label(setupBody, string.format("Zone %d  ·  You are the host", zone.id), 16, C.dim)
+		sub.Size, sub.Position = UDim2.new(1, 0, 0, 20), UDim2.fromOffset(0, 40)
+
+		-- число игроков
+		local h1 = label(setupBody, "SQUAD SIZE", 16, C.dim, HEAD)
+		h1.Size, h1.Position = UDim2.new(1, 0, 0, 20), UDim2.fromOffset(0, 74)
+		local minSize = #zone.members
+		for n = 1, zone.max do
+			local chip = button(setupBody, tostring(n), if n == setupChoice.size then C.gold else C.button, function()
+				if n >= minSize then
+					setupChoice.size = n
+					renderSetup(zone)
+				end
+			end)
+			chip.TextColor3 = if n == setupChoice.size then C.dark else (if n < minSize then C.dim else C.text)
+			chip.TextSize = 30
+			local w = (500 - (zone.max - 1) * 8) / zone.max
+			chip.Size, chip.Position = UDim2.fromOffset(w, 58), UDim2.fromOffset((n - 1) * (w + 8), 98)
 		end
-	end)
-	panel:GetPropertyChangedSignal("Visible"):Connect(function()
-		if panel.Visible then
-			render()
+
+		-- доступ
+		local h2 = label(setupBody, "ACCESS", 16, C.dim, HEAD)
+		h2.Size, h2.Position = UDim2.new(1, 0, 0, 20), UDim2.fromOffset(0, 172)
+		for i, a in ACCESS do
+			local on = setupChoice.access == a.id
+			local b = button(setupBody, a.name, if on then C.gold else C.button, function()
+				setupChoice.access = a.id
+				renderSetup(zone)
+			end)
+			b.TextColor3 = if on then C.dark else C.text
+			b.TextSize = 22
+			b.Size, b.Position = UDim2.new(1 / 3, -6, 0, 52), UDim2.new((i - 1) / 3, if i == 1 then 0 else 4, 0, 196)
+		end
+		local desc = "Anyone can join"
+		for _, a in ACCESS do
+			if a.id == setupChoice.access then
+				desc = a.desc
+			end
+		end
+		local d = label(setupBody, desc, 15, C.dim)
+		d.Size, d.Position = UDim2.new(1, 0, 0, 20), UDim2.fromOffset(0, 252)
+
+		-- приглашения
+		local h3 = label(setupBody, "INVITE PLAYERS", 16, C.dim, HEAD)
+		h3.Size, h3.Position = UDim2.new(1, 0, 0, 20), UDim2.fromOffset(0, 282)
+		local list = mk("ScrollingFrame", {
+			BackgroundColor3 = C.panel2, BackgroundTransparency = 0.3, BorderSizePixel = 0, ScrollBarThickness = 5,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
+			Size = UDim2.new(1, 0, 0, 120), Position = UDim2.fromOffset(0, 306),
+		}, setupBody)
+		corner(list, 10)
+		pad(list, 6)
+		mk("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+		local others = 0
+		local inZone: { [number]: boolean } = {}
+		for _, m in zone.members do
+			inZone[m.uid] = true
+		end
+		for _, other in Players:GetPlayers() do
+			if other ~= player and not inZone[other.UserId] then
+				others += 1
+				local r = mk("Frame", { Size = UDim2.new(1, -8, 0, 40), BackgroundColor3 = C.row, BorderSizePixel = 0 }, list)
+				corner(r, 8)
+				local n = label(r, other.DisplayName, 18)
+				n.Size, n.Position = UDim2.new(1, -110, 1, 0), UDim2.fromOffset(10, 0)
+				local inv: TextButton
+				inv = button(r, "Invite", C.button, function()
+					cmd:FireServer("invite", other.UserId)
+					inv.Text = "Sent"
+				end)
+				inv.TextSize = 18
+				inv.Size, inv.Position = UDim2.fromOffset(88, 32), UDim2.new(1, -94, 0, 4)
+			end
+		end
+		if others == 0 then
+			local e = label(list, "No other players in the lobby yet", 16, C.dim)
+			e.Size = UDim2.new(1, -8, 0, 36)
+		end
+
+		-- состав (если зона открыта и в ней уже есть люди)
+		if not isSetup and #zone.members > 1 then
+			local m = label(setupBody, string.format("In the zone now: %d", #zone.members), 15, C.dim)
+			m.Size, m.Position = UDim2.new(1, 0, 0, 20), UDim2.fromOffset(0, 430)
+		end
+
+		-- кнопки
+		local primary = button(setupBody, if isSetup then "OPEN SQUAD" else "APPLY", C.good, function()
+			cmd:FireServer(if isSetup then "open" else "config", { size = setupChoice.size, access = setupChoice.access })
+			editing = false
+			if not isSetup then
+				setupWin.Visible = false
+			end
+		end)
+		primary.TextSize = 26
+		primary.Size, primary.Position = UDim2.new(0.5, -4, 0, 56), UDim2.new(0, 0, 1, -112)
+		local startB = button(setupBody, "START NOW", C.amber, function()
+			cmd:FireServer("start")
+			editing = false
+		end)
+		startB.TextSize = 26
+		startB.Size, startB.Position = UDim2.new(0.5, -4, 0, 56), UDim2.new(0.5, 4, 1, -112)
+		local cancelB = button(setupBody, if isSetup then "CANCEL" else "BACK", C.warn, function()
+			if isSetup then
+				cmd:FireServer("cancel")
+			end
+			editing = false
+			setupWin.Visible = false
+		end)
+		cancelB.TextSize = 22
+		cancelB.Size, cancelB.Position = UDim2.new(1, 0, 0, 44), UDim2.new(0, 0, 1, -50)
+		if not setupWin.Visible then
+			setupWin.Visible = true
+			popIn(setupWin, setupScale, uiScale())
+			setSelected(primary)
+		end
+	end
+
+	-- ===== Панель команды (зона открыта) =====
+	local teamWin, teamScale, teamBody = window(gui, "SquadPanel", 320, 420, Vector2.new(1, 0.5), UDim2.new(1, -16, 0.5, 0))
+	table.insert(rescale, teamScale)
+	local teamBar: Frame? = nil
+	local teamTimer: TextLabel? = nil
+	local teamEndsAt: number? = nil
+	local teamTotal = 12
+	local teamKey = ""
+
+	local function renderTeam(zone: { [string]: any })
+		for _, c in teamBody:GetChildren() do
+			c:Destroy()
+		end
+		pad(teamBody, 14)
+		local isHost = zone.role == "host"
+		local title = label(teamBody, string.format("SQUAD %d", zone.id), 30, C.gold, HEAD)
+		title.Size = UDim2.new(1, 0, 0, 34)
+		local sub = label(teamBody, string.format("%s  ·  %d/%d", ACCESS_NAME[zone.access] or zone.access, #zone.members, zone.size), 17, C.dim)
+		sub.Size, sub.Position = UDim2.new(1, 0, 0, 22), UDim2.fromOffset(0, 34)
+		local list = mk("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 210), Position = UDim2.fromOffset(0, 64) }, teamBody)
+		mk("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+		for _, m in zone.members do
+			local r = mk("Frame", { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.row, BorderSizePixel = 0 }, list)
+			corner(r, 8)
+			local isH = m.uid == zone.hostUid
+			local n = label(r, (if isH then "★ " else "") .. m.name, 18, if isH then C.gold else C.text)
+			n.Size, n.Position = UDim2.new(1, -70, 1, 0), UDim2.fromOffset(10, 0)
+			if isHost and m.uid ~= player.UserId then
+				local k = button(r, "Kick", C.warn, function()
+					cmd:FireServer("kick", m.uid)
+				end)
+				k.TextSize = 16
+				k.Size, k.Position = UDim2.fromOffset(56, 26), UDim2.new(1, -62, 0, 4)
+			end
+		end
+		-- отсчёт
+		local barBg = mk("Frame", { BackgroundColor3 = C.row, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -112) }, teamBody)
+		corner(barBg, 7)
+		local bar = mk("Frame", { BackgroundColor3 = C.gold, BorderSizePixel = 0, Size = UDim2.fromScale(0, 1) }, barBg)
+		corner(bar, 7)
+		teamBar = bar
+		local timer = label(teamBody, "", 20, C.text, HEAD, Enum.TextXAlignment.Center)
+		timer.Size, timer.Position = UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 1, -136)
+		teamTimer = timer
+		teamEndsAt = zone.endsAt
+		teamTotal = zone.countdown or 12
+		if isHost then
+			local s = button(teamBody, "START NOW", C.good, function()
+				cmd:FireServer("start")
+			end)
+			s.TextSize = 24
+			s.Size, s.Position = UDim2.new(1, 0, 0, 48), UDim2.new(0, 0, 1, -92)
+			local e = button(teamBody, "SETTINGS", C.button, function()
+				editing = true
+				setupKey = ""
+				setupChoice.size, setupChoice.access = zone.size, zone.access
+				teamWin.Visible = false
+				renderSetup(zone)
+			end)
+			e.TextSize = 18
+			e.Size, e.Position = UDim2.new(0.5, -4, 0, 36), UDim2.new(0, 0, 1, -40)
+			local x = button(teamBody, "DISBAND", C.warn, function()
+				cmd:FireServer("cancel")
+			end)
+			x.TextSize = 18
+			x.Size, x.Position = UDim2.new(0.5, -4, 0, 36), UDim2.new(0.5, 4, 1, -40)
+		else
+			local w = label(teamBody, "Waiting for the host…", 18, C.dim, BODY, Enum.TextXAlignment.Center)
+			w.Size, w.Position = UDim2.new(1, 0, 0, 40), UDim2.new(0, 0, 1, -70)
+		end
+		if not teamWin.Visible then
+			teamWin.Visible = true
+			popIn(teamWin, teamScale, uiScale())
+		end
+	end
+
+	task.spawn(function()
+		while true do
+			local bar, timer = teamBar, teamTimer
+			if teamWin.Visible and bar and timer and bar.Parent then
+				local z = state.zone
+				if teamEndsAt then
+					local left = math.max(0, teamEndsAt - workspace:GetServerTimeNow())
+					timer.Text = string.format("Starting in %d", math.ceil(left))
+					bar.Size = UDim2.fromScale(math.clamp(1 - left / teamTotal, 0, 1), 1)
+				elseif z and z.state == "launching" then
+					timer.Text = "Launching…"
+					bar.Size = UDim2.fromScale(1, 1)
+				else
+					timer.Text = if z and #z.members >= z.size then "Zone full" else "Waiting for players"
+					bar.Size = UDim2.fromScale(0, 1)
+				end
+			end
+			task.wait(0.1)
 		end
 	end)
 
+	local function hideZoneWindows()
+		setupWin.Visible = false
+		teamWin.Visible = false
+		editing = false
+		setupKey = ""
+		teamKey = ""
+	end
+
+	-- Окна перерисовываются, только когда изменилось содержимое (снимок приходит каждые 0.5–2 с)
+	local function onState()
+		if not inLobby then
+			return
+		end
+		local zone = state.zone
+		if not zone then
+			hideZoneWindows()
+			return
+		end
+		local names = {}
+		for _, m in zone.members do
+			table.insert(names, m.uid)
+		end
+		local content = string.format("%d:%s:%s:%d:%s:%d:%s", zone.id, zone.state, zone.role, #Players:GetPlayers(), table.concat(names, ","), zone.size, zone.access)
+		if zone.role == "host" and (zone.state == "setup" or editing) then
+			teamWin.Visible = false
+			teamKey = ""
+			local key = content .. tostring(editing)
+			if key ~= setupKey then
+				if not setupWin.Visible then
+					setupChoice.size = if zone.state == "setup" then math.max(4, #zone.members) else zone.size
+					setupChoice.access = zone.access
+				end
+				setupKey = key
+				renderSetup(zone)
+			end
+		else
+			setupWin.Visible = false
+			setupKey = ""
+			local key = content .. tostring(zone.endsAt ~= nil)
+			if key ~= teamKey or not teamWin.Visible then
+				teamKey = key
+				renderTeam(zone)
+			end
+		end
+	end
+
+	-- ===== Окна торговца и автомата =====
+	local menuWin, menuScale, menuBody = window(gui, "LobbyMenu", 640, 470, Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.5))
+	table.insert(rescale, menuScale)
+	local function closeMenu()
+		menuWin.Visible = false
+	end
+	local function openMenu(kind: string, payload: { title: string, items: { { id: string, name: string, desc: string, price: string } } })
+		for _, c in menuBody:GetChildren() do
+			c:Destroy()
+		end
+		pad(menuBody, 18)
+		local accent = if kind == "vending" then C.amber else C.gold
+		local t = label(menuBody, string.upper(payload.title), 34, accent, HEAD)
+		t.Size = UDim2.new(1, -60, 0, 40)
+		local s = label(menuBody, if kind == "vending" then "Support the project: donation items" else "Cosmetics for your survivor", 16, C.dim)
+		s.Size, s.Position = UDim2.new(1, -60, 0, 20), UDim2.fromOffset(0, 40)
+		local x = button(menuBody, "X", C.warn, closeMenu)
+		x.Size, x.Position = UDim2.fromOffset(48, 40), UDim2.new(1, -48, 0, 0)
+		local grid = mk("ScrollingFrame", {
+			BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 5,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
+			Size = UDim2.new(1, 0, 1, -112), Position = UDim2.fromOffset(0, 72),
+		}, menuBody)
+		mk("UIGridLayout", { CellSize = UDim2.new(0.5, -6, 0, 116), CellPadding = UDim2.fromOffset(10, 10), SortOrder = Enum.SortOrder.LayoutOrder }, grid)
+		for _, item in payload.items do
+			local card = mk("Frame", { BackgroundColor3 = C.row, BorderSizePixel = 0 }, grid)
+			corner(card, 12)
+			stroke(card, accent, 1.5, 0.75)
+			local n = label(card, item.name, 22, C.text, HEAD)
+			n.Size, n.Position = UDim2.new(1, -20, 0, 26), UDim2.fromOffset(12, 8)
+			local d = label(card, item.desc, 14, C.dim)
+			d.Size, d.Position, d.TextWrapped, d.TextTruncate = UDim2.new(1, -20, 0, 34), UDim2.fromOffset(12, 36), true, Enum.TextTruncate.None
+			d.TextYAlignment = Enum.TextYAlignment.Top
+			local price = label(card, item.price, 16, accent, HEAD)
+			price.Size, price.Position = UDim2.new(0.5, -12, 0, 30), UDim2.new(0, 12, 1, -36)
+			local buy = button(card, "BUY", C.button, function()
+				cmd:FireServer("buy", item.id)
+			end)
+			buy.TextSize = 18
+			buy.Size, buy.Position = UDim2.fromOffset(84, 32), UDim2.new(1, -96, 1, -38)
+		end
+		local foot = label(menuBody, "Purchases are not available yet — they will appear in a coming update", 14, C.dim, BODY, Enum.TextXAlignment.Center)
+		foot.Size, foot.Position = UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 1, -26)
+		if not menuWin.Visible then
+			menuWin.Visible = true
+			popIn(menuWin, menuScale, uiScale())
+			setSelected(x)
+		end
+	end
+	Remotes.get("LobbyMenu").OnClientEvent:Connect(function(kind: string, payload: any)
+		if inLobby and typeof(kind) == "string" and typeof(payload) == "table" then
+			openMenu(kind, payload)
+		end
+	end)
+	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
+		if input.KeyCode == Enum.KeyCode.ButtonB and menuWin.Visible then
+			closeMenu()
+		end
+	end)
+
+	Remotes.get("LobbyState").OnClientEvent:Connect(function(s: { [string]: any })
+		state = s
+		onState()
+	end)
+
 	-- ===== Экран итогов раунда =====
-	local results = frame(gui, UDim2.fromOffset(420, 300), UDim2.new(0.5, -210, 0.5, -150))
-	results.Visible = false
-	results.ZIndex = 5
-	corner(results, 14)
-	local resTitle = text(results, "", UDim2.new(1, -24, 0, 50), UDim2.fromOffset(12, 14), 36, COLORS.accent, true)
-	resTitle.TextXAlignment = Enum.TextXAlignment.Center
-	local resLines = text(results, "", UDim2.new(1, -24, 0, 110), UDim2.fromOffset(12, 70), 20)
-	resLines.TextXAlignment = Enum.TextXAlignment.Center
-	resLines.TextYAlignment = Enum.TextYAlignment.Top
-	resLines.TextWrapped = true
-	resLines.TextTruncate = Enum.TextTruncate.None
-	local resTimer = text(results, "", UDim2.new(1, -24, 0, 24), UDim2.fromOffset(12, 186), 16, COLORS.dim)
-	resTimer.TextXAlignment = Enum.TextXAlignment.Center
+	local results, resultsScale, resultsBody = window(gui, "Results", 460, 380, Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.5))
+	table.insert(rescale, resultsScale)
+	pad(resultsBody, 20)
+	local resTitle = label(resultsBody, "", 44, C.gold, HEAD, Enum.TextXAlignment.Center)
+	resTitle.Size = UDim2.new(1, 0, 0, 52)
+	local resLines = label(resultsBody, "", 22, C.text, BODY, Enum.TextXAlignment.Center)
+	resLines.Size, resLines.Position = UDim2.new(1, 0, 0, 120), UDim2.fromOffset(0, 66)
+	resLines.TextWrapped, resLines.TextTruncate, resLines.TextYAlignment = true, Enum.TextTruncate.None, Enum.TextYAlignment.Top
+	local resTimer = label(resultsBody, "", 17, C.dim, BODY, Enum.TextXAlignment.Center)
+	resTimer.Size, resTimer.Position = UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 1, -112)
 	local backBtn: TextButton
-	backBtn = button(results, "BACK TO LOBBY", UDim2.new(1, -40, 0, 56), UDim2.fromOffset(20, 224), COLORS.good, function()
+	backBtn = button(resultsBody, "BACK TO LOBBY", C.good, function()
 		Remotes.get("BackToLobby"):FireServer()
 		backBtn.Text = "Returning…"
 		backBtn.Active = false
 	end)
-	backBtn.TextSize = 24
+	backBtn.TextSize = 28
+	backBtn.Size, backBtn.Position = UDim2.new(1, 0, 0, 62), UDim2.new(0, 0, 1, -76)
 
 	-- ===== Режимы =====
-	-- В лобби прячем чужие экраны (HUD и т.п., если они запускались раньше в этом же клиенте — только Studio-заглушка)
 	local hidden: { ScreenGui } = {}
 	local function setLobbyVisible(on: boolean)
 		inLobby = on
 		gui.Enabled = on or results.Visible
-		bar.Visible = on
 		stats.Visible = on
+		tip.Visible = on
+		toasts.Visible = on
 		if not on then
-			panel.Visible = false
+			hideZoneWindows()
+			menuWin.Visible = false
 		end
 		if on then
 			for _, g in player.PlayerGui:GetChildren() do
@@ -383,6 +620,15 @@ function LobbyController.start()
 	ReplicatedStorage:GetAttributeChangedSignal("Mode"):Connect(onMode)
 	onMode()
 
+	local cam = workspace.CurrentCamera
+	if cam then
+		cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			for _, sc in rescale do
+				sc.Scale = uiScale()
+			end
+		end)
+	end
+
 	local function resultsVisible(): boolean
 		return (ReplicatedStorage:GetAttribute("ReturnAt") :: number?) ~= nil and not inLobby
 	end
@@ -397,11 +643,11 @@ function LobbyController.start()
 				if show then
 					local won = ReplicatedStorage:GetAttribute("Victory") ~= nil or ReplicatedStorage:GetAttribute("ActComplete") ~= nil
 					resTitle.Text = if won then "VICTORY!" else "ROUND OVER"
+					resTitle.TextColor3 = if won then C.gold else Color3.fromRGB(230, 96, 80)
 					backBtn.Text = "BACK TO LOBBY"
 					backBtn.Active = true
-					if UserInputService.GamepadEnabled then
-						GuiService.SelectedObject = backBtn
-					end
+					popIn(results, resultsScale, uiScale())
+					setSelected(backBtn)
 				end
 			end
 			if show then
