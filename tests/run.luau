@@ -39,8 +39,8 @@ local RoundCfg = {
 }
 
 local Economy = {
-	MissionPersonalTotal = 7300,
-	MissionTeamTotal = 5300,
+	MissionPersonalTotal = 6700,
+	MissionTeamTotal = 4900,
 	MissionGrowth = 0.10,
 	MissionRewardWaves = 20,
 	TeamShareMinPlayers = 2,
@@ -357,9 +357,9 @@ local function greed(w: number): number
 	return 1 + 0.1 * (if w > 5 then 1 else 0) + 0.1 * (if w > 10 then 1 else 0) + 0.1 * (if w > 15 then 1 else 0)
 end
 
-test("economy: a player has 6.5–8k by night 15 (two players, even with the top coin perk), fewer in a bigger team", function()
+test("economy: a player has 6–7.5k by night 15 (two players, even with the top coin perk), fewer in a bigger team", function()
 	local base, top = income(2, 15), income(2, 15, greed)
-	check(base >= 6500 and base <= 8000, "two players, no perk: " .. base)
+	check(base >= 6000 and base <= 7500, "two players, no perk: " .. base)
 	check(top <= 8000, "two players, max Looter: " .. top)
 	check(income(4, 15) < base and income(6, 15) < income(4, 15), "a bigger team gets less per head")
 	eq(income(1, 15), base, "solo gets as much as two (the team share is divided by at least 2)")
