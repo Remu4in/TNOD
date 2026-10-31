@@ -587,6 +587,18 @@ function LobbyController.start()
 	backBtn.TextSize = 28
 	backBtn.Size, backBtn.Position = UDim2.new(1, 0, 0, 62), UDim2.new(0, 0, 1, -76)
 
+	-- Свободная мышь: пока открыто окно, Modal-кнопка отпускает курсор (иначе в режиме от первого лица он привязан к камере)
+	local modalBtn = mk("TextButton", { Name = "ModalCursor", Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1, Text = "", Modal = false }, gui)
+	task.spawn(function()
+		while true do
+			local want = gui.Enabled and (setupWin.Visible or teamWin.Visible or menuWin.Visible or results.Visible)
+			if modalBtn.Modal ~= want then
+				modalBtn.Modal = want
+			end
+			task.wait(0.1)
+		end
+	end)
+
 	-- ===== Режимы =====
 	local hidden: { ScreenGui } = {}
 	local function setLobbyVisible(on: boolean)

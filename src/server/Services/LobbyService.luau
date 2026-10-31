@@ -50,7 +50,6 @@ local dirty = true
 local lastHint: { [Player]: number } = {}
 local savedLighting: { [string]: any }? = nil
 local bannerShown: { [number]: string } = {}
-local lastBoardLeader = 0
 
 -- Studio: ждём, пока кто-то снова запустит матч после возврата в лобби
 local studioStartPending = false
@@ -780,25 +779,6 @@ local function refreshBoard()
 		board.setNote("No records yet — be the first survivor!")
 	else
 		board.setNote("Global top by total rating · refreshed every " .. math.floor(L.BoardRefresh / 60) .. " min")
-	end
-	-- «аватар первого места» ассета надевает наряд лидера
-	local leader = if top[1] then top[1].userId else (if sample then 1 else 0) -- в Studio без данных — любой аккаунт для вида
-	local rig = board.rig
-	if rig and leader ~= lastBoardLeader and leader > 0 then
-		lastBoardLeader = leader
-		local hum = rig:FindFirstChildOfClass("Humanoid")
-		if hum then
-			task.spawn(function()
-				local ok, desc = pcall(function()
-					return Players:GetHumanoidDescriptionFromUserId(leader)
-				end)
-				if ok and desc then
-					pcall(function()
-						hum:ApplyDescription(desc)
-					end)
-				end
-			end)
-		end
 	end
 end
 

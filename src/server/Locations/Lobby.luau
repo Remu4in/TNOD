@@ -488,22 +488,12 @@ function Lobby.build(): LobbyInfo
 		put("Props.RoadLight", -7, z, -90, { y = 0.2, scale = 0.5 })
 		put("Props.RoadLight", 7, z, 90, { y = 0.2, scale = 0.5 })
 	end
-	-- костровые бочки у площади (тёплый свет)
-	for _, p in { { -30, 44 }, { 30, 44 }, { -30, 80 }, { 30, 80 } } do
-		local barrel = Instance.new("Part")
-		barrel.Name = "FireBarrel"
-		barrel.Shape = Enum.PartType.Cylinder
-		barrel.Anchored = true
-		barrel.Size = Vector3.new(3.2, 2.6, 2.6)
-		barrel.CFrame = CFrame.new(at(p[1], 1.7, p[2])) * CFrame.Angles(0, 0, math.rad(90))
-		barrel.Color = Color3.fromRGB(110, 62, 44)
-		barrel.Material = Enum.Material.Metal
-		barrel.Parent = propsF
-		local fire = Instance.new("Fire")
-		fire.Heat = 8
-		fire.Size = 5
-		fire.Parent = barrel
-		light(barrel, 30, 1.5, Color3.fromRGB(255, 150, 70))
+	-- скамейки у площади и военные припасы вместо бочек: скамьи лицом к центру
+	for _, p in { { -30, 46, -90 }, { 30, 46, 90 }, { -30, 76, -90 }, { 30, 76, 90 } } do
+		put("Metro.Bench", p[1], p[2], p[3], { y = 0.2 })
+	end
+	for _, c in { { -33, 62, 10 }, { 33, 62, -10 }, { -33, 86, 30 }, { 33, 86, -30 } } do
+		put("Props.MilitaryCrates", c[1], c[2], c[3], { y = 0.2, scale = 0.8 })
 	end
 
 	local menus: { MenuPoint } = {}
@@ -526,8 +516,8 @@ function Lobby.build(): LobbyInfo
 	put("Lobby.ShopSign", wallX + 2.4, -6, -90, { y = 8.4, name = "ShopSign", scale = 1.5 })
 	local stallZ = { -20, -6, 8 }
 	for k, z in stallZ do
-		put("Lobby.Stall", -113, z, 90, { y = 0.2, name = "Stall" .. k })
-		table.insert(npcSpots, { kind = "trader", pos = at(-118.6, 0, z), yaw = -90, trader = k, label = "Trader " .. k })
+		put("Lobby.Stall", -113, z, -90, { y = 0.2, name = "Stall" .. k })
+		table.insert(npcSpots, { kind = "trader", pos = at(-118.6, 0, z), yaw = 90, trader = k, label = "Trader " .. k })
 	end
 	put("Props.MilitaryCrates", wallX + 6, -28.5, 20, { y = 0.2, scale = 0.8 })
 	put("Props.MilitaryCrates", wallX + 6, 16.5, -15, { y = 0.2, scale = 0.8 })
@@ -587,6 +577,14 @@ function Lobby.build(): LobbyInfo
 		local rig: Model? = nil
 		if bm then
 			rig = bm:FindFirstChild("Rig", true) :: Model?
+			if rig then
+				for _, d in rig:GetDescendants() do
+					if d:IsA("BasePart") then
+						d.Anchored = d.Name == "HumanoidRootPart"
+						d.CanCollide = false
+					end
+				end
+			end
 			local sb = bm:FindFirstChild("ScoreBlock", true) :: BasePart?
 			if sb then
 				sb.Transparency = 0
