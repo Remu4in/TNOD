@@ -8,33 +8,42 @@ local RateLimit = require("../src/shared/RateLimit")
 local Rewind = require("../src/shared/Rewind")
 local LobbyRules = require("../src/shared/LobbyRules")
 
+-- Копии релизных чисел из Config (Config.Waves, Config.Round, Config.Economy, Config.ThreatClasses, Config.Threat) — без CountScale
 local Tuning = {
-	StartCounts = { 20, 30, 35, 40 },
-	StartPerExtraPlayer = 4,
+	StartCounts = { 12, 18, 24, 30 },
+	StartPerExtraPlayer = 6,
 	CurveWaves = 20,
 	CurveExp = 1.25,
 	JitterPct = 10,
-	CapSolo = 250,
-	CapPerExtraPlayer = 1 / 3,
-	HpGrowthPerWave = 0.12,
-	DamageGrowthPerWave = 0.03,
+	CapSolo = 80,
+	CapPerExtraPlayer = 0.45,
+	HpGrowthPerWave = 0,
+	DamageGrowthPerWave = 0.02,
 	SpeedGrowthPerWave = 0.01,
 	SpeedCeil = 18,
 	BossEvery = 5,
 }
 
+local RoundCfg = {
+	AlivePerPlayerStart = 8,
+	AlivePerPlayerEnd = 24,
+	AliveWaves = 20,
+	AliveExp = 1,
+	AliveMin = 8,
+	AliveHardCap = 130,
+	FirstDayTime = 40,
+	DayTime = 30,
+	DayAfterBossBonus = 5,
+	NightDefaultTime = 180,
+	NightTimes = { 120, 130, 160, 140, 180, 170, 200, 200, 190, 300, 180, 220, 140, 200, 320, 170, 200, 600, 260, 360 },
+}
+
 local Economy = {
-	MissionPersonalTotal = 3413,
-	MissionTeamTotal = 13050,
-	MissionGrowth = 0.18,
-	MissionRewardWaves = 15,
-	KillCapMin = 200,
-	KillCapMax = 300,
-	KillCapWaves = 15,
-	KillPoolShare = 0.35,
-	KillBodyShare = 0.4,
-	KillWeights = { Walker = 1, Runner = 1.2, Crawler = 0.8, Dark = 2, BucketHead = 2.5, Military = 3, Chemist = 3, Brute = 6 },
-	BossKillWeight = 40,
+	MissionPersonalTotal = 7300,
+	MissionTeamTotal = 5300,
+	MissionGrowth = 0.10,
+	MissionRewardWaves = 20,
+	TeamShareMinPlayers = 2,
 }
 
 -- Заглушка Random: детерминированный генератор
@@ -71,27 +80,27 @@ local function check(c: boolean, msg: string)
 end
 
 local ClassDefs = {
-	SMG = { weight = 7, bonusMin = 5, bonusMax = 10 },
-	Shotgun = { weight = 7, bonusMin = 5, bonusMax = 10 },
-	Rifle = { weight = 15, bonusMin = 10, bonusMax = 20 },
-	MG = { weight = 15, bonusMin = 10, bonusMax = 20 },
+	SMG = { weight = 7, bonusMin = 2, bonusMax = 4 },
+	Shotgun = { weight = 7, bonusMin = 2, bonusMax = 4 },
+	Rifle = { weight = 15, bonusMin = 4, bonusMax = 8 },
+	MG = { weight = 15, bonusMin = 4, bonusMax = 8 },
 }
 local Tiers = {
-	{ min = 0, hp = 1.0, runners = 0, early = 0 },
-	{ min = 7, hp = 1.1, runners = 0.05, early = 0 },
-	{ min = 15, hp = 1.2, runners = 0.1, early = 1 },
-	{ min = 29, hp = 1.35, runners = 0.15, early = 1 },
+	{ min = 0, hp = 1, runners = 0, early = 0, alive = 0 },
+	{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 2 },
+	{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 4 },
+	{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 6 },
 }
 local function threatOf(loadouts: { { string } }, seed: number?)
 	return WaveMath.makeThreat(ClassDefs, Tiers, loadouts, seed or 1)
 end
 
-test("wave 1 without weapons: 20 / 30 / 35 / 40", function()
-	local want = { 20, 30, 35, 40 }
+test("wave 1 without weapons: 12 / 18 / 24 / 30", function()
+	local want = { 12, 18, 24, 30 }
 	for p = 1, 4 do
 		eq(WaveMath.zombieCount(Tuning, 1, p), want[p], "players " .. p)
 	end
-	eq(WaveMath.zombieCount(Tuning, 1, 5), 44, "5 players")
+	eq(WaveMath.zombieCount(Tuning, 1, 5), 36, "5 players")
 end)
 
 test("the curve doesn't decrease, starts at the start and ends at the cap", function()
@@ -103,8 +112,8 @@ test("the curve doesn't decrease, starts at the start and ends at the cap", func
 			prev = n
 		end
 	end
-	eq(WaveMath.curveCount(Tuning, 20, 1), 250, "solo, 20th")
-	eq(math.floor(WaveMath.curveCount(Tuning, 20, 4) + 0.5), 500, "four players, 20th")
+	eq(WaveMath.curveCount(Tuning, 20, 1), 80, "solo, 20th")
+	eq(math.floor(WaveMath.curveCount(Tuning, 20, 4) + 0.5), 188, "four players, 20th")
 end)
 
 test("zombie count: within ±10% of the curve (no weapons), not above the cap", function()
@@ -113,20 +122,21 @@ test("zombie count: within ±10% of the curve (no weapons), not above the cap", 
 			for _, p in { 1, 2, 4 } do
 				local n = WaveMath.zombieCount(Tuning, w, p, threatOf({ {} }, seed))
 				local curve = WaveMath.curveCount(Tuning, w, p)
-				check(n >= math.floor(curve * 0.9), string.format("seed %d w %d p %d: %d < 90%% of %.1f", seed, w, p, n, curve))
-				check(n <= math.min(math.ceil(curve * 1.1), 250 * (1 + (p - 1) / 3)) + 1, string.format("seed %d w %d p %d: %d", seed, w, p, n))
+				local mul = WaveMath.Plan[math.min(w, 20)].countMul or 1
+				check(n >= math.floor(curve * 0.9 * mul), string.format("seed %d w %d p %d: %d < 90%% of %.1f", seed, w, p, n, curve * mul))
+				check(n <= math.min(math.ceil(curve * 1.1), 80 * (1 + 0.45 * (p - 1))) * mul + 1, string.format("seed %d w %d p %d: %d", seed, w, p, n))
 			end
 		end
 	end
 end)
 
-test("cap: solo 250, four players 500, with any weapon", function()
+test("cap: solo 80, four players 188, with any weapon", function()
 	local full = { "SMG", "Shotgun", "Rifle", "MG" }
 	for w = 1, 40 do
-		check(WaveMath.zombieCount(Tuning, w, 1, threatOf({ full })) <= 250, "solo, wave " .. w)
-		check(WaveMath.zombieCount(Tuning, w, 4, threatOf({ full, full, full, full })) <= 500, "four players, wave " .. w)
+		check(WaveMath.zombieCount(Tuning, w, 1, threatOf({ full })) <= 80, "solo, wave " .. w)
+		check(WaveMath.zombieCount(Tuning, w, 4, threatOf({ full, full, full, full })) <= 188, "four players, wave " .. w)
 	end
-	eq(WaveMath.zombieCount(Tuning, 25, 1, threatOf({ full })), 250, "solo, late wave")
+	eq(WaveMath.zombieCount(Tuning, 25, 1, threatOf({ full })), 80, "solo, late wave")
 end)
 
 test("the roll is reproducible", function()
@@ -141,10 +151,10 @@ test("0 players counts as 1", function()
 	eq(WaveMath.zombieCount(Tuning, 2, 0), WaveMath.zombieCount(Tuning, 2, 1), "0 players")
 end)
 
-test("weapon bonus: SMG/shotgun 5–10, rifle/machine gun 10–20 (solo, wave 1)", function()
+test("weapon bonus: SMG/shotgun 2–4, rifle/machine gun 4–8 (solo, wave 1)", function()
 	for seed = 1, 30 do
 		for class, def in ClassDefs do
-			local n = WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { class } }, seed)) - 20
+			local n = WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { class } }, seed)) - 12
 			check(n >= def.bonusMin and n <= def.bonusMax, string.format("%s seed %d: +%d", class, seed, n))
 		end
 	end
@@ -154,16 +164,18 @@ test("a class counts once, no matter how many guns", function()
 	eq(WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { "SMG", "SMG", "SMG" } }, 5)), WaveMath.zombieCount(Tuning, 1, 1, threatOf({ { "SMG" } }, 5)), "three SMGs = one")
 end)
 
-test("threat level: no weapons 1st, rifle 3rd, everything 4th", function()
-	eq(threatOf({ {} }).tier.hp, 1.0, "no weapons")
-	eq(threatOf({ { "SMG" } }).tier.hp, 1.1, "SMGs")
-	eq(threatOf({ { "Rifle" } }).tier.hp, 1.2, "rifle")
-	eq(threatOf({ { "SMG", "Shotgun", "Rifle", "MG" } }).tier.hp, 1.35, "everything")
-	eq(threatOf({ { "Rifle" }, {} }).tier.hp, 1.1, "one of two: average 7.5")
+test("threat level: no weapons 1st, rifle 3rd, everything 4th — extra living zombies, health never changes", function()
+	eq(threatOf({ {} }).tier.alive, 0, "no weapons")
+	eq(threatOf({ { "SMG" } }).tier.alive, 2, "SMGs")
+	eq(threatOf({ { "Rifle" } }).tier.alive, 4, "rifle")
+	eq(threatOf({ { "SMG", "Shotgun", "Rifle", "MG" } }).tier.alive, 6, "everything")
+	eq(threatOf({ { "Rifle" }, {} }).tier.alive, 2, "one of two: average 7.5")
+	for _, loadout in { {}, { "SMG" }, { "Rifle" }, { "SMG", "Shotgun", "Rifle", "MG" } } do
+		eq(threatOf({ loadout }).tier.hp, 1, "tier hp is always 1")
+	end
 end)
 
-test("HP and speed: grow by wave, speed not above the cap", function()
-	check(WaveMath.hpMultiplier(Tuning, 5, threatOf({ { "Rifle" } })) > WaveMath.hpMultiplier(Tuning, 5), "weapons raise HP")
+test("speed: grows by wave, not above the cap", function()
 	for w = 1, 40 do
 		check(WaveMath.speedOf(Tuning, 14, w) <= 18, "walker on wave " .. w)
 		check(WaveMath.speedOf(Tuning, 14, w) >= 14, "not slower than base")
@@ -171,9 +183,13 @@ test("HP and speed: grow by wave, speed not above the cap", function()
 	eq(WaveMath.speedOf(Tuning, 19, 30), 19, "a runner faster than the cap doesn't slow down")
 end)
 
-test("HP multiplier: wave 1 = 1, grows", function()
-	eq(WaveMath.hpMultiplier(Tuning, 1), 1, "wave 1")
-	check(WaveMath.hpMultiplier(Tuning, 10) > WaveMath.hpMultiplier(Tuning, 9), "growth")
+test("HP multiplier is always 1: no growth by wave, no growth by threat level", function()
+	local full = threatOf({ { "SMG", "Shotgun", "Rifle", "MG" } })
+	for w = 1, 40 do
+		eq(WaveMath.hpMultiplier(Tuning, w), 1, "wave " .. w)
+		eq(WaveMath.hpMultiplier(Tuning, w, full), 1, "wave " .. w .. " with every weapon class")
+		eq(WaveMath.hpMultiplier(Tuning, w, threatOf({ { "Rifle" } })), 1, "wave " .. w .. " with a rifle")
+	end
 end)
 
 test("bosses only on every 5th wave", function()
@@ -197,14 +213,14 @@ test("the composition adds up to the zombie count", function()
 	end
 end)
 
-test("wave 10: all regulars are armored, bosses Gargantua and Dark Lord", function()
+test("wave 10: all regulars are armored, the boss is Gargantua (one boss per night)", function()
 	local c = WaveMath.composition(Tuning, 10, 3)
 	eq(c.Walker, nil, "no walkers")
 	eq(c.Runner, nil, "no runners")
 	eq(c.Military, nil, "no soldiers")
 	check((c.BucketHead or 0) > 0, "armored present")
 	eq(c.BossGarg, 1, "Gargantua")
-	eq(c.BossStrong, 1, "Dark Lord")
+	eq(c.BossStrong, nil, "no second boss")
 end)
 
 test("soldiers from the 11th: 2–4 of them, none before the 11th", function()
@@ -214,6 +230,18 @@ test("soldiers from the 11th: 2–4 of them, none before the 11th", function()
 	for w = 11, 19 do
 		local n = WaveMath.composition(Tuning, w, 1).Military or 0
 		check(n >= 2 and n <= 4, "wave " .. w .. ": " .. n)
+	end
+end)
+
+test("fully armored soldiers: none before the 16th, 1–2 on 16–19", function()
+	for w = 1, 15 do
+		for _, p in { 1, 2, 6 } do
+			eq(WaveMath.composition(Tuning, w, p).MilitaryArmored, nil, string.format("wave %d, players %d", w, p))
+		end
+	end
+	for w = 16, 19 do
+		local n = WaveMath.composition(Tuning, w, 1).MilitaryArmored or 0
+		check(n >= 1 and n <= 2, string.format("wave %d: %d", w, n))
 	end
 end)
 
@@ -272,7 +300,7 @@ end)
 
 test("composition per plan: 1st — walkers only, 2nd — runners from the 2nd", function()
 	local c1 = WaveMath.composition(Tuning, 1, 1)
-	eq(c1.Walker, 20, "1st: walkers only")
+	eq(c1.Walker, 12, "1st: walkers only")
 	check(WaveMath.composition(Tuning, 2, 1).Runner ~= nil, "runners on the 2nd")
 end)
 
@@ -298,14 +326,14 @@ test("threat level adds runners, only where they're in the plan", function()
 	eq(WaveMath.composition(Tuning, 12, 1, threat).Runner, nil, "11–15: no runners in the plan — and we don't add any")
 end)
 
-test("zombie damage +3% per wave", function()
+test("zombie damage +2% per wave", function()
 	eq(WaveMath.damageMultiplier(Tuning, 1), 1, "wave 1")
-	check(math.abs(WaveMath.damageMultiplier(Tuning, 11) - 1.3) < 1e-9, "wave 11 = 1.3")
+	check(math.abs(WaveMath.damageMultiplier(Tuning, 11) - 1.2) < 1e-9, "wave 11 = 1.2")
 end)
 
-test("economy: mission rewards for nights 1–15 equal the set totals and grow", function()
+test("economy: mission rewards for nights 1–20 equal the set totals and grow", function()
 	local personal, team, prev = 0, 0, 0
-	for w = 1, 15 do
+	for w = 1, 20 do
 		local p, t = WaveMath.missionReward(Economy, w)
 		personal += p
 		team += t
@@ -316,51 +344,99 @@ test("economy: mission rewards for nights 1–15 equal the set totals and grow",
 	check(math.abs(team - Economy.MissionTeamTotal) < 1e-6, "team part " .. team)
 end)
 
-test("economy: player income by night 15 ≈ 0.9 basket with 1, 2, 4 and 6 players", function()
-	local killPoolFull = 0
-	for w = 1, 15 do
-		killPoolFull += WaveMath.killPool(Economy, w, 1)
+-- накопленные монеты игрока к ночи upTo (со стартовыми 500), mult — множитель перка монет по ночам
+local function income(players: number, upTo: number, mult: ((number) -> number)?): number
+	local sum = 500
+	for w = 1, upTo do
+		sum += WaveMath.playerReward(Economy, w, players) * (if mult then mult(w) else 1)
 	end
-	for _, n in { 1, 2, 4, 6 } do
-		local income = Economy.MissionPersonalTotal + killPoolFull + Economy.MissionTeamTotal / n
-		local target = 0.9 * (5250 + 14500 / n)
-		check(math.abs(income - target) < target * 0.01, n .. " players: " .. income .. " vs " .. target)
+	return sum
+end
+-- «Looter» на максимуме: +10% после ночи 5, +20% после 10, +30% после 15 (верхняя оценка)
+local function greed(w: number): number
+	return 1 + 0.1 * (if w > 5 then 1 else 0) + 0.1 * (if w > 10 then 1 else 0) + 0.1 * (if w > 15 then 1 else 0)
+end
+
+test("economy: a player has 6.5–8k by night 15 (two players, even with the top coin perk), fewer in a bigger team", function()
+	local base, top = income(2, 15), income(2, 15, greed)
+	check(base >= 6500 and base <= 8000, "two players, no perk: " .. base)
+	check(top <= 8000, "two players, max Looter: " .. top)
+	check(income(4, 15) < base and income(6, 15) < income(4, 15), "a bigger team gets less per head")
+	eq(income(1, 15), base, "solo gets as much as two (the team share is divided by at least 2)")
+end)
+
+test("economy: the team part (building fund) is the same for any team size and buys at most 3 of the 6 buildings", function()
+	-- здания: 500 + 1000 + 2000 + 3000 + 4000 + 4000; самые дешёвые четыре стоят 6500
+	for _, mult in { false, true } do
+		local fund = 0
+		for w = 1, 20 do
+			local _, team = WaveMath.missionReward(Economy, w)
+			fund += team * (if mult then greed(w) else 1)
+		end
+		check(fund < 6500, "the fund doesn't cover the 4 cheapest buildings: " .. fund)
 	end
 end)
 
-test("economy: kill coin cap per night 200–300 and growing", function()
-	eq(WaveMath.killCap(Economy, 1), 200, "night 1")
-	eq(WaveMath.killCap(Economy, 15), 300, "night 15")
-	eq(WaveMath.killCap(Economy, 40), 300, "the cap doesn't grow further")
-	check(WaveMath.killCap(Economy, 8) > WaveMath.killCap(Economy, 3), "growth")
+test("economy: by night 20 (two players) at most 6 weapons of average price 1500 with a 1500 supply reserve", function()
+	local gold = income(2, 20)
+	check(math.floor((gold - 1500) / 1500) <= 6, "weapons: " .. math.floor((gold - 1500) / 1500))
+	check(gold >= 9000, "not too poor: " .. gold)
 end)
 
-test("economy: the sum of kill units equals the wave pool", function()
-	for w = 1, 20 do
-		for _, players in { 1, 3 } do
-			local comp = WaveMath.composition(Tuning, w, players)
-			local units = WaveMath.killUnits(Economy, w, comp, players)
-			local sum = 0
-			for id, n in comp do
-				sum += units[id] * n
-			end
-			check(math.abs(sum - WaveMath.killPool(Economy, w, players)) < 1e-6, "wave " .. w)
+test("economy: the team part is divided by at least two; the personal part is whole", function()
+	local personal, team = WaveMath.missionReward(Economy, 7)
+	check(math.abs(WaveMath.playerReward(Economy, 7, 1) - (personal + team / 2)) < 1e-9, "solo")
+	check(math.abs(WaveMath.playerReward(Economy, 7, 2) - (personal + team / 2)) < 1e-9, "two")
+	check(math.abs(WaveMath.playerReward(Economy, 7, 6) - (personal + team / 6)) < 1e-9, "six")
+end)
+
+test("alive zombies: night 1 — 8 per player, night 20 — 24, plus the threat level; capped at 130 in total", function()
+	local full = { "SMG", "Shotgun", "Rifle", "MG" }
+	eq(WaveMath.aliveCap(RoundCfg, 1, 2), 16, "night 1, two players")
+	eq(WaveMath.aliveCap(RoundCfg, 1, 6), 48, "night 1, six players")
+	eq(WaveMath.aliveCap(RoundCfg, 20, 2), 48, "night 20, two players, no weapons")
+	eq(WaveMath.aliveCap(RoundCfg, 20, 2, threatOf({ full, full })), 60, "night 20, two players, everything")
+	eq(WaveMath.aliveCap(RoundCfg, 20, 6), 130, "six players are capped")
+	eq(WaveMath.aliveCap(RoundCfg, 1, 0), 8, "0 players count as 1")
+	for _, players in { 1, 2, 4, 6 } do
+		local prev = 0
+		for w = 1, 25 do
+			local n = WaveMath.aliveCap(RoundCfg, w, players)
+			check(n >= prev, string.format("no decrease: players %d, night %d", players, w))
+			check(n <= 130, "cap")
+			prev = n
 		end
 	end
 end)
 
-test("economy: the kill pool doesn't depend on crowd size and grows with player count", function()
-	local function total(players: number, crowdPlayers: number): number
-		local comp = WaveMath.composition(Tuning, 10, crowdPlayers)
-		local units = WaveMath.killUnits(Economy, 10, comp, players)
-		local sum = 0
-		for id, n in comp do
-			sum += units[id] * n
-		end
-		return sum
+test("alive zombies: grow with the threat level (weapons of the team)", function()
+	local full = { "SMG", "Shotgun", "Rifle", "MG" }
+	for _, w in { 1, 5, 10, 15, 20 } do
+		local none = WaveMath.aliveCap(RoundCfg, w, 2, threatOf({ {}, {} }))
+		local smg = WaveMath.aliveCap(RoundCfg, w, 2, threatOf({ { "SMG" }, { "SMG" } }))
+		local rifle = WaveMath.aliveCap(RoundCfg, w, 2, threatOf({ { "Rifle" }, { "Rifle" } }))
+		local all = WaveMath.aliveCap(RoundCfg, w, 2, threatOf({ full, full }))
+		check(none < smg and smg < rifle and rifle < all, string.format("night %d: %d %d %d %d", w, none, smg, rifle, all))
 	end
-	check(math.abs(total(2, 1) - total(2, 4)) < 1e-6, "the pool is equal for the same party with crowds of different sizes")
-	check(math.abs(total(4, 4) - 4 * total(1, 1)) < 1e-6, "the pool is proportional to the player count")
+end)
+
+test("round time: day and night lengths from the table", function()
+	eq(WaveMath.dayLength(RoundCfg, Tuning, 0, true), 40, "first day")
+	eq(WaveMath.dayLength(RoundCfg, Tuning, 3, false), 30, "ordinary day")
+	eq(WaveMath.dayLength(RoundCfg, Tuning, 5, false), 35, "day after a boss night")
+	eq(WaveMath.nightLength(RoundCfg, 1), 120, "night 1")
+	eq(WaveMath.nightLength(RoundCfg, 18), 600, "night 18 (metro) is the longest")
+	eq(WaveMath.nightLength(RoundCfg, 40), 180, "default")
+end)
+
+test("zombie counts: nights 1/5/10/15/20, two and six players (release numbers, no weapons)", function()
+	local want = { [1] = { 18, 42 }, [5] = { 32, 73 }, [10] = { 56.5, 127.7 }, [15] = { 84.9, 190.8 }, [20] = { 116, 260 } } -- кривая до множителя ночи брони (10-я ×0,6)
+	for night, row in want do
+		for i, players in { 2, 6 } do
+			local c = WaveMath.curveCount(Tuning, night, players)
+			check(math.abs(c - row[i]) <= 0.1, string.format("night %d, %d players: curve %.1f vs %.1f", night, players, c, row[i]))
+		end
+	end
 end)
 
 -- Ballistics ---------------------------------------------------------------------------------------------------------

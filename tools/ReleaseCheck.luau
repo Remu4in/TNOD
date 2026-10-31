@@ -29,8 +29,14 @@ if Config.Explore then
 	problem("Config.Explore = true: режим осмотра включён (в релизе false)")
 end
 -- тестовые настройки прохождения всех ночей (decisions.md, 2026-10-24): конвой быстрее, нижняя граница убийств ниже
-if Config.Convoy.TruckSpeed > 5 then
-	problem("Config.Convoy.TruckSpeed = " .. tostring(Config.Convoy.TruckSpeed) .. " (тест; в релизе ~3,5 — решение Руслана 2026-10-24)")
+-- скорости конвоев — баланс v3 (2026-11): по умолчанию 11, у ночей до 13; выше — явно тестовое значение
+if Config.Convoy.TruckSpeed > 13 then
+	problem("Config.Convoy.TruckSpeed = " .. tostring(Config.Convoy.TruckSpeed) .. " (больше 13 студов/с — тестовое значение; релизное по умолчанию 11)")
+end
+for night, def in Config.Missions do
+	if def.convoySpeed and def.convoySpeed > 13 then
+		problem(string.format("Config.Missions[%d].convoySpeed = %s (больше 13 студов/с)", night, tostring(def.convoySpeed)))
+	end
 end
 if (Config.MissionKillsFloor or 5) < 5 then
 	problem("Config.MissionKillsFloor = " .. tostring(Config.MissionKillsFloor) .. " (тест; в релизе 5)")
@@ -44,14 +50,39 @@ end
 if lobby.ForceMode ~= nil then
 	problem("Config.Lobby.ForceMode = " .. tostring(lobby.ForceMode) .. " (тест; в релизе nil; на живом сервере всё равно игнорируется)")
 end
-if lobby.MaxSquad < 1 or lobby.MaxSquad > 6 then
-	problem("Config.Lobby.MaxSquad = " .. tostring(lobby.MaxSquad) .. " (игра рассчитана на 1–6 игроков)")
+if lobby.ZoneMaxSize < 1 or lobby.ZoneMaxSize > 6 then
+	problem("Config.Lobby.ZoneMaxSize = " .. tostring(lobby.ZoneMaxSize) .. " (игра рассчитана на 1–6 игроков)")
 end
-if lobby.TeleportAttempts < 1 or lobby.PadCountdown <= lobby.PadLockSeconds then
-	problem("Config.Lobby: TeleportAttempts < 1 или PadCountdown <= PadLockSeconds (площадка не успеет стартовать)")
+if lobby.TeleportAttempts < 1 or lobby.ZoneCountdown <= 0 then
+	problem("Config.Lobby: TeleportAttempts < 1 или ZoneCountdown <= 0 (зона не сможет стартовать)")
 end
 if lobby.StudioSkipTeleport then
 	print("[ReleaseCheck] Config.Lobby.StudioSkipTeleport = true: действует только в Studio (на живом сервере телепорт настоящий) — это нормально")
+end
+
+-- Баланс v3 (2026-11): здоровье зомби не растёт, монет за убийства нет, прогрессия — числом
+if Config.Waves.HpGrowthPerWave ~= 0 then
+	problem("Config.Waves.HpGrowthPerWave = " .. tostring(Config.Waves.HpGrowthPerWave) .. " (должно быть 0: здоровье зомби не растёт по волнам)")
+end
+for i, tier in Config.Threat.Tiers do
+	if tier.hp ~= 1 then
+		problem(string.format("Config.Threat.Tiers[%d].hp = %s (должно быть 1: уровень угрозы не меняет здоровье)", i, tostring(tier.hp)))
+	end
+end
+if Config.Economy.CoinsPerHit ~= 0 or Config.Economy.CoinsPerPlankRepair ~= 0 then
+	problem("Config.Economy.CoinsPerHit / CoinsPerPlankRepair не 0: монеты только за миссии, за попадания, убийства и ремонт монет нет")
+end
+for key in Config.Economy do
+	if string.sub(key, 1, 4) == "Kill" or string.find(key, "KillCoins", 1, true) or key == "BossKillWeight" then
+		problem("Config.Economy." .. key .. ": монеты за убийства отменены (убийства дают только очки)")
+	end
+end
+-- число ночей с записью о длине и их суммарная длина (цель — 20 ночей за 40–50 минут вместе с днями)
+if #Config.Round.NightTimes < #Config.Missions then
+	problem(string.format("Config.Round.NightTimes: %d записей, а ночей с миссиями %d", #Config.Round.NightTimes, #Config.Missions))
+end
+if Config.Round.AliveHardCap > 150 then
+	problem("Config.Round.AliveHardCap = " .. tostring(Config.Round.AliveHardCap) .. " (больше 150 одновременно живых — риск для производительности сервера)")
 end
 
 -- 2. Магазин и оружие
