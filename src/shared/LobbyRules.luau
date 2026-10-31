@@ -1,24 +1,27 @@
 --!strict
--- Правила лобби без Roblox API: отряды (кто видит, кто входит, кто приглашает и запускает) и площадки запуска.
+-- Правила лобби без Roblox API: зоны сбора команды (кто может войти, кто хост, передача хоста, заполнение, отсчёт).
 -- Игроки — числа (UserId), время — секунды любой монотонной шкалы. LobbyService хранит состояние и вызывает эти функции;
--- решение «друг ли игрок владельцу» приходит параметром (Player:IsFriendsWith асинхронный и живёт в сервисе).
+-- решение «друг ли игрок хосту» приходит параметром (Player:IsFriendsWith асинхронный и живёт в сервисе).
+--
+-- Жизнь зоны:  free ──(вошёл первый: он хост)──▶ setup ──(хост нажал «Open squad»)──▶ open ──(полна: отсчёт / «Start now»)──▶ launching
+--              ▲                                  │ «Cancel» / хост ушёл                │ хост ушёл: хостом станет следующий
+--              └──────────────────────────────────┴─────────────────────────────────────┘ зона опустела: снова free
 
 local LobbyRules = {}
 
 export type Mode = "Public" | "Friends" | "Invite"
+export type ZoneState = "free" | "setup" | "open" | "launching"
 
-export type Squad = {
-	id: number,
-	owner: number,
+export type Zone = {
+	host: number?, -- UserId хоста; nil, пока зона свободна
+	members: { number }, -- по порядку входа; members[1] — самый давний (следующий хост)
+	state: ZoneState,
+	size: number, -- сколько игроков хост хочет собрать (1…maxSize)
 	mode: Mode,
-	members: { number }, -- по порядку входа; members[1] — владелец, если он в отряде
 	invited: { [number]: number }, -- userId → когда приглашение истекает
-	locked: boolean, -- отряд уже стартует: изменения закрыты
-}
-
-export type Pad = {
-	members: { number },
-	startedAt: number?, -- когда встал первый игрок (начало отсчёта)
+	kicked: { [number]: boolean }, -- удалённые хостом: не пустим снова, пока зона не освободится
+	fullAt: number?, -- когда зона заполнилась (начало отсчёта)
+	setupAt: number?, -- когда хост встал (для тайм-аута настройки)
 }
 
 export type Result = { ok: boolean, reason: string? }
@@ -49,220 +52,252 @@ function LobbyRules.isUserId(v: any): boolean
 	return typeof(v) == "number" and v == v and v % 1 == 0 and v > 0 and v < 2 ^ 52
 end
 
--- ===== Отряды =====
-
-function LobbyRules.newSquad(id: number, owner: number, mode: Mode): Squad
-	return { id = id, owner = owner, mode = mode, members = { owner }, invited = {}, locked = false }
+-- Размер отряда из данных клиента: целое от 1 до maxSize
+function LobbyRules.isZoneSize(v: any, maxSize: number): boolean
+	return typeof(v) == "number" and v == v and v % 1 == 0 and v >= 1 and v <= maxSize
 end
 
-function LobbyRules.isMember(squad: Squad, uid: number): boolean
-	return indexOf(squad.members, uid) ~= nil
+-- ===== Зона сбора =====
+
+function LobbyRules.newZone(maxSize: number): Zone
+	return { host = nil, members = {}, state = "free", size = maxSize, mode = "Public", invited = {}, kicked = {}, fullAt = nil, setupAt = nil }
 end
 
-function LobbyRules.isInvited(squad: Squad, uid: number, now: number): boolean
-	local untilT = squad.invited[uid]
+-- Зона снова свободна (настройки по умолчанию)
+function LobbyRules.reset(zone: Zone, maxSize: number)
+	zone.host = nil
+	zone.members = {}
+	zone.state = "free"
+	zone.size = maxSize
+	zone.mode = "Public"
+	zone.invited = {}
+	zone.kicked = {}
+	zone.fullAt = nil
+	zone.setupAt = nil
+end
+
+function LobbyRules.has(zone: Zone, uid: number): boolean
+	return indexOf(zone.members, uid) ~= nil
+end
+
+function LobbyRules.isInvited(zone: Zone, uid: number, now: number): boolean
+	local untilT = zone.invited[uid]
 	return untilT ~= nil and now < untilT
 end
 
-function LobbyRules.expireInvites(squad: Squad, now: number)
-	for uid, untilT in squad.invited do
+function LobbyRules.expireInvites(zone: Zone, now: number)
+	for uid, untilT in zone.invited do
 		if now >= untilT then
-			squad.invited[uid] = nil
+			zone.invited[uid] = nil
 		end
 	end
 end
 
-function LobbyRules.inviteCount(squad: Squad, now: number): number
+local function inviteCount(zone: Zone, now: number): number
 	local n = 0
-	for uid in squad.invited do
-		if LobbyRules.isInvited(squad, uid, now) then
+	for uid in zone.invited do
+		if LobbyRules.isInvited(zone, uid, now) then
 			n += 1
 		end
 	end
 	return n
 end
 
--- Виден ли отряд игроку в списке: Public — всем, Friends — друзьям владельца, Invite — только приглашённым; участникам — всегда
-function LobbyRules.canSee(squad: Squad, uid: number, isFriendOfOwner: boolean, now: number): boolean
-	if LobbyRules.isMember(squad, uid) or LobbyRules.isInvited(squad, uid, now) then
-		return true
-	end
-	if squad.mode == "Public" then
-		return true
-	end
-	return squad.mode == "Friends" and isFriendOfOwner
+-- Заполнена ли зона (только открытая)
+function LobbyRules.isFull(zone: Zone): boolean
+	return zone.state == "open" and #zone.members >= zone.size
 end
 
-function LobbyRules.canJoin(squad: Squad, uid: number, isFriendOfOwner: boolean, now: number, maxSize: number): Result
-	if squad.locked then
-		return no("The squad is already starting")
+-- Пересчёт начала отсчёта: идёт, только пока открытая зона полна
+local function syncFull(zone: Zone, now: number)
+	if LobbyRules.isFull(zone) then
+		if zone.fullAt == nil then
+			zone.fullAt = now
+		end
+	else
+		zone.fullAt = nil
 	end
-	if LobbyRules.isMember(squad, uid) then
-		return no("You are already in this squad")
+end
+
+-- Может ли игрок войти в зону (isFriendOfHost — друг ли он хосту)
+function LobbyRules.canEnter(zone: Zone, uid: number, isFriendOfHost: boolean, now: number): Result
+	if zone.state == "free" then
+		return YES -- первый вошедший станет хостом
 	end
-	if #squad.members >= maxSize then
-		return no("The squad is full")
+	if LobbyRules.has(zone, uid) then
+		return no("You are already in this zone")
 	end
-	if LobbyRules.isInvited(squad, uid, now) then
-		return YES -- приглашённый входит в любой отряд
+	if zone.state == "launching" then
+		return no("This squad is already launching")
 	end
-	if squad.mode == "Public" then
+	if zone.state == "setup" then
+		return no("The host is still setting up")
+	end
+	if zone.kicked[uid] then
+		return no("The host removed you from this squad")
+	end
+	if #zone.members >= zone.size then
+		return no("This squad is full")
+	end
+	if LobbyRules.isInvited(zone, uid, now) then
+		return YES -- приглашённый входит при любом доступе
+	end
+	if zone.mode == "Public" then
 		return YES
 	end
-	if squad.mode == "Friends" then
-		return if isFriendOfOwner then YES else no("Friends only")
+	if zone.mode == "Friends" then
+		return if isFriendOfHost then YES else no("Friends only")
 	end
 	return no("Invite only")
 end
 
-function LobbyRules.join(squad: Squad, uid: number)
-	if not LobbyRules.isMember(squad, uid) then
-		table.insert(squad.members, uid)
+-- Игрок вошёл (после canEnter). "host" — стал хостом свободной зоны; "member" — обычный участник
+function LobbyRules.enter(zone: Zone, uid: number, now: number): string
+	if zone.state == "free" then
+		zone.host = uid
+		zone.members = { uid }
+		zone.state = "setup"
+		zone.setupAt = now
+		return "host"
 	end
-	squad.invited[uid] = nil
+	if not LobbyRules.has(zone, uid) then
+		table.insert(zone.members, uid)
+	end
+	zone.invited[uid] = nil
+	syncFull(zone, now)
+	return "member"
 end
 
--- Выход из отряда. "disband" — отряд опустел и удаляется; "owner" — владелец сменился; "ok" — вышел рядовой участник
-function LobbyRules.leave(squad: Squad, uid: number): string
-	local i = indexOf(squad.members, uid)
+-- Игрок ушёл из зоны. "none" — его там не было; "free" — зона опустела и свободна; "host" — сменился хост; "ok" — ушёл рядовой участник
+function LobbyRules.leave(zone: Zone, uid: number, maxSize: number, now: number): string
+	local i = indexOf(zone.members, uid)
 	if not i then
-		return "ok"
+		return "none"
 	end
-	table.remove(squad.members, i)
-	if #squad.members == 0 then
-		return "disband"
+	table.remove(zone.members, i)
+	if #zone.members == 0 then
+		LobbyRules.reset(zone, maxSize)
+		return "free"
 	end
-	if squad.owner == uid then
-		squad.owner = squad.members[1]
-		return "owner"
+	syncFull(zone, now)
+	if zone.host == uid then
+		zone.host = zone.members[1]
+		return "host"
 	end
 	return "ok"
 end
 
--- Пригласить может только владелец: не себя, не участника, не в полный и не в стартующий отряд, и не больше maxInvites сразу
-function LobbyRules.canInvite(squad: Squad, by: number, target: number, now: number, maxSize: number, maxInvites: number): Result
-	if squad.locked then
-		return no("The squad is already starting")
+-- Хост меняет число мест и доступ (в настройке и в открытой зоне). Размер не меньше числа уже вошедших
+function LobbyRules.configure(zone: Zone, by: number, size: any, mode: any, maxSize: number, now: number): Result
+	if zone.host ~= by or (zone.state ~= "setup" and zone.state ~= "open") then
+		return no("Only the host can change the settings")
 	end
-	if by ~= squad.owner or not LobbyRules.isMember(squad, by) then
-		return no("Only the squad leader can invite")
+	if not LobbyRules.isZoneSize(size, maxSize) then
+		return no("Squad size must be from 1 to " .. maxSize)
+	end
+	if not LobbyRules.isMode(mode) then
+		return no("Unknown access mode")
+	end
+	if (size :: number) < #zone.members then
+		return no("Too many players are already inside")
+	end
+	zone.size = size :: number
+	zone.mode = mode :: Mode
+	syncFull(zone, now)
+	return YES
+end
+
+-- Хост подтвердил настройки: зона открывается
+function LobbyRules.open(zone: Zone, by: number, now: number): Result
+	if zone.host ~= by or zone.state ~= "setup" then
+		return no("Only the host can open the squad")
+	end
+	zone.state = "open"
+	syncFull(zone, now)
+	return YES
+end
+
+-- «Start now»: только хост, зона не стартует уже
+function LobbyRules.canStart(zone: Zone, by: number): Result
+	if zone.host ~= by or (zone.state ~= "setup" and zone.state ~= "open") then
+		return no("Only the host can start")
+	end
+	return YES
+end
+
+-- «Cancel»: хост распускает зону; вызывающий сам выведет игроков и вызовет reset
+function LobbyRules.canCancel(zone: Zone, by: number): Result
+	if zone.host ~= by or (zone.state ~= "setup" and zone.state ~= "open") then
+		return no("Only the host can cancel")
+	end
+	return YES
+end
+
+-- Удалить участника (не хоста): он больше не войдёт, пока зона не освободится
+function LobbyRules.kick(zone: Zone, by: number, target: number, now: number): Result
+	if zone.host ~= by or (zone.state ~= "setup" and zone.state ~= "open") then
+		return no("Only the host can remove players")
+	end
+	if target == by or not LobbyRules.has(zone, target) then
+		return no("Can't remove this player")
+	end
+	local i = indexOf(zone.members, target) :: number
+	table.remove(zone.members, i)
+	zone.kicked[target] = true
+	syncFull(zone, now)
+	return YES
+end
+
+-- Пригласить: только хост, не себя, не участника, не больше maxInvites сразу
+function LobbyRules.invite(zone: Zone, by: number, target: number, now: number, ttl: number, maxInvites: number): Result
+	if zone.host ~= by or (zone.state ~= "setup" and zone.state ~= "open") then
+		return no("Only the host can invite")
 	end
 	if target == by then
 		return no("You can't invite yourself")
 	end
-	if LobbyRules.isMember(squad, target) then
+	if LobbyRules.has(zone, target) then
 		return no("Already in the squad")
 	end
-	if #squad.members >= maxSize then
-		return no("The squad is full")
-	end
-	if LobbyRules.inviteCount(squad, now) >= maxInvites and not LobbyRules.isInvited(squad, target, now) then
+	if inviteCount(zone, now) >= maxInvites and not LobbyRules.isInvited(zone, target, now) then
 		return no("Too many pending invites")
 	end
+	zone.invited[target] = now + ttl
+	zone.kicked[target] = nil
 	return YES
 end
 
-function LobbyRules.invite(squad: Squad, target: number, now: number, ttl: number)
-	squad.invited[target] = now + ttl
-end
-
-function LobbyRules.canSetMode(squad: Squad, by: number, mode: any): Result
-	if squad.locked then
-		return no("The squad is already starting")
-	end
-	if by ~= squad.owner then
-		return no("Only the squad leader can do that")
-	end
-	if not LobbyRules.isMode(mode) then
-		return no("Unknown mode")
-	end
-	return YES
-end
-
-function LobbyRules.canKick(squad: Squad, by: number, target: number): Result
-	if squad.locked then
-		return no("The squad is already starting")
-	end
-	if by ~= squad.owner then
-		return no("Only the squad leader can do that")
-	end
-	if target == by or not LobbyRules.isMember(squad, target) then
-		return no("Can't remove this player")
-	end
-	return YES
-end
-
-function LobbyRules.canStart(squad: Squad, by: number): Result
-	if squad.locked then
-		return no("The squad is already starting")
-	end
-	if by ~= squad.owner then
-		return no("Only the squad leader can start")
-	end
-	if #squad.members < 1 then
-		return no("The squad is empty")
-	end
-	return YES
-end
-
--- ===== Площадки запуска =====
-
-function LobbyRules.newPad(): Pad
-	return { members = {}, startedAt = nil }
-end
-
-function LobbyRules.padHas(pad: Pad, uid: number): boolean
-	return indexOf(pad.members, uid) ~= nil
-end
-
--- Сколько секунд осталось до старта (nil — отсчёт не идёт)
-function LobbyRules.padRemaining(pad: Pad, now: number, countdown: number): number?
-	local t = pad.startedAt
-	if not t then
+-- Сколько секунд до старта (nil — отсчёт не идёт)
+function LobbyRules.countdownLeft(zone: Zone, now: number, countdown: number): number?
+	local t = zone.fullAt
+	if t == nil or zone.state ~= "open" then
 		return nil
 	end
 	return math.max(0, countdown - (now - t))
 end
 
-function LobbyRules.padCanJoin(pad: Pad, uid: number, now: number, maxSize: number, countdown: number, lockSeconds: number): Result
-	if LobbyRules.padHas(pad, uid) then
-		return no("You are already on this pad")
-	end
-	if #pad.members >= maxSize then
-		return no("This pad is full")
-	end
-	local left = LobbyRules.padRemaining(pad, now, countdown)
-	if left ~= nil and left <= lockSeconds then
-		return no("This pad is about to launch")
-	end
-	return YES
+function LobbyRules.ready(zone: Zone, now: number, countdown: number): boolean
+	local left = LobbyRules.countdownLeft(zone, now, countdown)
+	return left ~= nil and left <= 0
 end
 
-function LobbyRules.padJoin(pad: Pad, uid: number, now: number)
-	if LobbyRules.padHas(pad, uid) then
-		return
-	end
-	table.insert(pad.members, uid)
-	if pad.startedAt == nil then
-		pad.startedAt = now
+-- Зона началась запуском: изменения закрыты
+function LobbyRules.lock(zone: Zone)
+	zone.state = "launching"
+	zone.fullAt = nil
+end
+
+-- Запуск не удался: зона снова открыта (если ещё есть кому)
+function LobbyRules.unlock(zone: Zone, now: number)
+	if zone.state == "launching" then
+		zone.state = "open"
+		syncFull(zone, now)
 	end
 end
 
--- Сошёл с площадки; пустая площадка сбрасывает отсчёт
-function LobbyRules.padLeave(pad: Pad, uid: number)
-	local i = indexOf(pad.members, uid)
-	if i then
-		table.remove(pad.members, i)
-	end
-	if #pad.members == 0 then
-		pad.startedAt = nil
-	end
-end
-
--- Отсчёт кончился и на площадке достаточно игроков
-function LobbyRules.padReady(pad: Pad, now: number, countdown: number, minPlayers: number): boolean
-	local left = LobbyRules.padRemaining(pad, now, countdown)
-	return left ~= nil and left <= 0 and #pad.members >= math.max(1, minPlayers)
+-- Хост завис в настройке дольше timeout секунд
+function LobbyRules.setupExpired(zone: Zone, now: number, timeout: number): boolean
+	return zone.state == "setup" and zone.setupAt ~= nil and now - (zone.setupAt :: number) >= timeout
 end
 
 return LobbyRules

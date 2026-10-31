@@ -1486,24 +1486,44 @@ Config.Lobby = {
 	ForceMode = nil :: string?, -- "lobby" | "match" | nil — только Studio, для тестов (на живом сервере игнорируется; в релизе nil)
 	StudioSkipTeleport = true, -- только Studio: «телепорт» заменён переключением этого же сервера в матч и обратно
 	Origin = Vector3.new(6000, 0, 0), -- где строится лобби (в Studio лобби и матч делят один сервер, поэтому лобби далеко от карты)
-	MaxSquad = 6, -- размер группы (площадка и отряд)
-	PadCount = 4, -- площадок запуска («грузовиков»)
-	PadCountdown = 20, -- с: отсчёт площадки после того, как встал первый игрок
-	PadLockSeconds = 3, -- за столько секунд до старта площадка закрыта для новых игроков
-	PadMinPlayers = 1, -- сколько нужно на площадке, чтобы шёл отсчёт
-	SquadsMax = 12, -- отрядов в лобби одновременно
-	InviteTtl = 60, -- с: приглашение действует
-	InvitesPerSquad = 12, -- одновременно действующих приглашений на отряд
+	Spawn = Vector3.new(0, 4, 52), -- где появляются игроки (смещение от Origin); смотрят на север, на зоны сбора, табло — за спиной
+	-- Зоны сбора команды (вместо прежних площадок-«грузовиков» и стола отряда)
+	ZoneCount = 4, -- зон сбора
+	ZoneMaxSize = 6, -- больше игроков в команде нельзя
+	ZoneRadius = 8.4, -- студов от центра зоны: так далеко «внутри»
+	ZoneCountdown = 12, -- с: отсчёт, когда открытая зона заполнилась (можно раньше — «Start now»)
+	ZoneSetupTimeout = 150, -- с: хост завис в настройке — зона освобождается
+	ZoneInviteTtl = 90, -- с: приглашение действует
+	ZoneInvitesMax = 12, -- одновременно действующих приглашений на зону
+	ZoneEjectSeconds = 3, -- с: пауза между «выталкиваниями» одного игрока из закрытой зоны (подсказка не спамит)
 	CmdInterval = 0.25, -- с: минимальная пауза между командами лобби от одного игрока
 	InviteInterval = 1.5, -- с: пауза между приглашениями
 	StateInterval = 0.5, -- с: не чаще рассылаем состояние лобби клиентам
+	MenuDistance = 22, -- студов: так близко к прилавку/автомату/воротам должен быть игрок, чтобы сервер открыл меню
 	TeleportAttempts = 3, -- попыток телепорта
 	TeleportRetryPause = 3, -- с: пауза между попытками
 	FlushTimeout = 8, -- с: сколько ждём записи профиля перед телепортом
 	ReturnSeconds = 30, -- с: экран итогов, потом всех возвращает в лобби
-	BoardSize = 10, -- строк в витрине рейтинга
-	BoardRefresh = 120, -- с: как часто обновляем витрину
-	Spawn = Vector3.new(0, 4, 48), -- где появляются игроки (смещение от Origin)
+	BoardSize = 10, -- строк в таблице лидеров
+	BoardRefresh = 120, -- с: как часто обновляем таблицу
+	-- Освещение лобби: тёплый вечер (ClockTime — «часы суток»), чтобы были видны цвета ассетов
+	Lighting = { ClockTime = 17.4, Brightness = 2.2, Ambient = Color3.fromRGB(96, 100, 118), OutdoorAmbient = Color3.fromRGB(118, 112, 120), FogEnd = 1600, FogColor = Color3.fromRGB(170, 150, 140), Exposure = 0.1 },
+	-- Военные НПС лобби (Locations/Lobby расставляет точки, Services/LobbyNpcService ведёт)
+	NpcWalkSpeed = 7, -- студов/с у патрульных
+	-- Магазин и автоматы: покупок пока нет (монетизация не подключена) — окна показывают список с пометкой «Coming soon».
+	-- Когда появятся Developer Products, у позиции указывается productId, а покупку проведёт сервер (MarketplaceService.ProcessReceipt).
+	Shop = {
+		{ id = "skin_camo", name = "Camo uniform", desc = "Desert camouflage for your survivor", price = "Coming soon" },
+		{ id = "skin_night", name = "Night ops outfit", desc = "Dark tactical gear", price = "Coming soon" },
+		{ id = "trail_tracer", name = "Golden tracers", desc = "Bullet trails of your colour", price = "Coming soon" },
+		{ id = "emote_salute", name = "Salute emote", desc = "Show respect to your squad", price = "Coming soon" },
+	},
+	Vending = {
+		{ id = "don_small", name = "Support pack", desc = "Thank the developers: a small bundle of coins", price = "Coming soon" },
+		{ id = "don_medium", name = "Field kit", desc = "Extra medkits and energy drinks for the next round", price = "Coming soon" },
+		{ id = "don_large", name = "Commander box", desc = "Big bundle: coins, ammo and a supporter badge", price = "Coming soon" },
+		{ id = "don_vip", name = "VIP pass", desc = "Supporter title and priority in the lobby", price = "Coming soon" },
+	},
 }
 
 return Config
