@@ -782,7 +782,7 @@ local function refreshBoard()
 		board.setNote("Global top by total rating · refreshed every " .. math.floor(L.BoardRefresh / 60) .. " min")
 	end
 	-- «аватар первого места» ассета надевает наряд лидера
-	local leader = if top[1] then top[1].userId else 0
+	local leader = if top[1] then top[1].userId else (if sample then 1 else 0) -- в Studio без данных — любой аккаунт для вида
 	local rig = board.rig
 	if rig and leader ~= lastBoardLeader and leader > 0 then
 		lastBoardLeader = leader

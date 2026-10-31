@@ -465,7 +465,7 @@ function Lobby.build(): LobbyInfo
 	put("Vehicles.TransportTruck", 74, 54, 90, { y = 0.12 })
 	put("Vehicles.APC", 114, 56, 90, { y = 0.12 })
 	put("Vehicles.HumveeArmored", 90, 72, 70, { y = 0.12 })
-	put("Vehicles.MilitaryTank", 118, 26, 90, { y = 0.14 })
+	put("Vehicles.MilitaryTank", -100, 104, 30, { y = 0.1 })
 	put("Props.MilitaryCrates", 64, 74, 20, { y = 0.12 })
 	put("Base.Crates", 130, 70, 15, { y = 0.12 })
 	-- техника у магазина
@@ -536,7 +536,7 @@ function Lobby.build(): LobbyInfo
 
 	-- ===== Автоматы с донатными предметами: у площади, лицом к спавну =====
 	for k, side in { -1, 1 } do
-		local m = put("Props.Vending", side * 40, 56, if side < 0 then -90 else 90, { y = 0.2, name = "Vending" .. k })
+		local m = put("Props.Vending", side * 31, 56, if side < 0 then -90 else 90, { y = 0.2, name = "Vending" .. k })
 		if m then
 			local big: BasePart? = nil
 			local bs = 0
@@ -550,7 +550,7 @@ function Lobby.build(): LobbyInfo
 				table.insert(menus, { prompt = pr, kind = "vending", id = k })
 			end
 		end
-		put("Base.Crates", side * 40, 50, 0, { y = 0.2, scale = 0.6 })
+		put("Base.Crates", side * 31, 49, 0, { y = 0.2, scale = 0.6 })
 	end
 
 	-- ===== Solo: ворота на востоке =====
@@ -561,7 +561,7 @@ function Lobby.build(): LobbyInfo
 	put("Props.RoadLight", 108, 8, 180, { y = 0.2, scale = 0.5 })
 	put("Vehicles.HumveeArmored", 102, -26, 180, { y = 0.2 })
 	local soloCrate = put("Props.MilitaryCrates", 102, -5, 0, { y = 0.2, scale = 1.1, name = "SoloCrate" })
-	sign("SoloSign", "SOLO MISSION", Vector3.new(16, 4, 0.6), at(102, 12, 4), 0, COL.gold, 50)
+	sign("SoloSign", "SOLO MISSION", Vector3.new(16, 4, 0.6), at(102, 12, 4), 180, COL.gold, 50)
 	box("SoloPostL", Vector3.new(0.8, 11, 0.8), at(94.5, 5.5, 4), COL.dark, Enum.Material.Metal)
 	box("SoloPostR", Vector3.new(0.8, 11, 0.8), at(109.5, 5.5, 4), COL.dark, Enum.Material.Metal)
 	local soloHost: BasePart = Instance.new("Part")
