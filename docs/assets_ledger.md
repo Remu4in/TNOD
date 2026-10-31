@@ -76,3 +76,18 @@
 | 2026-10-29 | 3858204539 «Угол с кристаллами» (автор не проверялся) | Кристаллы пещеры, `Workspace.Metro.Cave` | Скриптов нет (72 части); сигнатуры не найдены; свет добавлен нами |
 | 2026-10-29 | 6934021345 «Пак пещер/подземелья (PolygonDungeon)» (автор не проверялся) | Лестница `Stairs_Large_01`, перила, статуи, сталагмиты, обломки в пещере | Скриптов нет (271 MeshPart); сигнатуры не найдены |
 | 2026-10-29 | 84292469943067 «Локация со скриптами» | НЕ используется | 13 скриптов (`Check` со `string.char` в TextBox, `CoreValidation`, `MoneyScript`, меч); в проект не вставлялась |
+
+## 2026-10-31 — лобби v2 (`ServerStorage.Assets.Lobby`, vetting по скиллу `asset-vetting`)
+| ID | Назначение | Результат проверки | Решение |
+|---|---|---|---|
+| 88855021556975 | баннеры над зонами | 2 части (меш-стойка + экран); **2 скрипта** (`LocalAds`, `ServerAds` в `SurfaceGui`: `MarketplaceService`, `RemoteFunction`) — рекламный щит с кнопкой «Buy Ads» | **Скрипты, `RemoteFunction` и рекламный интерфейс удалены**, повторный скан — 0. → `Assets.Lobby.Banner`; свой `SurfaceGui` (текст, цвет, полоска) строит `Locations/Lobby`, тексты ведёт `LobbyService` |
+| 12133148135 | зона сбора (основная) | 1 `MeshPart` (кольцо 18,4 × 1 × 18,4, Neon, `ParticleEmitter`, `SurfaceLight`), скриптов нет | → `Assets.Lobby.Zone` (по умолчанию выбран он) |
+| 138786908167499 | зона сбора (запасная) | 19 частей, **семейство №1 вредоносов: `Runtime` (в `Decal`, `IsStudio`, `RemoteFunction`) + `ScreenBuilder` (35 КБ, `IsStudio`)** | **Не используем.** Скрипты вычищены, оставлена в `AssetStaging` под именем `QUARANTINE_Zone_138786908167499_cleaned`; рекомендую пожаловаться на ассет |
+| 2190705941 | прилавок магазина (3 шт.) | 26 `MeshPart` (стопка ящиков-прилавок 12,7 × 4,5 × 6,3), скриптов нет | → `Assets.Lobby.Stall` |
+| 118263258902725 | вывеска «Shop» | 7 частей (3D-буквы + доска); **семейство №1 вредоносов (`Runtime` в `Part`, `ScreenBuilder` в `ScreenGui`, `IsStudio`)** | **Скрипты и `ScreenGui` удалены**, геометрия (7 частей) взята, повторный скан — 0. → `Assets.Lobby.ShopSign`; сообщить Руслану: ассет вредоносный, пожаловаться |
+| 9914503521 | стена для вывески | 20 деталей (бетон + колючая проволока), скриптов нет | → `Assets.Lobby.Wall` |
+| 5352156968 | табло лидеров | 61 часть, **5 скриптов** (`TimePlayedClass`, `Settings`, `PlayAnimationInRig`, `Changelog`, `ThumbnailCamera Deleter`: `DataStore`), 16 `StringValue` | **Удалены все скрипты и `StringValue`, 3D-заголовок и их интерфейсы**; Rig с `Humanoid` оставлен (скриптов нет). → `Assets.Lobby.Board`; данные — наш `RatingService` |
+
+Проверка: вставка `insert_asset` (Edit, скрипты не запускались) → скан сигнатур → чистка кодом → повторный скан (0 `LuaSourceContainer`, 0 `Remote*`) → перенос из `AssetStaging`. Все копии нормализованы (поворот осей, `WorldPivot` в низ-центре).
+
+Копии из проекта (оригиналы не менялись): `Assets.Props.RoadLight` (из `Workspace.Decor.RoadLights`), `Assets.Props.MilitaryCrates` (из `AssetStaging`), `Assets.NPC.Lobby.LobbySoldier_*` (12 солдат из `Workspace.Soldiers`, скриптов не было).
