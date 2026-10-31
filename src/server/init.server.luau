@@ -79,7 +79,7 @@ local function buildTestStands(sp: Vector3)
 	end)
 	local waves: { [string]: { string } } = {
 		["Wave"] = { "Walker", "Walker", "Walker", "Walker", "Walker", "Walker", "Runner", "Runner", "Runner", "Brute" },
-		["Special"] = { "Military", "Military", "Chemist", "Dark", "Dark", "BucketHead", "BucketHead", "Crawler", "Crawler" },
+		["Special"] = { "Military", "MilitaryArmored", "Chemist", "Dark", "Dark", "BucketHead", "BucketHead", "Crawler", "Crawler" },
 	}
 	pad("TestWave", Vector3.new(-4, 0, 8), Color3.fromRGB(220, 60, 60), "ZOMBIE WAVE", "Call a wave", function()
 		ZombieService.enqueue(waves["Wave"]) -- без множителей: сила текущей ночи не сбрасывается

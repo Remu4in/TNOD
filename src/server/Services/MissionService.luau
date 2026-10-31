@@ -675,7 +675,7 @@ local function setupBaseBattle(night: number, comp: WaveMath.Composition, hpMult
 		ZombieService.setAnchor(nil)
 		ZombieService.setSpawnPoints(points)
 	end
-	ZombieService.setAliveCap(B.AliveCap)
+	ZombieService.setAliveCap(math.max(B.AliveCap, ZombieService.nightAliveCap())) -- не меньше ночного потолка (растёт с числом игроков и оружием)
 	BarricadeService.clearRegion(Z.minX, Z.maxX, Z.minZ, Z.maxZ)
 	BaseBattleService.start(playerSpawnPosition())
 end
@@ -714,7 +714,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		local list = def.bosses or { "BossStrong" }
 		state.bossIndex = 1
 		ZombieService.enqueue({ list[1] }, hpMult, night, true)
-		ZombieService.setAliveCap(Config.Round.ZombiesAliveMin)
+		ZombieService.setAliveCap(Config.Round.AliveMin)
 	end
 	if Config.MissionMoveTeam and kind ~= "escort" then
 		moveTeam(anchor)
@@ -1189,7 +1189,7 @@ local function buildTnt(state: State, metro: Instance)
 		warn("[MissionService] metro: no TNT model or markers — there will be no charges")
 		return
 	end
-	for i = 1, Config.Metro.Tnt do
+	for _, i in Config.Metro.TntMarkers do
 		local marker = markers:FindFirstChild("Metro_Tnt_" .. i)
 		if marker and marker:IsA("BasePart") then
 			local floor = metroFloor(marker.Position.X, marker.Position.Z, marker.Position.Y + 3) or marker.Position

@@ -1290,6 +1290,7 @@ local spawnCount = 0
 -- Точка миссии: зомби появляются кольцом 100–150 студов вокруг неё, сектора чередуются (поток со всех сторон)
 local anchorPos: Vector3? = nil
 local aliveCapOverride: number? = nil
+local nightAliveCap: number = Config.Round.AliveMin -- одновременно живых в эту ночь (WaveMath.aliveCap: ночь, игроки, уровень угрозы)
 local anchorUse: { number } = {}
 for i = 1, SECTORS do
 	anchorUse[i] = 0
@@ -1367,6 +1368,15 @@ end
 -- Свой потолок живых зомби на время миссии (конвой: меньше, иначе грузовик не доживёт); nil — обычный
 function ZombieService.setAliveCap(cap: number?)
 	aliveCapOverride = cap
+end
+
+-- Потолок живых зомби на ночь, посчитанный в начале ночи (RoundService); миссия может заменить его своим через setAliveCap
+function ZombieService.setNightAliveCap(cap: number)
+	nightAliveCap = cap
+end
+
+function ZombieService.nightAliveCap(): number
+	return nightAliveCap
 end
 
 function ZombieService.moveAnchor(pos: Vector3)
@@ -2523,8 +2533,8 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 			for _ in active do
 				alive += 1
 			end
-			-- одновременно живых: 40 на игрока, остальные ждут в очереди
-			local aliveCap = aliveCapOverride or math.max(Config.Round.ZombiesAliveMin, Config.Round.ZombiesAlivePerPlayer * #Players:GetPlayers())
+			-- одновременно живых: растёт с ночью и уровнем угрозы (WaveMath.aliveCap), остальные ждут в очереди
+			local aliveCap = aliveCapOverride or nightAliveCap
 			local testScale = Config.Waves.CountScale
 			if testScale and testScale < 1 then
 				aliveCap = math.max(4, math.floor(aliveCap * testScale + 0.5)) -- тестовое уменьшение числа зомби касается и бесконечного потока

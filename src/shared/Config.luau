@@ -119,15 +119,24 @@ local Config = {}
 
 Config.Round = {
 	IntermissionTime = 15,
-	FirstDayTime = 120, -- день можно завершить раньше голосованием (клавиша V): когда готовы все игроки
-	DayTime = 120,
-	NightMinTime = 420, -- длина ночи: 7 минут на 1-й волне, +NightPerWave секунд за каждую следующую, не больше NightMaxTime
-	NightPerWave = 10,
-	NightMaxTime = 600, -- ночь заканчивается, когда мутантов не осталось или по таймеру (оставшиеся сгорят на рассвете)
-	DayWarnSeconds = 15, -- за сколько секунд до ночи предупреждаем, что баррикады закроются
+	-- Баланс v3 (2026-11, docs/balance/balance_2026-11.md): 20 ночей — 40–50 минут. Дни короткие (можно завершить раньше голосованием, клавиша V),
+	-- ночь заканчивается, когда миссия выполнена; NightTimes — предел (при его исходе без выполнения награды нет, оставшиеся сгорают на рассвете).
+	-- Предел = 1,7–2 × ожидаемое время миссии (таблица в balance_2026-11.md); ночь 18 (метро) — самая длинная.
+	FirstDayTime = 40,
+	DayTime = 30,
+	DayAfterBossBonus = 5, -- день после ночи с боссом чуть дольше: выбор перка команды
+	NightDefaultTime = 180, -- для ночи без записи в NightTimes
+	NightTimes = { 120, 130, 160, 140, 180, 170, 200, 200, 190, 300, 180, 220, 140, 200, 320, 170, 200, 600, 260, 360 } :: { number },
+	DayWarnSeconds = 10, -- за сколько секунд до ночи предупреждаем, что баррикады закроются
 	GameOverTime = 8,
-	ZombiesAlivePerPlayer = 40, -- одновременно живых мутантов на игрока; остальные ждут в очереди спавна
-	ZombiesAliveMin = 40,
+	-- Одновременно живых зомби (остальные ждут в очереди спавна): на игрока от AlivePerPlayerStart (1-я ночь) до AlivePerPlayerEnd (ночь AliveWaves),
+	-- плюс добавка за уровень угрозы (Config.Threat.Tiers[].alive: вооружённость команды). Итого не меньше AliveMin и не больше AliveHardCap.
+	AlivePerPlayerStart = 8,
+	AlivePerPlayerEnd = 24,
+	AliveWaves = 20,
+	AliveExp = 1,
+	AliveMin = 8,
+	AliveHardCap = 130, -- потолок нагрузки на сервер (6 игроков на ночах 15–20 упираются в него)
 	SpawnsPerTick = 2,
 	SpawnTick = 0.25,
 	AiTick = 0.2, -- как часто зомби пересчитывают цель
@@ -303,36 +312,27 @@ Config.Score = {
 }
 
 Config.Economy = {
-	CoinsPerHit = 0, -- монеты за попадания убраны: доход — награда за миссию и пул за убийства (WaveMath.missionReward / killPool / killCap)
-	CoinsPerPlankRepair = 10,
-	MaxRepairCoinsPerDay = 100, -- на всю команду
-	-- Вариант C «миссии решают» (2026-10-25, docs/balance/economy_2026-10.md). Личные счета (на здания скидываются у вывески). Основной доход —
-	-- награда за миссию ночи: личная часть каждому целиком + командная, поровну на всех (она оплачивает здания). Обе растут от ночи к ночи
-	-- как 1 + MissionGrowth·(ночь − 1); суммы за MissionRewardWaves ночей — MissionPersonalTotal и MissionTeamTotal (цель на игрока к 15-й
-	-- ночи ≈ 0,9 × (5250 на 3–4 ствола + 14 500 / игроков на здания); стартовые 500 — на патроны). Миссия провалена — доля MissionFailShare
-	-- (0: награды нет). Лежащему на конец ночи — DownedRewardFactor от награды.
-	-- Убийства: пул ночи на игрока = KillPoolShare от потолка KillCap (растёт от KillCapMin до KillCapMax за KillCapWaves ночей), пул растёт
-	-- с числом игроков; в голову полная доля, в тело — KillBodyShare. Потолок монет за убийства на игрока за ночь — KillCap (200–300): сколько бы
-	-- зомби ни пришло за время миссии, больше потолка убийства не платят (было 3000 за первую ночь на потоке зомби).
-	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту волну.
-	MissionPersonalTotal = 3413,
-	MissionTeamTotal = 13050,
-	MissionGrowth = 0.18,
-	MissionRewardWaves = 15,
+	CoinsPerHit = 0, -- монеты за попадания и за убийства убраны (баланс v3): за убийства и хедшоты — только очки (Score, Rating); монеты — только за миссии
+	CoinsPerPlankRepair = 0, -- было 10: монеты тоже только за миссии (очки за ремонт — Config.Score.Repair)
+	MaxRepairCoinsPerDay = 0,
+	-- Баланс v3 (2026-11, docs/balance/balance_2026-11.md). Личные счета (на здания скидываются у вывески). Единственный доход — награда за миссию ночи:
+	-- личная часть каждому целиком (на оружие и припасы) + командная часть, поровну на всех (на здания). Обе растут от ночи к ночи как
+	-- 1 + MissionGrowth·(ночь − 1); суммы за MissionRewardWaves ночей — MissionPersonalTotal и MissionTeamTotal. Командная часть делится
+	-- не меньше чем на TeamShareMinPlayers: соло получает столько же, сколько вдвоём; общий банк на здания не растёт с числом игроков.
+	-- Цель на игрока (вдвоём): к 15-й ночи около 7000 монет с учётом стартовых 500 (до 8000 с перками «Looter»), к 20-й около 10 500.
+	-- Провал миссии — доля MissionFailShare (0: награды нет). Лежащему на конец ночи — DownedRewardFactor от награды.
+	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту ночь.
+	MissionPersonalTotal = 7300,
+	MissionTeamTotal = 5300,
+	MissionGrowth = 0.10,
+	MissionRewardWaves = 20,
+	TeamShareMinPlayers = 2,
 	MissionFailShare = 0,
-	KillCapMin = 200,
-	KillCapMax = 300,
-	KillCapWaves = 15,
-	KillPoolShare = 0.35,
-	KillBodyShare = 0.4,
-	KillWeights = { Walker = 1, Runner = 1.2, Crawler = 0.8, Dark = 2, BucketHead = 2.5, Military = 3, Chemist = 3, Brute = 6 },
-	BossKillWeight = 40,
 	DownedRewardFactor = 0.5,
 	LossPenalty = 0.2,
 	HeadshotMultiplier = 2, -- урон по голове (было 1,5)
 	LimbMultiplier = 0.75, -- урон по рукам и ногам: целиться в корпус и голову выгоднее
 	HeadshotKillPointsBonus = 0.5, -- добавка к очкам за убийство выстрелом в голову (доля от очков типа)
-	HeadshotKillCoinsBonus = 0.25, -- и к монетам
 	RefillPriceFactor = 0.5,
 }
 
@@ -840,48 +840,53 @@ Config.WallBuys = { "Bat", "Machete", "Revolver", "SMG", "Shotgun", "Rifle", "LM
 
 local Zombies: { [string]: ZombieDef } = {
 	Walker = {
-		id = "Walker", name = "Walker", hp = 30, speed = 14, damage = 15, attackCooldown = 2.2, windup = 0.55, breakCooldown = 1,
+		id = "Walker", name = "Walker", hp = 60, speed = 14, damage = 15, attackCooldown = 2.2, windup = 0.55, breakCooldown = 1,
 		reward = 50, points = 10, scale = 1, color = Color3.fromRGB(95, 140, 80), planksPerHit = 1,
 	},
 	Runner = {
-		id = "Runner", name = "Runner", hp = 20, speed = 19, damage = 10, attackCooldown = 1.8, windup = 0.4, breakCooldown = 0.8,
+		id = "Runner", name = "Runner", hp = 40, speed = 19, damage = 10, attackCooldown = 1.8, windup = 0.4, breakCooldown = 0.8,
 		reward = 60, points = 15, scale = 0.9, color = Color3.fromRGB(150, 160, 70), planksPerHit = 1,
 	},
 	Brute = {
-		id = "Brute", name = "Brute", hp = 300, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
+		id = "Brute", name = "Brute", hp = 450, speed = 12, damage = 35, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 400, points = 100, scale = 1.8, color = Color3.fromRGB(110, 50, 50), planksPerHit = 5,
 	},
 	-- Особые зомби (2026-10-19). Числа черновые: расписание по волнам и баланс — следующий шаг.
 	Military = {
-		id = "Military", name = "Infected soldier", hp = 90, speed = 13, damage = 22, attackCooldown = 2.2, windup = 0.5, breakCooldown = 1,
+		id = "Military", name = "Infected soldier", hp = 350, speed = 13, damage = 22, attackCooldown = 2.2, windup = 0.5, breakCooldown = 1,
 		reward = 150, points = 40, scale = 1.05, color = Color3.fromRGB(80, 100, 70), planksPerHit = 2,
 	},
+	-- Военный в полной броне (модели Z_Mil3 и Z_Mil4: каска, бронежилет 6Б2, наколенники и налокотники): мало и поздно (WaveMath.Plan, с 16-й ночи)
+	MilitaryArmored = {
+		id = "MilitaryArmored", name = "Armored soldier", hp = 1000, speed = 12, damage = 28, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
+		reward = 0, points = 120, scale = 1.05, color = Color3.fromRGB(60, 75, 55), planksPerHit = 3,
+	},
 	Chemist = {
-		id = "Chemist", name = "Chemist", hp = 45, speed = 12, damage = 10, attackCooldown = 2.4, windup = 0.5, breakCooldown = 1,
+		id = "Chemist", name = "Chemist", hp = 80, speed = 12, damage = 10, attackCooldown = 2.4, windup = 0.5, breakCooldown = 1,
 		reward = 120, points = 35, scale = 1, color = Color3.fromRGB(120, 200, 90), planksPerHit = 1,
 		flask = { range = 40, minRange = 10, cooldown = 5, damage = 20, tick = 4, radius = 7 },
 	},
 	Dark = {
-		id = "Dark", name = "Dark one", hp = 75, speed = 17, damage = 20, attackCooldown = 2, windup = 0.4, breakCooldown = 0.8,
+		id = "Dark", name = "Dark one", hp = 100, speed = 17, damage = 20, attackCooldown = 2, windup = 0.4, breakCooldown = 0.8,
 		reward = 140, points = 40, scale = 1, color = Color3.fromRGB(25, 25, 30), planksPerHit = 1,
 		teleport = { cooldown = 7, distance = 18 },
 	},
 	BucketHead = {
-		id = "BucketHead", name = "Armored", hp = 150, speed = 12, damage = 18, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
+		id = "BucketHead", name = "Armored", hp = 450, speed = 12, damage = 18, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
 		reward = 130, points = 40, scale = 1.15, color = Color3.fromRGB(120, 120, 120), planksPerHit = 2,
 	},
 	Crawler = {
-		id = "Crawler", name = "Crawler", hp = 25, speed = 11, damage = 8, attackCooldown = 1.6, windup = 0.35, breakCooldown = 0.8,
+		id = "Crawler", name = "Crawler", hp = 40, speed = 11, damage = 8, attackCooldown = 1.6, windup = 0.35, breakCooldown = 0.8,
 		reward = 40, points = 12, scale = 0.6, color = Color3.fromRGB(110, 120, 90), planksPerHit = 1,
 	},
 	BossBuff = {
-		id = "BossBuff", name = "Jock", hp = 2667, speed = 11, damage = 50, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
+		id = "BossBuff", name = "Jock", hp = 5000, speed = 11, damage = 50, attackCooldown = 3, windup = 0.9, breakCooldown = 1.5,
 		reward = 2000, points = 500, scale = 2.0, color = Color3.fromRGB(110, 60, 60), planksPerHit = 6,
 			jump = { windup = 3, flight = 0.9, cooldown = 13, range = 70, minRange = 8, radius = 13, damage = 60, first = 6 },
 			rock = { windup = 1.6, flight = 1.3, cooldown = 9, range = 75, minRange = 14, radius = 8, damage = 40, first = 4 },
 	},
 	BossGarg = {
-		id = "BossGarg", name = "Gargantua", hp = 5000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
+		id = "BossGarg", name = "Gargantua", hp = 7000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,
 		reward = 4000, points = 800, scale = 2.5, color = Color3.fromRGB(70, 100, 60), planksPerHit = 8,
 			-- (2026-10-28) вместо прыжка и броска камня: удар по земле, ползун со спины, бросок знака (rock со stun), обычный удар
 			rock = { windup = 1.5, flight = 1.4, cooldown = 9, range = 75, minRange = 14, radius = 6, damage = 30, first = 4, stun = 2 },
@@ -891,7 +896,7 @@ local Zombies: { [string]: ZombieDef } = {
 			},
 	},
 	BossStrong = {
-		id = "BossStrong", name = "Dark Lord", hp = 3000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
+		id = "BossStrong", name = "Dark Lord", hp = 9000, speed = 13, damage = 60, attackCooldown = 2.8, windup = 0.8, breakCooldown = 1.4,
 		reward = 3000, points = 650, scale = 1.7, color = Color3.fromRGB(40, 30, 50), planksPerHit = 6,
 			-- (2026-10-28) разбег, чёрный взмах, прыжок с волной тьмы (jump.wave), обычный удар дубинкой
 			jump = { windup = 3, flight = 0.8, cooldown = 11, range = 70, minRange = 8, radius = 13, damage = 70, first = 6, wave = { extra = 10, noSprint = 3 } },
@@ -903,7 +908,7 @@ local Zombies: { [string]: ZombieDef } = {
 	-- Финальный босс (ночь 20, решение Руслана 2026-10-29: новая модель, ассет 5794917487, свой набор механик). Фаза 1: порез + способности; фаза 2 (HP ≤ 50%):
 	-- только способности и неуязвимость к огнестрелу. Тени (clones) повторяют способности, кроме раздвоения, и в 20 раз слабее.
 	BossFinal = {
-		id = "BossFinal", name = "Bunker Guardian", hp = 6000, speed = 13, damage = 70, attackCooldown = 2.6, windup = 0.8, breakCooldown = 1.4,
+		id = "BossFinal", name = "Bunker Guardian", hp = 10000, speed = 13, damage = 70, attackCooldown = 2.6, windup = 0.8, breakCooldown = 1.4,
 		reward = 5000, points = 1000, scale = 1.9, color = Color3.fromRGB(30, 24, 36), planksPerHit = 7,
 			phase2 = { hpFraction = 0.5 },
 			attacks = {
@@ -917,9 +922,10 @@ local Zombies: { [string]: ZombieDef } = {
 }
 
 Config.Zombies = Zombies
--- Здоровье зомби уменьшено (2026-10-27, по просьбе Руслана): у всех вдвое, у босса 5-й ночи (Качок) в 1,5 раза; потом добавим количество, а не жирность.
--- Множитель здоровья по модели в пуле BucketHead (поверх hp): «с конусом» итого в 4 раза слабее прежнего (150 × 0,5 = 75), «с ведром» — в 3 раза (150 × 0,667 = 100).
-Config.ZombieRigHp = { Z_Cone = 0.5, Z_Bucket = 0.667 } :: { [string]: number }
+-- Здоровье зомби фиксированное (баланс v3, 2026-11): не растёт ни с ночью (Waves.HpGrowthPerWave = 0), ни с уровнем угрозы (Threat.Tiers[].hp = 1) — прогрессия числом.
+-- Обычный 60, бегун и ползун 40, химик 80, тёмный 100, громила 450, военный в каске 350, в полной броне 1000; боссы по порядку ночей 5000 / 7000 / 9000 / 10 000.
+-- Множитель здоровья по модели в пуле BucketHead (поверх hp = 450 — ведро): «с конусом» 450 × 200/450 = 200.
+Config.ZombieRigHp = { Z_Cone = 200 / 450 } :: { [string]: number }
 
 -- Внешний вид зомби (2026-10-17, v2): готовые модели R15 из Creator Store, собранные из мешей тела (см. assets_ledger).
 -- Позиции — в системе корня (начало — таз, лицо смотрит в -Z). height — рост, pelvis — высота таза над стопами.
@@ -1015,7 +1021,8 @@ Config.ZombieRigs = {
 		pool = { "Z_Pack2", "Z_Pack1" },
 		scale = 0.8, animSpeed = 10,
 	},
-	Military = { pool = { "Z_Mil1", "Z_Mil2", "Z_Mil3", "Z_Mil4", "Z_Mil5" }, scale = 1.0, absolute = true, animSpeed = 13 },
+	Military = { pool = { "Z_Mil1", "Z_Mil2", "Z_Mil5" }, scale = 1.0, absolute = true, animSpeed = 13 }, -- каска и разгрузка
+	MilitaryArmored = { pool = { "Z_Mil3", "Z_Mil4" }, scale = 1.0, absolute = true, animSpeed = 12 }, -- полная броня
 	Chemist = { pool = { "Z_Chem1", "Z_Chem2", "Z_Chem3" }, scale = 1.0, absolute = true, animSpeed = 12 },
 	Dark = { pool = { "Z_Pack1", "Z_Pack3", "Z_Pack4", "Z_Pack5", "Z_Pack6", "Z_Pack7" }, scale = 1.05, absolute = true, animSpeed = 15, useRun = true, tint = Color3.fromRGB(22, 22, 28) },
 	BucketHead = { pool = { "Z_Bucket", "Z_Cone" }, scale = 1.1, absolute = true, animSpeed = 12 },
@@ -1061,19 +1068,23 @@ Config.Props = {
 } :: { [string]: MeshProp }
 
 -- Прогрессия волн (WaveMath). Количество: кривая от StartCounts до потолка на CurveWaves-й волне (±JitterPct%), плюс добавка за оружие команды
--- (ThreatClasses, один раз за класс); потолок: CapSolo, для команды × (1 + CapPerExtraPlayer·(игроков − 1)) — 250 соло, 500 вчетвером.
+-- (ThreatClasses, один раз за класс); потолок: CapSolo, для команды × (1 + CapPerExtraPlayer·(игроков − 1)) — 80 соло, 116 вдвоём, 188 вчетвером, 260 вшестером.
 -- Состав по волнам — WaveMath.Plan.
--- Качество: HP растёт каждую волну и ещё зависит от «уровня угрозы» (Config.Threat.Tiers — вооружённость команды), скорость чуть растёт, но не выше SpeedCeil (спринт игрока — 21).
+-- Качество: здоровье не растёт (баланс v3); урон и скорость чуть растут, скорость не выше SpeedCeil (спринт игрока — 21). «Уровень угрозы» (Config.Threat.Tiers — вооружённость команды)
+-- даёт добавку к числу одновременно живых зомби (alive), к бегунам и более раннее появление особых.
 Config.Waves = {
-	StartCounts = { 20, 30, 35, 40 }, -- на 1-й волне для 1, 2, 3, 4 игроков; дальше + StartPerExtraPlayer
-	StartPerExtraPlayer = 4,
+	-- Релизные числа баланса v3 (2026-11): общее число зомби за ночь — кривая от StartCounts к потолку CapSolo (× (1 + CapPerExtraPlayer·(игроков − 1))).
+	-- Поток в «бесконечных» миссиях (разведка, оборона, шатёр, конвой, метро) подпитывается из этого состава, пока миссия не выполнена;
+	-- общее число решает в ночах-«убить всю волну» (5, 10, 15). Одновременно живых — Config.Round.Alive*.
+	StartCounts = { 12, 18, 24, 30 }, -- на 1-й волне для 1, 2, 3, 4 игроков; дальше + StartPerExtraPlayer
+	StartPerExtraPlayer = 6,
 	CurveWaves = 20, -- на этой волне число зомби достигает потолка
 	CurveExp = 1.25,
 	JitterPct = 10,
-	CapSolo = 250,
-	CapPerExtraPlayer = 1 / 3,
-	HpGrowthPerWave = 0.12,
-	DamageGrowthPerWave = 0.03,
+	CapSolo = 80,
+	CapPerExtraPlayer = 0.45,
+	HpGrowthPerWave = 0, -- было 0,12: здоровье не растёт, прогрессия — числом зомби
+	DamageGrowthPerWave = 0.02, -- было 0,03: при плоском здоровье урон к 20-й ночи ×1,38
 	SpeedGrowthPerWave = 0.01,
 	SpeedCeil = 18,
 	BossEvery = 5,
@@ -1083,19 +1094,19 @@ Config.Waves = {
 -- Класс оружия для прогрессии: у каждого — вес (для уровня угрозы) и добавка зомби к волне (диапазон, случайно один раз на волну).
 -- Считаются любые оружия в инвентаре игроков на момент начала ночи; пистолеты и холодное — нет.
 Config.ThreatClasses = {
-	SMG = { weight = 7, bonusMin = 5, bonusMax = 10 },
-	Shotgun = { weight = 7, bonusMin = 5, bonusMax = 10 },
-	Rifle = { weight = 15, bonusMin = 10, bonusMax = 20 },
-	MG = { weight = 15, bonusMin = 10, bonusMax = 20 },
+	SMG = { weight = 7, bonusMin = 2, bonusMax = 4 },
+	Shotgun = { weight = 7, bonusMin = 2, bonusMax = 4 },
+	Rifle = { weight = 15, bonusMin = 4, bonusMax = 8 },
+	MG = { weight = 15, bonusMin = 4, bonusMax = 8 },
 }
--- Уровни угрозы по среднему весу оружия на игрока: min — нижняя граница; hp — множитель здоровья; runners — добавка к доле бегунов (доля всей волны, за счёт обычных; только на волнах, где бегуны есть по плану WaveMath.Plan);
+-- Уровни угрозы по среднему весу оружия на игрока: min — нижняя граница; hp — множитель здоровья (всегда 1: здоровье не растёт); alive — добавка к одновременно живым зомби на игрока; runners — добавка к доле бегунов (доля всей волны, за счёт обычных; только на волнах, где бегуны есть по плану WaveMath.Plan);
 -- early — на сколько волн раньше приходят особые зомби.
 Config.Threat = {
 	Tiers = {
-		{ min = 0, hp = 1.0, runners = 0, early = 0 },
-		{ min = 7, hp = 1.1, runners = 0.05, early = 0 },
-		{ min = 15, hp = 1.2, runners = 0.1, early = 1 },
-		{ min = 29, hp = 1.35, runners = 0.15, early = 1 },
+		{ min = 0, hp = 1, runners = 0, early = 0, alive = 0 },
+		{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 2 },
+		{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 4 },
+		{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 6 },
 	},
 }
 
@@ -1140,7 +1151,7 @@ export type MissionDef = { type: string, title: string, anchor: number, points: 
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
 	TruckHp = 1000,
-	TruckSpeed = 9.5, -- студов в секунду. ТЕСТ (2026-10-24): все конвои за ~3 минуты (самый длинный маршрут, ночь 12, ~1614 студов → ~170 с); в релизе вернуть к ~3,5 или короче маршруты
+	TruckSpeed = 11, -- студов в секунду по умолчанию (баланс v3, 2026-11: конвой ~1,5–2 минуты; у ночей 3, 8, 12, 17 своя скорость в Config.Missions.convoySpeed)
 	SoldierHp = 150, -- было 300: сопровождающие были слишком сильными (2026-10-26)
 	SoldierDps = 15, -- урон по зомби в секунду каждого солдата (было 50)
 	SoldierShotInterval = 0.5,
@@ -1297,7 +1308,7 @@ Config.PlaceBeacon = { Radius = 16, Color = Color3.fromRGB(255, 200, 60) }
 -- Defenders живых солдат (HP из DefenderHp, урон DefenderDps, шаг DefenderInterval, дальность DefenderRange) — зомби их атакуют и могут убить;
 -- по базе Debris.Clusters куч мусора (Wrecks из них — с остовами машин).
 Config.BaseBattle = {
-	Total = 150, AliveCap = 45, SpawnPoints = 14, DeadFraction = 1 / 3,
+	Total = 150, AliveCap = 45, SpawnPoints = 14, DeadFraction = 1 / 3, -- AliveCap — минимум: если ночной потолок (Config.Round.Alive*) выше, берётся он
 	Defenders = 10, DefenderHp = { 200, 250 }, DefenderDps = 30, DefenderInterval = 0.4, DefenderRange = 55, PostRadius = 14,
 	Debris = { Clusters = 16, Radius = 11, Chunks = 16, Crates = 3, Planks = 6, Barrels = 2, Tires = 2, Cloth = 3, Wrecks = 3 },
 }
@@ -1322,12 +1333,13 @@ Config.Finale = {
 -- темнее (Dark.cave, x > Cave.minX и z > Cave.minZ), включается фонарик у камеры.
 Config.Metro = {
 	NestHold = 6,
-	Gens = 5,
+	Gens = 2, -- сколько генераторов нужно запустить (из пяти на карте: берём ближайшие к цели)
 	GenHold = 4,
-	Tnt = 20,
+	Tnt = 4, -- сколько зарядов ставить: маркеры из TntMarkers (восточная часть станции, по пути к детонатору)
+	TntMarkers = { 14, 15, 16, 17 } :: { number },
 	TntHold = 2,
 	MarkDistance = 100,
-	DefendSeconds = 60,
+	DefendSeconds = 30,
 	DefendRadius = 45,
 	-- Тоннель в горе («The Hub Map»): команда появляется почти в конце (ближе к базе, +z), там военный джип с турелью, припасы и майор с брифингом
 	Hub = {
@@ -1367,23 +1379,23 @@ Config.Metro = {
 Config.Missions = {
 	[1] = { type = "scout", title = "Area recon", anchor = 1, points = 3, hint = "Visit the checkpoints around the tent" },
 	[2] = { type = "build", title = "Clear the zone and set up the tent", anchor = 1, kills = 15, hint = "Clear the zone and set up the tent at the marked spot" },
-	-- Первый конвой: выезжает из начальной зоны (мешки с песком на эту ночь убираются), едет не быстро (6,5 студа/с — маршрут ~600 студов за ~90 с, решение Руслана 2026-10-26; было 3,5;
-	-- Config.Convoy.TruckSpeed = 9,5 — тестовая, на неё ночи 8, 12, 17 не меняем) и только пока рядом игрок
-	[3] = { type = "escort", title = "Supply convoy escort", anchor = 1, points = 3, convoySpeed = 6.5, clearSandbags = true, hint = "Don't let the truck be destroyed: it will pass the checkpoints and stop by the tent" },
-	[4] = { type = "scout", title = "Recon of nearby buildings", anchor = 1, points = 4, radius = { 100, 200 }, hint = "Visit the checkpoints" },
+	-- Первый конвой: выезжает из начальной зоны (мешки с песком на эту ночь убираются) и едет только пока рядом игрок. Скорости конвоев — баланс v3 (2026-11):
+	-- ночь 3 — 9 студов/с (маршрут 597 студов ≈ 66 с), 8 — 13 (1101 студ ≈ 85 с), 12 — 13 (1175 ≈ 90 с), 17 — 11 (891 ≈ 81 с); остальное — Config.Convoy.TruckSpeed
+	[3] = { type = "escort", title = "Supply convoy escort", anchor = 1, points = 3, convoySpeed = 9, clearSandbags = true, hint = "Don't let the truck be destroyed: it will pass the checkpoints and stop by the tent" },
+	[4] = { type = "scout", title = "Recon of nearby buildings", anchor = 1, points = 3, radius = { 80, 140 }, hint = "Visit the checkpoints" },
 	[5] = { type = "classic", title = "Defend the tent from the boss", anchor = 1, planned = "defend-boss", hint = "Kill the boss and the wave" },
 	[6] = { type = "scout", title = "Recon of the second district", anchor = 2, points = 3, hint = "Visit the checkpoints around the tent" },
 	[7] = { type = "build", title = "Clear-out and tent setup", anchor = 2, kills = 20, hint = "Clear the zone and set up the tent at the marked spot" },
-	[8] = { type = "escort", title = "Convoy escort", anchor = 2, points = 3, hint = "Don't let the truck be destroyed" },
-	[9] = { type = "scout", title = "Recon of the third tent's territory", anchor = 3, points = 4 },
+	[8] = { type = "escort", title = "Convoy escort", anchor = 2, points = 3, convoySpeed = 13, hint = "Don't let the truck be destroyed" },
+	[9] = { type = "scout", title = "Recon of the third tent's territory", anchor = 3, points = 3 },
 	[10] = { type = "classic", title = "Boss: zombies vs plants", anchor = 2, planned = "boss", hint = "Kill the boss and the wave" },
-	[11] = { type = "scout", title = "Surveying the locations around the tents", anchor = 2, points = 5 },
-	[12] = { type = "escort", title = "Convoy to the third tent", anchor = 3, points = 3, install = true, hint = "Bring the truck and set up the tent at the site" },
-	[13] = { type = "defend", title = "Anomalies and attacks on shops", anchor = 1, seconds = 150, planned = "anomaly" },
-	[14] = { type = "defend", title = "Attack on all tents", anchor = 2, seconds = 200, planned = "multi-defend" },
+	[11] = { type = "scout", title = "Surveying the locations around the tents", anchor = 2, points = 4 },
+	[12] = { type = "escort", title = "Convoy to the third tent", anchor = 3, points = 3, install = true, convoySpeed = 13, hint = "Bring the truck and set up the tent at the site" },
+	[13] = { type = "defend", title = "Anomalies and attacks on shops", anchor = 1, seconds = 35, planned = "anomaly" },
+	[14] = { type = "defend", title = "Attack on all tents", anchor = 2, seconds = 40, planned = "multi-defend" },
 	[15] = { type = "classic", title = "The boss attacks the main base", anchor = 1, planned = "boss", hint = "Kill the boss and the wave" },
-	[16] = { type = "scout", title = "Territory recon", anchor = 4, points = 4, planned = "daytime" },
-	[17] = { type = "escort", title = "Tent setup and convoy", anchor = 4, points = 3, install = true, hint = "Bring the truck and set up the tent at the site" },
+	[16] = { type = "scout", title = "Territory recon", anchor = 4, points = 3, planned = "daytime" },
+	[17] = { type = "escort", title = "Tent setup and convoy", anchor = 4, points = 3, install = true, convoySpeed = 11, hint = "Bring the truck and set up the tent at the site" },
 	[18] = { type = "metro", title = "Catacombs: metro clear-out", anchor = 6, kills = 40, nests = 3, boss = "BossBuff", hint = "Go down the stairs at the metro entrance, burn the nests (E) and kill the station boss" },
 	[19] = { type = "clear", title = "Military base: clear-out and capture", anchor = 5, baseBattle = true, hint = "Retake the base: kill 150 mutants coming from the base side, soldiers at the rally point help" },
 	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,
