@@ -755,7 +755,12 @@ local function refreshBoard()
 	for r = 1, L.BoardSize do
 		if sample then
 			local s = SAMPLE_ROWS[r]
-			board.setRow(r, if s then { name = s.name, wave = s.wave, rating = s.rating, image = nil } else nil)
+			local me = Players:GetPlayers()[1] -- Studio: первая строка — тот, кто тестирует (видно, как ставится скин лидера)
+			if r == 1 and me then
+				board.setRow(r, { name = me.DisplayName, wave = 20, rating = 12000, image = thumbOf(me.UserId) })
+			else
+				board.setRow(r, if s then { name = s.name, wave = s.wave, rating = s.rating, image = nil } else nil)
+			end
 		else
 			local e = top[r]
 			if e then
@@ -784,7 +789,8 @@ local function refreshBoard()
 		board.setNote("Global top by total rating · refreshed every " .. math.floor(L.BoardRefresh / 60) .. " min")
 	end
 	-- фигура «первого места» одевается в лидера (в Studio без данных — тестовый аккаунт, только для вида)
-	local leader = if top[1] then top[1].userId else (if sample then 1 else 0)
+	local me = Players:GetPlayers()[1]
+	local leader = if top[1] then top[1].userId else (if sample and me then me.UserId else 0)
 	local rig = board.rig
 	local hum = if rig then rig:FindFirstChildOfClass("Humanoid") else nil
 	if rig and hum and leader > 0 and leader ~= lastBoardLeader then
@@ -800,10 +806,20 @@ local function refreshBoard()
 			if not ok or not desc then
 				return
 			end
+			-- старую одежду и аксессуары фигуры убираем: иначе остаются шаблоны рубашки и брюк ассета
+			for _, c in rig:GetChildren() do
+				if c:IsA("Shirt") or c:IsA("Pants") or c:IsA("ShirtGraphic") or c:IsA("Accessory") or c:IsA("BodyColors") or c:IsA("CharacterMesh") then
+					c:Destroy()
+				end
+			end
 			if not pcall(function()
-				hum:ApplyDescription(desc)
+				hum:ApplyDescriptionReset(desc)
 			end) then
-				return
+				if not pcall(function()
+					hum:ApplyDescription(desc)
+				end) then
+					return
+				end
 			end
 			-- новая внешность сбрасывает размер: возвращаем размер и место, корень закреплён, остальное держится суставами
 			hum.AutomaticScalingEnabled = true
@@ -983,7 +999,7 @@ function LobbyService.initLobby(h: Handlers)
 					warn("[LobbyService] board: " .. tostring(err))
 				end
 			end
-			task.wait(L.BoardRefresh)
+			task.wait(if studio then 10 else L.BoardRefresh) -- в Studio чаще: данных нет, показываем пример
 		end
 	end)
 	print("[LobbyService] lobby ready")

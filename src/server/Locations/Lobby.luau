@@ -492,7 +492,7 @@ function Lobby.build(): LobbyInfo
 	for _, p in { { -30, 46, -90 }, { 30, 46, 90 }, { -30, 76, -90 }, { 30, 76, 90 } } do
 		put("Metro.Bench", p[1], p[2], p[3], { y = 0.2 })
 	end
-	for _, c in { { -33, 62, 10 }, { 33, 62, -10 }, { -33, 86, 30 }, { 33, 86, -30 } } do
+	for _, c in { { -34, 63, 10 }, { 34, 63, -10 }, { -34, 90, 30 }, { 34, 90, -30 } } do
 		put("Props.MilitaryCrates", c[1], c[2], c[3], { y = 0.2, scale = 0.8 })
 	end
 
@@ -540,7 +540,6 @@ function Lobby.build(): LobbyInfo
 				table.insert(menus, { prompt = pr, kind = "vending", id = k })
 			end
 		end
-		put("Base.Crates", side * 31, 49, 0, { y = 0.2, scale = 0.6 })
 	end
 
 	-- ===== Solo: ворота на востоке =====
