@@ -36,6 +36,7 @@ local reviveLockUntil = 0 -- пока идёт воскрешение коман
 local wave = 0
 local locationIndex = 1 -- init.server строит первую локацию из Config.Locations
 local gameOver = false
+local lobbyHooks: { begin: () -> (), after: () -> () }? = nil -- лобби включено: после раунда экран итогов и возврат в лобби
 local fellAtNight = false
 local finalePending = false -- убит финальный босс: следующий день — финал акта 1 (бункер)
 local finaleDone = false -- акт 1 пройден: раунд кончается поздравлением, а не «все пали»
@@ -469,6 +470,9 @@ end
 local function finishRound()
 	ZombieService.clearAll()
 	setPhase("GameOver", Config.Round.GameOverTime)
+	if lobbyHooks then
+		lobbyHooks.begin() -- экран итогов с кнопкой «Back to lobby»
+	end
 	-- ночь, на которой все пали, не засчитывается
 	local reached = math.max(0, if fellAtNight then wave - 1 else wave)
 	ReplicatedStorage:SetAttribute("LastRoundWave", reached)
@@ -494,6 +498,11 @@ local function finishRound()
 		)
 	end
 	task.wait(Config.Round.GameOverTime)
+end
+
+-- Лобби (LobbyService): в конце раунда вместо нового раунда на этом же сервере — экран итогов и возврат в лобби
+function RoundService.setLobbyHooks(begin: () -> (), after: () -> ())
+	lobbyHooks = { begin = begin, after = after }
 end
 
 -- Тестовые стенды (только Studio, init.server): «Пропустить волну» — ночью завершает текущую ночь как выполненную, днём сразу начинает ночь
@@ -603,6 +612,9 @@ function RoundService.start(map: Types.MapInfo)
 				night()
 			end
 			finishRound()
+			if lobbyHooks then
+				lobbyHooks.after() -- ждёт возврата в лобби; вернулся — начинаем новый раунд на этом сервере
+			end
 		end
 	end)
 end
