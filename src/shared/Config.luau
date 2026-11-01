@@ -157,8 +157,8 @@ Config.LocationNights = 10
 -- на базе стоят телепорт-площадки к каждой локации. Выключить (false) — обычная игра на карте City.
 Config.Explore = false -- true: режим осмотра без раундов
 Config.TestStands = true -- стенды у спавна: тестовое оружие бесплатно, вызов волн мутантов (выключить перед релизом)
--- Донатный магазин на базе (Services/BaseShopService): центр у подхода к базе рядом со спавном игроков, Rot — поворот (180: прилавки смотрят на запад, к спавну)
-Config.BaseShop = { Center = Vector3.new(80, 0, 281), Rot = 180 }
+-- Донатный магазин на базе (Services/BaseShopService): центр на базе между «Military Carport Garage Building House» (89, 498) и APC (78, 393), Rot — поворот (180: прилавки смотрят на запад, внутрь базы)
+Config.BaseShop = { Center = Vector3.new(78, 0, 432), Rot = 180 }
 Config.TentMarkRadius = 250 -- метки на военные палатки каждое утро в этом радиусе, студов (1 стад ≈ 0,28 м)
 Config.ExploreZombies = true -- в режиме осмотра ставить проверочных зомби (Зомби 3.0)
 
@@ -1441,7 +1441,7 @@ Config.Rating = {
 
 -- НПС-продавцы в зданиях (VendorService): появляются только днём в открытом за монеты здании.
 -- kind: "item" — расходник (ItemService), "weapon" — оружие из Config.Weapons, "equip" — оборудование (EquipmentService), "life" — жизнь команды.
-export type VendorItem = { id: string, name: string, desc: string, price: number, kind: string, robux: number? } -- robux: цена за донат (позже), пока не используется
+export type VendorItem = { id: string, name: string, desc: string, price: number, kind: string, robux: number?, requires: string? } -- requires — id здания, которое должно быть открыто (автомат: аптечка после Medical post); robux: цена за донат (позже), пока не используется
 export type VendorDef = { name: string, greeting: string, items: { VendorItem } }
 local function weaponItems(ids: { string }): { VendorItem }
 	local list: { VendorItem } = {}
@@ -1459,7 +1459,7 @@ Config.Vendors = {
 	Vending = {
 		name = "Rifle", greeting = "Runs on backup power. No change given.",
 		items = {
-			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item", robux = 25 },
+			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item", robux = 25, requires = "Pharmacy" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite energy for 1 wave", price = 100, kind = "item", robux = 20 },
 			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo", robux = 15 },
 		},

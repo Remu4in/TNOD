@@ -2,7 +2,9 @@
 -- Донатный магазин на военной базе (баланс v4): как магазины лобби v2 — стена, вывеска, два прилавка, два ящика с припасами и двое военных у прилавков.
 -- Ассеты те же, что у лобби (ServerStorage.Assets.Lobby: Wall, ShopSign, Stall; Props.MilitaryCrates; NPC.Lobby: LobbySoldier_*), все без скриптов.
 -- Товаров за робуксы пока нет: прилавок открывает окно продавца с разделом доната «Coming soon» (тот же список, что в лобби: Config.Lobby.Shop).
--- Место — Config.BaseShop (рядом со спавном игроков на подходе к базе). Магазин открыт днём и ночью: это донат, не оружие.
+-- Место — Config.BaseShop (на базе между «Military Carport Garage Building House» и APC). Магазин стоит в месте статично (Workspace.BaseDonateShop,
+-- построен один раз через BaseShopService.build() в Edit); при запуске сервис только вешает подсказки на прилавки (а если модели в месте нет — строит её).
+-- Магазин открыт днём и ночью: это донат, не оружие.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
@@ -96,9 +98,11 @@ local function openDonate(player: Player)
 	})
 end
 
-function BaseShopService.init()
-	if built then
-		built:Destroy()
+-- Построить магазин по Config.BaseShop (заменяет старый Workspace.BaseDonateShop); без подсказок — их вешает init
+function BaseShopService.build(): Model
+	local old = workspace:FindFirstChild("BaseDonateShop")
+	if old then
+		old:Destroy()
 	end
 	local cfg = Config.BaseShop
 	local root = Instance.new("Model")
@@ -120,25 +124,7 @@ function BaseShopService.init()
 	local facing = Vector3.new(fx - cx, 0, fz - cz).Unit
 	for i, lz in { -7, 7 } do
 		local stx, stz = w(0, lz)
-		local stall = put(root, "Lobby.Stall", stx, stz, rot - 90, { name = "Stall" .. i })
-		if stall then
-			local biggest: BasePart? = nil
-			for _, d in stall:GetDescendants() do
-				if d:IsA("BasePart") and (not biggest or d.Size.Magnitude > biggest.Size.Magnitude) then
-					biggest = d
-				end
-			end
-			if biggest then
-				local prompt = Instance.new("ProximityPrompt")
-				prompt.ActionText = "Donate shop"
-				prompt.ObjectText = "Trader"
-				prompt.HoldDuration = 0
-				prompt.MaxActivationDistance = 12
-				prompt.RequiresLineOfSight = false
-				prompt.Parent = biggest
-				prompt.Triggered:Connect(openDonate)
-			end
-		end
+		put(root, "Lobby.Stall", stx, stz, rot - 90, { name = "Stall" .. i })
 		-- военный-торговец за прилавком, лицом к покупателям
 		local npc = template("NPC.Lobby.LobbySoldier_" .. (if i == 1 then 1 else 2))
 		if npc then
@@ -163,6 +149,36 @@ function BaseShopService.init()
 	local c2x, c2z = w(-6, 15.5)
 	put(root, "Props.MilitaryCrates", c1x, c1z, 20 + rot, { scale = 0.8 })
 	put(root, "Props.MilitaryCrates", c2x, c2z, -15 + rot, { scale = 0.8 })
+	return root
+end
+
+-- Запуск: магазин уже стоит в месте — вешаем подсказки на прилавки (Stall1, Stall2); нет модели — строим
+function BaseShopService.init()
+	local shop = workspace:FindFirstChild("BaseDonateShop")
+	if not shop or not shop:IsA("Model") then
+		shop = BaseShopService.build()
+	end
+	built = shop :: Model
+	for _, stall in (shop :: Model):GetChildren() do
+		if stall:IsA("Model") and string.sub(stall.Name, 1, 5) == "Stall" then
+			local biggest: BasePart? = nil
+			for _, d in stall:GetDescendants() do
+				if d:IsA("BasePart") and (not biggest or d.Size.Magnitude > biggest.Size.Magnitude) then
+					biggest = d
+				end
+			end
+			if biggest and not biggest:FindFirstChildOfClass("ProximityPrompt") then
+				local prompt = Instance.new("ProximityPrompt")
+				prompt.ActionText = "Donate shop"
+				prompt.ObjectText = "Trader"
+				prompt.HoldDuration = 0
+				prompt.MaxActivationDistance = 12
+				prompt.RequiresLineOfSight = false
+				prompt.Parent = biggest
+				prompt.Triggered:Connect(openDonate)
+			end
+		end
+	end
 end
 
 return BaseShopService

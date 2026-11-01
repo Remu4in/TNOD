@@ -105,6 +105,7 @@ function ShopController.start()
 	listCorner.Parent = list
 	local listLayout = Instance.new("UIListLayout")
 	listLayout.Padding = UDim.new(0, 4)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder -- товары, затем раздел доната (иначе строки шли по имени)
 	listLayout.Parent = list
 	local listPad = Instance.new("UIPadding")
 	listPad.PaddingTop, listPad.PaddingLeft, listPad.PaddingRight, listPad.PaddingBottom =
@@ -114,9 +115,9 @@ function ShopController.start()
 	local catButtons: { TextButton } = {}
 	local current = 1
 	-- режим продавца (НПС): вместо оружия по категориям — список товаров продавца за монеты
-	local vendor: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string } }, donate: { { id: string, name: string, desc: string, price: string } }? }? = nil
+	local vendor: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string, requires: string? } }, donate: { { id: string, name: string, desc: string, price: string } }? }? = nil
 
-	local function populateVendor(v: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string } }, donate: { { id: string, name: string, desc: string, price: string } }? })
+	local function populateVendor(v: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string, requires: string? } }, donate: { { id: string, name: string, desc: string, price: string } }? })
 		title.Text = v.title
 		hint.Text = v.greeting .. "  ·  Esc — close"
 		for order, item in v.items do
@@ -160,7 +161,33 @@ function ShopController.start()
 			price.TextXAlignment = Enum.TextXAlignment.Right
 			price.Text = "$" .. item.price
 			price.Parent = row
+			-- товар привязан к зданию (аптечка в автомате): пока оно не открыто — товар виден, но недоступен
+			local lockedBy: string? = nil
+			if item.requires then
+				local states = game:GetService("ReplicatedStorage"):GetAttribute("BuildingStates")
+				if typeof(states) ~= "string" or not string.find(states, item.requires .. "=open", 1, true) then
+					lockedBy = item.requires
+				end
+			end
+			if lockedBy then
+				local def: any = nil
+				for _, b in Config.Buildings do
+					if b.id == lockedBy then
+						def = b
+					end
+				end
+				row.AutoButtonColor = false
+				row.BackgroundColor3 = Color3.fromRGB(34, 36, 42)
+				name.TextColor3 = Color3.fromRGB(140, 142, 150)
+				price.TextColor3 = Color3.fromRGB(215, 120, 100)
+				price.TextSize = 14
+				price.Text = "Open " .. (if def then def.name else lockedBy) .. " first"
+				desc.Text = item.desc .. " · locked"
+			end
 			row.Activated:Connect(function()
+				if lockedBy then
+					return
+				end
 				Remotes.get("VendorBuy"):FireServer(v.vendorId, item.id)
 			end)
 		end

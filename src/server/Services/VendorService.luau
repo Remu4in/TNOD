@@ -152,6 +152,14 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 	if not item then
 		return
 	end
+	-- товар привязан к зданию (аптечка в автомате — к Medical post): пока здание не открыто за монеты, купить нельзя
+	if item.requires then
+		local states = ReplicatedStorage:GetAttribute("BuildingStates")
+		if typeof(states) ~= "string" or not string.find(states, item.requires .. "=open", 1, true) then
+			notify:FireClient(player, "Open the Medical post first", 2)
+			return
+		end
+	end
 	-- условия до списания монет
 	if item.kind == "weapon" then
 		local def2 = Config.Weapons[item.id]

@@ -344,10 +344,12 @@ function InfoController.start()
 		end
 	end
 
+	-- ночью метки скрыты сами (магазины и здания закрыты, ночью они только сбивают с миссии); днём — по переключателю M
 	local function applyMarks()
-		marksGui.Enabled = player:GetAttribute("MarksOn") ~= false
+		marksGui.Enabled = player:GetAttribute("MarksOn") ~= false and ReplicatedStorage:GetAttribute("Phase") ~= "Night"
 	end
 	player:GetAttributeChangedSignal("MarksOn"):Connect(applyMarks)
+	ReplicatedStorage:GetAttributeChangedSignal("Phase"):Connect(applyMarks)
 	applyMarks()
 	local function toggleMarks()
 		player:SetAttribute("MarksOn", player:GetAttribute("MarksOn") == false)
@@ -384,18 +386,17 @@ function InfoController.start()
 	end)
 
 	-- ===== клавиши =====
-	ContextActionService:BindAction("NotdMarks", function(_, state)
-		if state == Enum.UserInputState.Begin then
-			toggleMarks()
+	-- UserInputService.InputBegan, а не ContextActionService: клавиши M и H не должны зависеть от чужих привязок и порядка приоритетов
+	UserInputService.InputBegan:Connect(function(input: InputObject)
+		if UserInputService:GetFocusedTextBox() then
+			return
 		end
-		return Enum.ContextActionResult.Pass
-	end, false, Enum.KeyCode.M, Enum.KeyCode.DPadUp)
-	ContextActionService:BindAction("NotdGuide", function(_, state)
-		if state == Enum.UserInputState.Begin then
+		if input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.DPadUp then
+			toggleMarks()
+		elseif input.KeyCode == Enum.KeyCode.H or input.KeyCode == Enum.KeyCode.DPadDown then
 			setGuide(not guide.Visible)
 		end
-		return Enum.ContextActionResult.Pass
-	end, false, Enum.KeyCode.H, Enum.KeyCode.DPadDown)
+	end)
 	ContextActionService:BindAction("NotdGuideClose", function(_, state)
 		if state == Enum.UserInputState.Begin and guide.Visible then
 			setGuide(false)

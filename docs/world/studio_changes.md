@@ -89,3 +89,7 @@
 | W032 | 2026-11-01 | Play-проверки (`start_stop_play`): ночи 3, 4, 5, 6 (Качок, рывок, окно перков, панель клавиш, метки, справочник, стенд монет). Изменения в место не сохранялись (runtime) | не требуется |
 
 Итог сеанса: Studio в Edit, место **не сохранено** — два новых скрипта (W029) лежат только в файле места: нужно сохранить место в Studio.
+
+| W033 | 2026-11-01 | **`Workspace.BaseDonateShop`** (статичная модель, построена `BaseShopService.build()` в Edit из `Assets.Lobby` Wall/ShopSign/Stall, `Props.MilitaryCrates`, `NPC.Lobby.LobbySoldier_1/2`) на базе, центр (78, 432), между «Military Carport Garage Building House» и APC; ассеты в `ServerStorage` не менялись. Скрипты `Config`, `VendorService`, `BaseShopService`, `ShopController`, `InfoController` залиты заново | удалить `Workspace.BaseDonateShop` (сервис построит новую при запуске) |
+
+Итог: Studio в Edit, место **не сохранено** — `Workspace.BaseDonateShop` и новые скрипты `BaseShopService`, `InfoController` лежат только в файле места: сохраните место в Studio.
