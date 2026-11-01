@@ -783,6 +783,27 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 				warn(string.format("[MissionService] no road near the scouting point %d of the area %d — the convoy route keeps its own point", spec.index, spec.anchor))
 			end
 		end
+		-- маршрут целиком по меткам карты (Workspace.Markers), строго по порядку: перед каждой главной точкой <имя>_Via1, <имя>_Via2, … — промежуточные
+		-- повороты (колонна едет между соседними метками кратчайшей дорогой, поэтому метки на углах задают, где ехать прямо, а где поворачивать)
+		if def.markerRoute then
+			local mkDir = workspace:FindFirstChild("Markers")
+			local list: { Vector3 } = {}
+			for _, name in def.markerRoute do
+				for k = 1, 12 do
+					local via = mkDir and mkDir:FindFirstChild(name .. "_Via" .. k)
+					if via and via:IsA("BasePart") then
+						table.insert(list, via.Position)
+					end
+				end
+				local m = mkDir and mkDir:FindFirstChild(name)
+				if m and m:IsA("BasePart") then
+					table.insert(list, m.Position)
+				end
+			end
+			if #list > 0 then
+				route = list
+			end
+		end
 		local routeBeacons: { BasePart } = {}
 		for _, p in route do
 			table.insert(routeBeacons, makeBeacon(p, "Route"))
