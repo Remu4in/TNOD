@@ -221,10 +221,13 @@ local function districtPoints(anchorIndex: number, count: number, grid: RoadRout
 		return list
 	end
 	local width = math.pi * 2 / count
+	-- путь пешком проверяем от дороги у места шатра: когда шатёр уже стоит, место шатра внутри его модели — оттуда пути нет никуда,
+	-- и разведка ночи 4 получала одну случайную точку после сотен неудачных поисков пути
+	local walkFrom = RoadRoute.grid().snap(anchor, 150) or anchor
 	local function candidate(angle: number, needWalk: boolean): Vector3?
 		local radius = rr[1] + seeded:NextNumber() * (rr[2] - rr[1])
 		local p = groundAt(anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius)
-		if p and farEnough(p) and openSpot(p) and (not needWalk or walkable(anchor, p)) then
+		if p and farEnough(p) and openSpot(p) and (not needWalk or walkable(walkFrom, p)) then
 			return p
 		end
 		return nil

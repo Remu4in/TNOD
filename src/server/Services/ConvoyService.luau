@@ -561,7 +561,12 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	folder.Name = "Convoy"
 	folder.Parent = workspace
 	local gy = ground(begin.X, begin.Z, {}) or begin.Y
-	local columnDef = C.Columns[column or "Light"] or C.Columns.Light
+	-- состав колонны: ColumnSize случайных машин из набора миссии (первая — ведущая)
+	local pool = table.clone(C.Columns[column or "Light"] or C.Columns.Light)
+	local columnDef: { string } = {}
+	while #pool > 0 and #columnDef < (C.ColumnSize or #pool) do
+		table.insert(columnDef, table.remove(pool, math.random(1, #pool)) :: string)
+	end
 	local leadSpec = C.Vehicles[columnDef[1]]
 	local truck, root, bottom, yaw = buildTruck(columnDef[1], "ConvoyTruck", Vector3.new(begin.X, gy, begin.Z), heading)
 	if not truck or not root then

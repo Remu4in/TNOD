@@ -1177,6 +1177,7 @@ Config.Convoy = {
 		Supply = { "MiningDasa", "HumveeMedic", "MilitaryCar" },
 		Heavy = { "MiningDasa", "TransportTruck", "HumveeMedic", "MilitaryCar" },
 	} :: { [string]: { string } },
+	ColumnSize = 2, -- машин в колонне: столько случайных из набора Columns (Руслан: не больше 2)
 	ColumnGap = 8,
 	TruckSpeed = 11, -- студов в секунду по умолчанию (баланс v3, 2026-11: конвой ~1,5–2 минуты; у ночей 3, 8, 12, 17 своя скорость в Config.Missions.convoySpeed)
 	SoldierHp = 150, -- было 300: сопровождающие были слишком сильными (2026-10-26)
@@ -1417,7 +1418,7 @@ Config.Missions = {
 	-- Единственный конвой первого района (2 машины): точки 1 и 3 — как были (у шатра), точка 2 — точка разведки ночи 6 (waypointScout: район 2, её вторая точка), чтобы маршрут не кружил у шатра.
 	-- Конвой привозит припасы в пустой шатёр ночи 2; ночь 4 — вторая разведка (ближние места, 100–250 студов от шатра), конвоя на ней нет
 	[3] = { type = "escort", title = "Supply convoy escort", anchor = 1, points = 3, convoySpeed = 11, clearSandbags = true, column = "Light", keepOrder = true, markerRoute = { "Route1", "Route2" }, waypointMarkers = { [1] = "Route1", [2] = "Route2" }, waypointScout = { [2] = { anchor = 2, count = 3, index = 2 } }, hint = "Escort the convoy: it brings supplies to the tent" },
-	[4] = { type = "scout", title = "Recon of nearby locations", anchor = 1, points = 3, radius = { 100, 250 }, hint = "Visit the checkpoints around the tent" },
+	[4] = { type = "scout", title = "Recon of nearby locations", anchor = 1, points = 3, radius = { 150, 250 }, hint = "Visit the checkpoints around the tent" },
 	[5] = { type = "classic", title = "Defend the tent from the boss", anchor = 1, planned = "defend-boss", hint = "Kill the boss and the wave" },
 	[6] = { type = "scout", title = "Recon of the second district", anchor = 2, points = 3, hint = "Visit the checkpoints around the tent" },
 	[7] = { type = "build", title = "Clear-out and tent setup", anchor = 2, kills = 20, hint = "Clear the zone and set up the tent at the marked spot" },

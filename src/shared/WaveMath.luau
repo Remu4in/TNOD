@@ -306,8 +306,10 @@ function WaveMath.composition(t: WaveTuning, wave: number, players: number, thre
 		table.insert(ids, id)
 	end
 	table.sort(ids)
+	-- тестовый масштаб числа зомби (CountScale) уменьшает и особых: иначе в маленькой тестовой волне остаются одни громилы
+	local countScale = t.CountScale or 1
 	for _, id in ids do
-		local n = math.min(free, math.floor(counts[id] * scale + 0.5))
+		local n = math.min(free, math.floor(counts[id] * scale * countScale + 0.5))
 		if n > 0 then
 			comp[id] = (comp[id] or 0) + n
 			free -= n
