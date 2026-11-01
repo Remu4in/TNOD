@@ -89,8 +89,12 @@ export type BossComets = { windup: number, cooldown: number, first: number, rang
 export type BossClones = { windup: number, cooldown: number, first: number, range: number, minRange: number, count: number, hpDivisor: number, rise: number, alpha: number }
 export type BossBeam = { windup: number, cooldown: number, first: number, range: number, minRange: number, duration: number, chaseSpeed: number, radius: number, damage: number, tick: number }
 export type BossSlash = { windup: number, cooldown: number, first: number, range: number, minRange: number, speed: number, length: number, size: number, damage: number }
+-- Рывок Качка (BossBuff, BossAI): присел (windup), на земле красная линия по направлению рывка (в последние lockBefore секунд фиксируется), затем бежит
+-- speed студов/с на distance. Попал в игрока (не в кувырке) — хватает: grabDamage, бросок на throwDistance студов по дуге высотой height за flight с; если в броске
+-- (в секторе linkCone градусов, в пределах linkRadius от точки приземления) стоит другой игрок — бросает в него. Падение: throwDamage брошенному, splashDamage всем в splashRadius.
+export type BossRush = { windup: number, lockBefore: number, speed: number, distance: number, width: number, grabDamage: number, throwDamage: number, splashDamage: number, splashRadius: number, throwDistance: number, linkRadius: number, linkCone: number, flight: number, height: number, recover: number, cooldown: number, first: number, range: number, minRange: number }
 export type BossAttacks = {
-	slam: BossSlam?, crawlers: BossCrawlers?, charge: BossCharge?, swing: BossSwing?,
+	rush: BossRush?, slam: BossSlam?, crawlers: BossCrawlers?, charge: BossCharge?, swing: BossSwing?,
 	sea: BossSea?, comets: BossComets?, clones: BossClones?, beam: BossBeam?, slash: BossSlash?,
 }
 export type ZombieDef = {
@@ -884,6 +888,10 @@ local Zombies: { [string]: ZombieDef } = {
 		reward = 2000, points = 500, scale = 2.0, color = Color3.fromRGB(110, 60, 60), planksPerHit = 6,
 			jump = { windup = 3, flight = 0.9, cooldown = 13, range = 70, minRange = 8, radius = 13, damage = 60, first = 6 },
 			rock = { windup = 1.6, flight = 1.3, cooldown = 9, range = 75, minRange = 14, radius = 8, damage = 40, first = 4 },
+			-- (баланс v4) рывок с захватом и броском: см. Config.BossRush
+			attacks = {
+				rush = { windup = 1.1, lockBefore = 0.35, speed = 58, distance = 60, width = 5, grabDamage = 20, throwDamage = 35, splashDamage = 25, splashRadius = 7, throwDistance = 28, linkRadius = 14, linkCone = 70, flight = 1.0, height = 13, recover = 1.3, cooldown = 14, first = 8, range = 60, minRange = 12 },
+			},
 	},
 	BossGarg = {
 		id = "BossGarg", name = "Gargantua", hp = 7000, speed = 9, damage = 80, attackCooldown = 3.5, windup = 1.1, breakCooldown = 1.8,

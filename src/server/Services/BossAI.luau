@@ -36,7 +36,7 @@ local ctx: Ctx
 type Hazard = { step: (now: number) -> boolean, cleanup: () -> () }
 local hazards: { Hazard } = {}
 
-local KINDS = { "slam", "crawlers", "charge", "swing", "sea", "comets", "clones", "beam", "slash" }
+local KINDS = { "rush", "slam", "crawlers", "charge", "swing", "sea", "comets", "clones", "beam", "slash" }
 local rng = Random.new()
 
 function BossAI.init(c: Ctx)
@@ -94,7 +94,7 @@ function BossAI.ready(z: any, now: number, dist: number, los: boolean): { string
 			local ok = true
 			if kind == "crawlers" then
 				ok = los and ctx.thrownAlive() < d.maxAlive
-			elseif kind == "charge" or kind == "swing" or kind == "beam" then
+			elseif kind == "charge" or kind == "swing" or kind == "beam" or kind == "rush" then
 				ok = los
 			elseif kind == "clones" then
 				ok = z.model:GetAttribute("Clone") ~= true and ctx.clonesAlive() == 0 -- тени не зовут новых; новые — когда прежние погибли
@@ -648,6 +648,189 @@ end
 
 -- 1. Море тьмы ---------------------------------------------------------------------------------------------------------------
 
+-- Рывок Качка: присел, красная линия, рывок, захват и бросок ----------------------------------------------------------------
+
+-- Отпустить брошенного игрока (атака прервана или бросок закончен): снова управляет клиент
+function BossAI.releaseThrown(data: any)
+	local victim = data and data.victim :: Player?
+	if not victim then
+		return
+	end
+	data.victim = nil
+	data.flying = false
+	local r = rootOf(victim)
+	if r then
+		r.Anchored = false
+		r:SetNetworkOwnershipAuto()
+	end
+	local hum = victim.Character and victim.Character:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.PlatformStand = false
+	end
+end
+
+local function beginRush(z: any, player: Player, targetRoot: BasePart, now: number): boolean
+	local d = (z.def.attacks :: any).rush :: Config.BossRush
+	local dir = flatDir(z.root.Position, targetRoot.Position)
+	newAct(z, "rush", now, d.windup, player, { dir = dir, strip = makeStrip(d.width), lockAt = now + d.windup - d.lockBefore, endPoint = Vector3.zero, startPos = Vector3.zero, runUntil = 0, victim = nil, flying = false })
+	z.humanoid:MoveTo(z.root.Position)
+	ctx.setEyes(z, true)
+	ctx.crouchPose(z, 1, d.windup * 0.6) -- присел, как перед прыжком
+	ctx.armPose(z, -40, d.windup * 0.6)
+	return true
+end
+
+-- Куда бросить: в другого игрока, если он в секторе броска рядом с точкой приземления, иначе на throwDistance вперёд
+local function throwTarget(d: Config.BossRush, from: Vector3, dir: Vector3, victim: Player): Vector3
+	local landing = from + dir * d.throwDistance
+	local best: Player? = nil
+	local bestDist = d.linkRadius
+	for _, p in PlayerService.upPlayers() do
+		local r = rootOf(p)
+		if r and p ~= victim then
+			local to = Vector3.new(r.Position.X - from.X, 0, r.Position.Z - from.Z)
+			if to.Magnitude > 4 and to.Unit:Dot(dir) >= math.cos(math.rad(d.linkCone)) then
+				local dist = (Vector3.new(r.Position.X, 0, r.Position.Z) - Vector3.new(landing.X, 0, landing.Z)).Magnitude
+				if dist < bestDist then
+					best, bestDist = p, dist
+				end
+			end
+		end
+	end
+	if best then
+		local r = rootOf(best) :: BasePart
+		return groundPoint(r.Position)
+	end
+	return groundPoint(landing)
+end
+
+local function landThrown(z: any, act: any, victim: Player, aim: Vector3)
+	local d = (z.def.attacks :: any).rush :: Config.BossRush
+	BossAI.releaseThrown(act.data)
+	PlayerService.damage(victim, d.throwDamage * ctx.damageMult())
+	for _, p in PlayerService.upPlayers() do
+		local r = rootOf(p)
+		if r and p ~= victim and (Vector3.new(r.Position.X, aim.Y, r.Position.Z) - aim).Magnitude <= d.splashRadius and math.abs(r.Position.Y - aim.Y) < 8 then
+			PlayerService.damage(p, d.splashDamage * ctx.damageMult())
+		end
+	end
+	ringBurst(aim, d.splashRadius)
+end
+
+local function grabAndThrow(z: any, act: any, victim: Player)
+	local d = (z.def.attacks :: any).rush :: Config.BossRush
+	local data = act.data
+	local r = rootOf(victim)
+	if not r then
+		return
+	end
+	local dir = data.dir :: Vector3
+	local aim = throwTarget(d, r.Position, dir, victim)
+	data.victim = victim
+	PlayerService.damage(victim, d.grabDamage * ctx.damageMult())
+	-- сервер двигает брошенного: сетевой владелец — сервер, корень закреплён на время полёта
+	r:SetNetworkOwner(nil)
+	r.Anchored = true
+	local hum = victim.Character and victim.Character:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.PlatformStand = true
+	end
+	local from = r.CFrame
+	local to = CFrame.new(aim + Vector3.new(0, 3, 0)) * from.Rotation
+	local apex = CFrame.new((from.Position + to.Position) / 2 + Vector3.new(0, d.height, 0)) * from.Rotation
+	local half = d.flight / 2
+	data.flying = true
+	local up = TweenService:Create(r, TweenInfo.new(half, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = apex })
+	up.Completed:Once(function(state: Enum.PlaybackState)
+		if state ~= Enum.PlaybackState.Completed or data.victim ~= victim then
+			return
+		end
+		local down = TweenService:Create(r, TweenInfo.new(half, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { CFrame = to })
+		down.Completed:Once(function(downState: Enum.PlaybackState)
+			if downState ~= Enum.PlaybackState.Completed or data.victim ~= victim then
+				return
+			end
+			landThrown(z, act, victim, aim)
+		end)
+		down:Play()
+	end)
+	up:Play()
+	ctx.armPose(z, 150, 0.2) -- швырнул
+	z.model:SetAttribute("SwingAt", os.clock())
+end
+
+local function endRush(z: any, act: any, now: number)
+	local d = (z.def.attacks :: any).rush :: Config.BossRush
+	z.humanoid.WalkSpeed = z.speed
+	z.humanoid:MoveTo(z.root.Position)
+	z.nextAtk.rush = now + d.cooldown
+	z.lastAttack = now
+	act.phase = "recover"
+	act.endAt = now + d.recover
+	ctx.armPose(z, 0, 0.4)
+end
+
+local function stepRush(z: any, act: any, now: number)
+	local d = (z.def.attacks :: any).rush :: Config.BossRush
+	local data = act.data
+	if act.phase == "wind" then
+		z.humanoid:MoveTo(z.root.Position)
+		if now < data.lockAt then
+			local r = rootOf(act.target)
+			if r and PlayerService.isUp(act.target) then
+				data.dir = flatDir(z.root.Position, r.Position)
+			end
+		else
+			data.strip.Transparency = 0.2 -- линия зафиксирована: пора уходить с неё (кувырок в последний момент спасает)
+		end
+		face(z, data.dir)
+		placeStrip(data.strip, z.root.Position + data.dir * 2, data.dir, d.distance)
+		if now >= act.endAt then
+			local start = z.root.Position
+			local length = math.max(8, clearLength(Vector3.new(start.X, groundPoint(start).Y, start.Z), data.dir, d.distance + 3) - 4)
+			length = math.min(length, d.distance)
+			data.startPos = start
+			data.endPoint = start + data.dir * length
+			data.runUntil = now + length / d.speed + 1.5
+			data.strip:Destroy()
+			data.strip = nil
+			ctx.crouchPose(z, 0, 0.15)
+			ctx.armPose(z, -25, 0.2)
+			z.humanoid.WalkSpeed = d.speed
+			act.phase = "run"
+			z.model:SetAttribute("SwingAt", os.clock())
+		end
+	elseif act.phase == "run" then
+		z.humanoid:MoveTo(data.endPoint)
+		local pos = z.root.Position
+		local a = Vector3.new(data.startPos.X, 0, data.startPos.Z)
+		local b = Vector3.new(pos.X, 0, pos.Z)
+		local ab = b - a
+		for _, player in PlayerService.upPlayers() do
+			local r = rootOf(player)
+			if r and not PlayerService.isInvulnerable(player) then -- кувырок (неуязвимость) спасает
+				local p = Vector3.new(r.Position.X, 0, r.Position.Z)
+				local t = if ab.Magnitude > 0.01 then math.clamp((p - a):Dot(ab) / ab:Dot(ab), 0, 1) else 0
+				local closest = a + ab * t
+				if (p - closest).Magnitude <= d.width / 2 + 1.5 and math.abs(r.Position.Y - pos.Y) < 8 then
+					grabAndThrow(z, act, player)
+					endRush(z, act, now)
+					return
+				end
+			end
+		end
+		local left = Vector3.new(data.endPoint.X - pos.X, 0, data.endPoint.Z - pos.Z).Magnitude
+		if left < 3 or now >= data.runUntil then
+			endRush(z, act, now)
+		end
+	elseif now >= act.endAt and not data.flying then
+		ctx.setEyes(z, false)
+		ctx.endAct(z)
+	else
+		z.humanoid:MoveTo(z.root.Position)
+	end
+end
+
 local function launchSea(z: any, dir: Vector3, d: Config.BossSea)
 	local from = z.root.Position + dir * (3 + z.def.scale)
 	local g = groundPoint(from)
@@ -1132,7 +1315,9 @@ end
 
 -- Начать атаку kind; false — не вышло (босс остаётся свободным)
 function BossAI.begin(z: any, kind: string, player: Player, targetRoot: BasePart, now: number): boolean
-	if kind == "slam" then
+	if kind == "rush" then
+		return beginRush(z, player, targetRoot, now)
+	elseif kind == "slam" then
 		return beginSlam(z, player, targetRoot, now)
 	elseif kind == "crawlers" then
 		return beginCrawlers(z, player, targetRoot, now)
@@ -1156,7 +1341,9 @@ end
 
 function BossAI.step(z: any, act: any, now: number)
 	local kind = act.kind
-	if kind == "slam" then
+	if kind == "rush" then
+		stepRush(z, act, now)
+	elseif kind == "slam" then
 		stepSlam(z, act, now)
 	elseif kind == "crawlers" then
 		stepCrawlers(z, act, now)
@@ -1197,7 +1384,10 @@ function BossAI.cancel(z: any, act: any)
 		table.clear(data.discs)
 	end
 	releaseCrawler(data)
-	if act.kind == "charge" then
+	if act.kind == "rush" then
+		BossAI.releaseThrown(data)
+	end
+	if act.kind == "charge" or act.kind == "rush" then
 		z.humanoid.WalkSpeed = z.speed
 	end
 end
