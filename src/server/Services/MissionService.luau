@@ -750,7 +750,6 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 			state.infinite = false
 		else
 			ZombieService.setAnchor(groundStart)
-			ZombieService.setAliveCap(Config.Convoy.AliveCap)
 			for i, p in ConvoyService.routeOrder() do
 				local nearest, nd = nil :: BasePart?, math.huge
 				for _, b in routeBeacons do

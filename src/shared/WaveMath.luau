@@ -170,24 +170,33 @@ end
 
 -- Одновременно живых зомби и длина фаз ------------------------------------------------------------------------------
 export type RoundTuning = {
-	AlivePerPlayerStart: number, -- на игрока на 1-й ночи
-	AlivePerPlayerEnd: number, -- на игрока на ночи AliveWaves (без добавки за уровень угрозы)
+	AliveBase: { number }, -- одновременно живых в начале ночи по размеру команды (индекс — число игроков 1…6)
+	AliveStep: { number }, -- прибавка к живым за каждую следующую минуту ночи, по размеру команды
+	AliveCaps: { number }, -- потолок живых по размеру команды (минутный рост выше него не идёт)
+	AliveNightGrowth: number, -- рост базы к 20-й ночи: база × (1 + AliveNightGrowth · (ночь − 1) / (AliveWaves − 1))
 	AliveWaves: number,
-	AliveExp: number,
-	AliveMin: number, -- всего, не меньше
+	AliveMin: number,
 	AliveHardCap: number, -- всего, не больше (потолок нагрузки на сервер)
 	FirstDayTime: number,
 	DayTime: number,
-	DayAfterBossBonus: number, -- добавка ко дню после ночи с боссом (выбор перка команды)
-	NightTimes: { number }, -- предел ночи по номеру; оставшиеся к концу не засчитываются
+	DayAfterBossBonus: number, -- добавка ко дню после ночи с боссом
+	NightTimes: { [number]: number }, -- особый предел ночи по номеру (метро); у остальных NightDefaultTime
 	NightDefaultTime: number,
 }
 
--- Сколько зомби может быть живо одновременно (остальные ждут в очереди): растёт с ночью и с уровнем угрозы команды (вооружённость)
-function WaveMath.aliveCap(r: RoundTuning, wave: number, players: number, threat: Threat?): number
-	local k = math.clamp((wave - 1) / math.max(1, r.AliveWaves - 1), 0, 1) ^ r.AliveExp
-	local perPlayer = r.AlivePerPlayerStart + (r.AlivePerPlayerEnd - r.AlivePerPlayerStart) * k + (if threat then threat.tier.alive else 0)
-	return math.clamp(math.floor(perPlayer * math.max(1, players) + 0.5), r.AliveMin, r.AliveHardCap)
+local function bySize(list: { number }, players: number): number
+	return list[math.clamp(math.floor(players), 1, #list)]
+end
+
+-- Сколько зомби может быть живо одновременно (остальные ждут в очереди). База по размеру команды, растёт с номером ночи и уровнем угрозы
+-- (вооружённость команды: tier.alive на игрока), а затем — с каждой минутой ночи (minute = 1, 2, 3…: давление на тех, кто не выполняет миссию).
+-- Итог не выше потолка команды (AliveCaps) и AliveHardCap, не ниже AliveMin.
+function WaveMath.aliveCap(r: RoundTuning, wave: number, players: number, threat: Threat?, minute: number?): number
+	local p = math.max(1, players)
+	local k = math.clamp((wave - 1) / math.max(1, r.AliveWaves - 1), 0, 1)
+	local base = bySize(r.AliveBase, p) * (1 + r.AliveNightGrowth * k) + (if threat then threat.tier.alive else 0) * p
+	local grown = base + bySize(r.AliveStep, p) * (math.max(1, minute or 1) - 1)
+	return math.clamp(math.floor(math.min(grown, bySize(r.AliveCaps, p)) + 0.5), r.AliveMin, r.AliveHardCap)
 end
 
 -- Предел длины ночи, секунд: своя для каждой ночи (зависит от миссии), иначе NightDefaultTime

@@ -119,24 +119,24 @@ local Config = {}
 
 Config.Round = {
 	IntermissionTime = 15,
-	-- Баланс v3 (2026-11, docs/balance/balance_2026-11.md): 20 ночей — 40–50 минут. Дни короткие (можно завершить раньше голосованием, клавиша V),
-	-- ночь заканчивается, когда миссия выполнена; NightTimes — предел (при его исходе без выполнения награды нет, оставшиеся сгорают на рассвете).
-	-- Предел = 1,7–2 × ожидаемое время миссии (таблица в balance_2026-11.md); ночь 18 (метро) — самая длинная.
-	FirstDayTime = 40,
-	DayTime = 30,
-	DayAfterBossBonus = 5, -- день после ночи с боссом чуть дольше: выбор перка команды
-	NightDefaultTime = 180, -- для ночи без записи в NightTimes
-	NightTimes = { 120, 130, 160, 140, 180, 170, 200, 200, 190, 300, 180, 220, 140, 200, 320, 170, 200, 600, 260, 360 } :: { number },
-	DayWarnSeconds = 10, -- за сколько секунд до ночи предупреждаем, что баррикады закроются
+	-- Баланс v4 (2026-11-01, ответы Руслана): день 120 с (пропуск голосованием, клавиша V), ночь — единый предел 300 с (метро — свой), ночь кончается
+	-- раньше, когда миссия выполнена; не успели — награды нет, оставшиеся зомби сгорают на рассвете. Расчёт — docs/balance/balance_2026-11.md.
+	FirstDayTime = 120,
+	DayTime = 120,
+	DayAfterBossBonus = 0,
+	NightDefaultTime = 300,
+	NightTimes = { [18] = 600 } :: { [number]: number }, -- метро: спуск, гнёзда, босс, заряды, оборона
+	DayWarnSeconds = 15, -- за сколько секунд до ночи предупреждаем, что баррикады закроются
 	GameOverTime = 8,
-	-- Одновременно живых зомби (остальные ждут в очереди спавна): на игрока от AlivePerPlayerStart (1-я ночь) до AlivePerPlayerEnd (ночь AliveWaves),
-	-- плюс добавка за уровень угрозы (Config.Threat.Tiers[].alive: вооружённость команды). Итого не меньше AliveMin и не больше AliveHardCap.
-	AlivePerPlayerStart = 8,
-	AlivePerPlayerEnd = 24,
+	-- Одновременно живых зомби (остальные ждут в очереди спавна). База в начале ночи по числу игроков 1…6, растёт с номером ночи (до +60 % к 20-й)
+	-- и с уровнем угрозы (Config.Threat.Tiers[].alive на игрока), затем с каждой минутой ночи на AliveStep, но не выше AliveCaps; всего ≤ AliveHardCap.
+	AliveBase = { 10, 15, 22, 30, 40, 50 } :: { number },
+	AliveStep = { 5, 6, 8, 10, 10, 10 } :: { number },
+	AliveCaps = { 50, 70, 90, 110, 130, 130 } :: { number },
+	AliveNightGrowth = 0.6,
 	AliveWaves = 20,
-	AliveExp = 1,
 	AliveMin = 8,
-	AliveHardCap = 130, -- потолок нагрузки на сервер (6 игроков на ночах 15–20 упираются в него)
+	AliveHardCap = 130, -- потолок нагрузки на сервер
 	SpawnsPerTick = 2,
 	SpawnTick = 0.25,
 	AiTick = 0.2, -- как часто зомби пересчитывают цель
@@ -322,11 +322,11 @@ Config.Economy = {
 	-- Цель на игрока (вдвоём): к 15-й ночи около 6500 монет с учётом стартовых 500 (до 7200 с перками «Looter» на максимуме), к 20-й около 9700 (до 11 300).
 	-- Провал миссии — доля MissionFailShare (0: награды нет). Лежащему на конец ночи — DownedRewardFactor от награды.
 	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту ночь.
-	MissionPersonalTotal = 6700,
-	MissionTeamTotal = 4900,
+	MissionPersonalTotal = 7250,
+	MissionTeamTotal = 6000,
 	MissionGrowth = 0.10,
 	MissionRewardWaves = 20,
-	TeamShareMinPlayers = 2,
+	TeamShareMinPlayers = 1, -- командная часть делится на число игроков (соло получает всю)
 	MissionFailShare = 0,
 	DownedRewardFactor = 0.5,
 	LossPenalty = 0.2,
@@ -858,7 +858,7 @@ local Zombies: { [string]: ZombieDef } = {
 	},
 	-- Военный в полной броне (модели Z_Mil3 и Z_Mil4: каска, бронежилет 6Б2, наколенники и налокотники): мало и поздно (WaveMath.Plan, с 16-й ночи)
 	MilitaryArmored = {
-		id = "MilitaryArmored", name = "Armored soldier", hp = 1000, speed = 12, damage = 28, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
+		id = "MilitaryArmored", name = "Armored soldier", hp = 800, speed = 12, damage = 28, attackCooldown = 2.4, windup = 0.6, breakCooldown = 1.2,
 		reward = 0, points = 120, scale = 1.05, color = Color3.fromRGB(60, 75, 55), planksPerHit = 3,
 	},
 	Chemist = {
@@ -1104,9 +1104,9 @@ Config.ThreatClasses = {
 Config.Threat = {
 	Tiers = {
 		{ min = 0, hp = 1, runners = 0, early = 0, alive = 0 },
-		{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 2 },
-		{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 4 },
-		{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 6 },
+		{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 1 },
+		{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 2 },
+		{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 3 },
 	},
 }
 
@@ -1156,7 +1156,6 @@ Config.Convoy = {
 	SoldierDps = 15, -- урон по зомби в секунду каждого солдата (было 50)
 	SoldierShotInterval = 0.5,
 	SoldierRange = 40,
-	AliveCap = 14, -- живых зомби одновременно на миссии конвоя (грузовик 1000 HP не выдержит 40)
 	InstallHold = 6, -- сколько секунд держать «Установить шатёр»
 	Model = "APC", -- машина конвоя из ServerStorage.Assets.Vehicles (бронетранспортёр Stryker); запасная — TransportTruck
 	Solid = false, -- true: машина твёрдая (толкает игроков, но на стыках дороги скорость неровная)

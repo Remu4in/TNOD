@@ -78,8 +78,8 @@ for key in Config.Economy do
 	end
 end
 -- число ночей с записью о длине и их суммарная длина (цель — 20 ночей за 40–50 минут вместе с днями)
-if #Config.Round.NightTimes < #Config.Missions then
-	problem(string.format("Config.Round.NightTimes: %d записей, а ночей с миссиями %d", #Config.Round.NightTimes, #Config.Missions))
+if Config.Round.NightDefaultTime < 120 then
+	problem("Config.Round.NightDefaultTime = " .. tostring(Config.Round.NightDefaultTime) .. " (меньше двух минут: миссии не успеют)")
 end
 if Config.Round.AliveHardCap > 150 then
 	problem("Config.Round.AliveHardCap = " .. tostring(Config.Round.AliveHardCap) .. " (больше 150 одновременно живых — риск для производительности сервера)")

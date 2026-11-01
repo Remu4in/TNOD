@@ -378,11 +378,13 @@ local function night()
 	local players = #Players:GetPlayers()
 	local threat = WaveMath.makeThreat(Config.ThreatClasses, Config.Threat.Tiers, loadouts(), roundSeed)
 	local comp = WaveMath.composition(Config.Waves, wave, players, threat)
-	ZombieService.setNightAliveCap(WaveMath.aliveCap(Config.Round, wave, players, threat))
+	local aliveMinute = 1
+	ZombieService.setNightAliveCap(WaveMath.aliveCap(Config.Round, wave, players, threat, aliveMinute))
+	ReplicatedStorage:SetAttribute("AliveCap", ZombieService.nightAliveCap())
 	EconomyService.newWave()
 	PlayerService.takeLosses()
 	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave, threat), wave)
-	print(string.format("[RoundService] night %d: players %d, zombies %d (alive at once up to %d), threat %.1f (+%d alive per player), night %d s, weapons: %s", wave, players, WaveMath.total(comp), WaveMath.aliveCap(Config.Round, wave, players, threat), threat.score, threat.tier.alive, nightLength, table.concat(threat.classes, ",")))
+	print(string.format("[RoundService] night %d: players %d, zombies %d (alive at once up to %d, minute 1), threat %.1f (+%d alive per player), night %d s, weapons: %s", wave, players, WaveMath.total(comp), WaveMath.aliveCap(Config.Round, wave, players, threat), threat.score, threat.tier.alive, nightLength, table.concat(threat.classes, ",")))
 	local bossName: string? = nil
 	for _, bossId in WaveMath.bossTypes(Config.Waves, wave) do
 		bossName = Config.Zombies[bossId].name
@@ -397,6 +399,13 @@ local function night()
 	while not gameOver do
 		local left = ZombieService.remaining()
 		ReplicatedStorage:SetAttribute("ZombiesLeft", left)
+		-- с каждой минутой ночи предел живых растёт (давление на тех, кто тянет время)
+		local minute = math.floor((os.clock() - nightStart) / 60) + 1
+		if minute ~= aliveMinute then
+			aliveMinute = minute
+			ZombieService.setNightAliveCap(WaveMath.aliveCap(Config.Round, wave, players, threat, minute))
+			ReplicatedStorage:SetAttribute("AliveCap", ZombieService.nightAliveCap())
+		end
 		local missionState = MissionService.update(0.25)
 		if skipRequested then
 			-- тестовый стенд: честно завершаем ночь, как будто миссия выполнена (награды и рейтинг ниже — как за пройденную)
