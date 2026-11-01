@@ -447,7 +447,9 @@ end
 local function update(dt: number)
 	local camera = workspace.CurrentCamera
 	local tool, id, isMelee = heldWeapon()
-	if not camera or not tool or not id or not firstPerson() or player:GetAttribute("Downed") == true then
+	local seatHum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	local seated = seatHum ~= nil and seatHum.SeatPart ~= nil -- за рулём или на сиденье машины: руки и оружие от первого лица прячем
+	if not camera or not tool or not id or not firstPerson() or seated or player:GetAttribute("Downed") == true then
 		if rig then
 			destroyRig()
 		end

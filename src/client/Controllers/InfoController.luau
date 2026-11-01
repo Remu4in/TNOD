@@ -32,6 +32,7 @@ local KEYS: { { key: string, text: string } } = {
 	{ key = "Q", text = "Slide (sprinting)" },
 	{ key = "C", text = "Roll" },
 	{ key = "G", text = "Drop weapon" },
+	{ key = "Z/X/T", text = "Emote: wave/cheer/dance" },
 	{ key = "V", text = "End the day" },
 	{ key = "M", text = "Map marks on / off" },
 	{ key = "H", text = "Buildings guide" },
@@ -263,6 +264,10 @@ function InfoController.start()
 	marksGui.Parent = player:WaitForChild("PlayerGui")
 	local marks: { [Instance]: { part: Part, gui: BillboardGui, label: TextLabel, base: string } } = {}
 
+	local function marksVisible(): boolean
+		return player:GetAttribute("MarksOn") ~= false and ReplicatedStorage:GetAttribute("Phase") ~= "Night"
+	end
+
 	local function addMark(key: Instance, pos: Vector3, text: string, color: Color3)
 		local m = marks[key]
 		if m then
@@ -283,6 +288,7 @@ function InfoController.start()
 		bb.AlwaysOnTop = true
 		bb.Size = UDim2.fromOffset(130, 34)
 		bb.MaxDistance = 900
+		bb.Enabled = marksVisible()
 		bb.Parent = marksGui
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.fromScale(1, 1)
@@ -346,7 +352,10 @@ function InfoController.start()
 
 	-- ночью метки скрыты сами (магазины и здания закрыты, ночью они только сбивают с миссии); днём — по переключателю M
 	local function applyMarks()
-		marksGui.Enabled = player:GetAttribute("MarksOn") ~= false and ReplicatedStorage:GetAttribute("Phase") ~= "Night"
+		marksGui.Enabled = marksVisible()
+		for _, m in marks do
+			m.gui.Enabled = marksVisible() -- BillboardGui сам по себе не гаснет вместе с ScreenGui: выключаем каждую метку
+		end
 	end
 	player:GetAttributeChangedSignal("MarksOn"):Connect(applyMarks)
 	ReplicatedStorage:GetAttributeChangedSignal("Phase"):Connect(applyMarks)

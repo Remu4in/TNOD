@@ -405,7 +405,13 @@ function ShopController.start()
 	markerGui.DisplayOrder = 5
 	markerGui.Enabled = player:GetAttribute("MarksOn") ~= false -- переключатель меток (InfoController, клавиша M)
 	player:GetAttributeChangedSignal("MarksOn"):Connect(function()
-		markerGui.Enabled = player:GetAttribute("MarksOn") ~= false
+		local on = player:GetAttribute("MarksOn") ~= false
+		markerGui.Enabled = on
+		for _, d in markerGui:GetChildren() do
+			if d:IsA("BillboardGui") then
+				d.Enabled = on -- BillboardGui не гаснет вместе с ScreenGui
+			end
+		end
 	end)
 	markerGui.Parent = player:WaitForChild("PlayerGui")
 	local markers: { { part: Part, label: TextLabel, name: string } } = {}
@@ -432,6 +438,7 @@ function ShopController.start()
 			bb.AlwaysOnTop = true
 			bb.Size = UDim2.fromOffset(170, 44)
 			bb.MaxDistance = math.huge
+			bb.Enabled = player:GetAttribute("MarksOn") ~= false
 			bb.Parent = markerGui
 			local label = Instance.new("TextLabel")
 			label.Size = UDim2.fromScale(1, 1)
