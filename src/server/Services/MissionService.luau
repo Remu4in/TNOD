@@ -804,11 +804,20 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 				route = list
 			end
 		end
+		-- маршрут по меткам: последняя метка — конечная остановка, колонна доехала до неё — миссия выполнена (к шатру не возвращается)
+		local finalPoint: Vector3? = nil
+		if def.markerRoute and #route >= 2 then
+			finalPoint = table.remove(route)
+		end
 		local routeBeacons: { BasePart } = {}
 		for _, p in route do
 			table.insert(routeBeacons, makeBeacon(p, "Route"))
 		end
 		local stop = roadStopNear(grid, anchor)
+		if finalPoint then
+			stop = finalPoint
+			makeBeacon(finalPoint, "Route"):SetAttribute("BaseText", string.format("◆ Route %d", #route + 1))
+		end
 		-- конечная остановка колонны, заданная меткой RouteEnd (Workspace.Markers), важнее остановки у шатра
 		local endMarker = workspace:FindFirstChild("Markers") and workspace.Markers:FindFirstChild("RouteEnd")
 		if def.markerRoute and endMarker and endMarker:IsA("BasePart") then
