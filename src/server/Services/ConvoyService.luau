@@ -368,8 +368,11 @@ local function legLength(path: { Vector3 }?): number
 end
 
 -- Лучший порядок точек (перебор, их до 6): минимум длины пути start → точки → stop. Каждая точка ровно один раз.
-local function bestOrder(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, pts: { Vector3 }, stop: Vector3): ({ Vector3 }, number)
+local function bestOrder(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, pts: { Vector3 }, stop: Vector3, keepOrder: boolean?): ({ Vector3 }, number)
 	local n = #pts
+	if keepOrder then
+		return table.clone(pts), 0 -- порядок задан миссией (Config.Missions.*.keepOrder): точки по очереди, как в списке
+	end
 	local best: { Vector3 } = table.clone(pts)
 	local bestLen = math.huge
 	local used: { boolean } = {}
@@ -438,7 +441,7 @@ end
 
 -- Маршрут от точки выезда: контрольные точки в лучшем порядке (каждая один раз), в конце — остановка. nil — до остановки не доехать.
 -- Вторым значением — точки в порядке объезда (для подписей меток)
-local function planFrom(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, route: { Vector3 }, finalStop: Vector3): ({ Vector3 }?, { Vector3 })
+local function planFrom(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, route: { Vector3 }, finalStop: Vector3, keepOrder: boolean?): ({ Vector3 }?, { Vector3 })
 	local stop = grid.snap(finalStop, 150)
 	if not stop then
 		return nil, {}
@@ -455,7 +458,7 @@ local function planFrom(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, r
 	if not legPath(grid, cache, start, stop) then
 		return nil, {}
 	end
-	local order = bestOrder(grid, cache, start, pts, stop)
+	local order = bestOrder(grid, cache, start, pts, stop, keepOrder)
 	local waypoints: { Vector3 } = { start }
 	local current = start
 	for _, target in order do
@@ -479,7 +482,7 @@ end
 
 -- Выезд из начальной зоны: дорога начинается в десятках студов от точки появления игроков. Берём ближайшую дорогу и ещё несколько вокруг,
 -- из них — ту, с которой путь короче (вместе с прямым отрезком от начальной зоны до неё: до ближайшей дороги порой ехать в разы дальше, чем от другой).
-local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3): ({ Vector3 }?, { Vector3 })
+local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3, keepOrder: boolean?): ({ Vector3 }?, { Vector3 })
 	local grid = RoadRoute.grid()
 	local cache: LegCache = {}
 	local starts: { Vector3 } = {}
@@ -503,7 +506,7 @@ local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3)
 	local bestOrder: { Vector3 } = {}
 	local bestLen = math.huge
 	for _, s in starts do
-		local plan, order = planFrom(grid, cache, s, route, finalStop)
+		local plan, order = planFrom(grid, cache, s, route, finalStop, keepOrder)
 		if plan then
 			local len = pathLength(plan) + Vector3.new(s.X - spawn.X, 0, s.Z - spawn.Z).Magnitude
 			if len < bestLen then
@@ -522,9 +525,9 @@ end
 
 -- Старт: route — точки по порядку, finalStop — где остановиться; spawn — начальная зона (точка появления игроков): колонна стартует отсюда
 -- и первым отрезком едет к ближайшей дороге. speed — скорость миссии (иначе Config.Convoy.TruckSpeed). true — запущен.
-function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vector3, speed: number?, column: string?): boolean
+function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vector3, speed: number?, column: string?, keepOrder: boolean?): boolean
 	ConvoyService.finish()
-	local waypoints, order = planRoute(spawn, route, finalStop)
+	local waypoints, order = planRoute(spawn, route, finalStop, keepOrder)
 	lastOrder = order
 	if not waypoints or #waypoints < 2 then
 		warn("[ConvoyService] the tent site can't be reached by road")

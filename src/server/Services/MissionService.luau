@@ -769,7 +769,12 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 				end
 			end
 		-- точки маршрута из разведки другого района (ночь 3: вторая точка — точка разведки района 2, снятая на дорогу)
+		local mkFolder = workspace:FindFirstChild("Markers")
 		for index, spec in def.waypointScout or {} do
+			local named = def.waypointMarkers and def.waypointMarkers[index]
+			if named and mkFolder and mkFolder:FindFirstChild(named) then
+				continue -- точку задал маркер на карте: он важнее
+			end
 			local p = districtPoints(spec.anchor, spec.count, nil, spec.radius)[spec.index]
 			local onRoad = p and grid.snap(p, 120)
 			if onRoad then
@@ -784,7 +789,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		end
 		local stop = roadStopNear(grid, anchor)
 		local groundStart = groundAt(start.X, start.Z) or start
-		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed, def.column) then
+		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed, def.column, def.keepOrder) then
 			warn("[MissionService] convoy not started — the mission plays as a regular night")
 			state.kind = "classic"
 			state.infinite = false
