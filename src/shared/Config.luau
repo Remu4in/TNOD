@@ -138,6 +138,7 @@ Config.Round = {
 	AliveStep = { 5, 6, 8, 10, 10, 10 } :: { number },
 	AliveCaps = { 50, 70, 90, 110, 130, 130 } :: { number },
 	AliveNightGrowth = 0.6,
+	ConvoyAliveMul = 1.3, -- на конвойных ночах (escort) живых зомби больше: колонна из нескольких машин
 	AliveWaves = 20,
 	AliveMin = 8,
 	AliveHardCap = 130, -- потолок нагрузки на сервер
@@ -1155,10 +1156,25 @@ Config.Perks = {
 -- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
 -- (сейчас играется как classic). Не указано — classic.
 -- convoySpeed — скорость грузовика этой миссии (студов/с), вместо Config.Convoy.TruckSpeed; clearSandbags — на эту ночь убрать мешки с песком у точки появления игроков (Config.Convoy.Sandbag*)
-export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }?, nests: number?, boss: string? }
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, column: string?, supplies: boolean?, stopMarker: string?, waypointMarkers: { [number]: string }?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }?, nests: number?, boss: string? }
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
-	TruckHp = 1000,
+	-- Колонна (баланс v4): настоящие машины из ServerStorage.Assets.Vehicles, у каждой своё здоровье (Vehicles). Columns — составы колонн (первая — ведущая, главная:
+	-- её гибель проваливает миссию; погибшие ведомые остаются остовами). Состав миссии — Config.Missions[n].column. Ведомые держат ColumnGap студов между машинами
+	-- и идут по следу ведущей (то есть по дорогам). Число живых зомби на конвойных ночах умножается на Round.ConvoyAliveMul.
+	Vehicles = {
+		TransportTruck = { hp = 1000 },
+		MiningDasa = { hp = 1500 },
+		HumveeMedic = { hp = 600 },
+		MilitaryCar = { hp = 450 },
+		APC = { hp = 1000 },
+	} :: { [string]: { hp: number } },
+	Columns = {
+		Light = { "TransportTruck", "HumveeMedic" },
+		Supply = { "MiningDasa", "HumveeMedic", "MilitaryCar" },
+		Heavy = { "MiningDasa", "TransportTruck", "HumveeMedic", "MilitaryCar" },
+	} :: { [string]: { string } },
+	ColumnGap = 8,
 	TruckSpeed = 11, -- студов в секунду по умолчанию (баланс v3, 2026-11: конвой ~1,5–2 минуты; у ночей 3, 8, 12, 17 своя скорость в Config.Missions.convoySpeed)
 	SoldierHp = 150, -- было 300: сопровождающие были слишком сильными (2026-10-26)
 	SoldierDps = 15, -- урон по зомби в секунду каждого солдата (было 50)
@@ -1385,24 +1401,24 @@ Config.Metro = {
 }
 Config.Missions = {
 	[1] = { type = "scout", title = "Area recon", anchor = 1, points = 3, hint = "Visit the checkpoints around the tent" },
-	[2] = { type = "build", title = "Clear the zone and set up the tent", anchor = 1, kills = 15, hint = "Clear the zone and set up the tent at the marked spot" },
+	[2] = { type = "build", title = "Clear the zone and set up the tent", anchor = 1, kills = 15, supplies = false, hint = "Clear the zone and set up the tent at the marked spot. It will be empty: supplies come with the convoy" },
 	-- Первый конвой: выезжает из начальной зоны (мешки с песком на эту ночь убираются) и едет только пока рядом игрок. Скорости конвоев — баланс v3 (2026-11):
 	-- ночь 3 — 9 студов/с (маршрут 597 студов ≈ 66 с), 8 — 13 (1101 студ ≈ 85 с), 12 — 13 (1175 ≈ 90 с), 17 — 11 (891 ≈ 81 с); остальное — Config.Convoy.TruckSpeed
-	[3] = { type = "escort", title = "Supply convoy escort", anchor = 1, points = 3, convoySpeed = 9, clearSandbags = true, hint = "Don't let the truck be destroyed: it will pass the checkpoints and stop by the tent" },
-	[4] = { type = "scout", title = "Recon of nearby buildings", anchor = 1, points = 3, radius = { 80, 140 }, hint = "Visit the checkpoints" },
+	[3] = { type = "escort", title = "Supply convoy escort", anchor = 1, points = 3, convoySpeed = 9, clearSandbags = true, column = "Light", supplies = false, hint = "Escort the convoy: it will set up an empty tent at the site. Supplies arrive tomorrow" },
+	[4] = { type = "escort", title = "Supply convoy to the tent", anchor = 1, points = 2, column = "Supply", waypointMarkers = { [2] = "Barricade_12" }, hint = "Escort the supply column to the tent set up yesterday: it brings the supplies" },
 	[5] = { type = "classic", title = "Defend the tent from the boss", anchor = 1, planned = "defend-boss", hint = "Kill the boss and the wave" },
 	[6] = { type = "scout", title = "Recon of the second district", anchor = 2, points = 3, hint = "Visit the checkpoints around the tent" },
 	[7] = { type = "build", title = "Clear-out and tent setup", anchor = 2, kills = 20, hint = "Clear the zone and set up the tent at the marked spot" },
-	[8] = { type = "escort", title = "Convoy escort", anchor = 2, points = 3, convoySpeed = 13, hint = "Don't let the truck be destroyed" },
+	[8] = { type = "escort", title = "Convoy escort", anchor = 2, points = 3, convoySpeed = 13, column = "Heavy", hint = "Don't let the truck be destroyed" },
 	[9] = { type = "scout", title = "Recon of the third tent's territory", anchor = 3, points = 3 },
 	[10] = { type = "classic", title = "Boss: zombies vs plants", anchor = 2, planned = "boss", hint = "Kill the boss and the wave" },
 	[11] = { type = "scout", title = "Surveying the locations around the tents", anchor = 2, points = 4 },
-	[12] = { type = "escort", title = "Convoy to the third tent", anchor = 3, points = 3, install = true, convoySpeed = 13, hint = "Bring the truck and set up the tent at the site" },
+	[12] = { type = "escort", title = "Convoy to the third tent", anchor = 3, points = 3, install = true, convoySpeed = 13, column = "Heavy", hint = "Bring the truck and set up the tent at the site" },
 	[13] = { type = "defend", title = "Anomalies and attacks on shops", anchor = 1, seconds = 35, planned = "anomaly" },
 	[14] = { type = "defend", title = "Attack on all tents", anchor = 2, seconds = 40, planned = "multi-defend" },
 	[15] = { type = "classic", title = "The boss attacks the main base", anchor = 1, planned = "boss", hint = "Kill the boss and the wave" },
 	[16] = { type = "scout", title = "Territory recon", anchor = 4, points = 3, planned = "daytime" },
-	[17] = { type = "escort", title = "Tent setup and convoy", anchor = 4, points = 3, install = true, convoySpeed = 11, hint = "Bring the truck and set up the tent at the site" },
+	[17] = { type = "escort", title = "Tent setup and convoy", anchor = 4, points = 3, install = true, convoySpeed = 11, column = "Heavy", hint = "Bring the truck and set up the tent at the site" },
 	[18] = { type = "metro", title = "Catacombs: metro clear-out", anchor = 6, kills = 40, nests = 3, boss = "BossBuff", hint = "Go down the stairs at the metro entrance, burn the nests (E) and kill the station boss" },
 	[19] = { type = "clear", title = "Military base: clear-out and capture", anchor = 5, baseBattle = true, hint = "Retake the base: kill 150 mutants coming from the base side, soldiers at the rally point help" },
 	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,

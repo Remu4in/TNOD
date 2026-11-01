@@ -449,6 +449,12 @@ test("alive zombies: grow with the night number and the threat level (weapons of
 	end
 end)
 
+test("alive zombies: convoy nights get a multiplier, still capped at 130", function()
+	eq(WaveMath.aliveCap(RoundCfg, 1, 2, nil, 1, 1.3), 20, "two players, convoy")
+	eq(WaveMath.aliveCap(RoundCfg, 20, 6, nil, 5, 1.3), 130, "six players are capped")
+	check(WaveMath.aliveCap(RoundCfg, 8, 4, nil, 1, 1.3) > WaveMath.aliveCap(RoundCfg, 8, 4, nil, 1), "more on convoy nights")
+end)
+
 test("round time: day 120 s, night 300 s, metro 600 s", function()
 	eq(WaveMath.dayLength(RoundCfg, Tuning, 0, true), 120, "first day")
 	eq(WaveMath.dayLength(RoundCfg, Tuning, 3, false), 120, "ordinary day")

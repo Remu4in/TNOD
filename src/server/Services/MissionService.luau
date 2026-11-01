@@ -77,7 +77,7 @@ local hubFolder: Folder? = nil -- тоннель в горе после метр
 local objects: Folder? = nil
 local finalePos: Vector3? = nil -- финал акта 1: вход в бункер (MissionService.beginFinale)
 local rng = Random.new()
-local installedSites: { [number]: { instances: { Instance }, shop: Vector3?, vending: { string } } } = {}
+local installedSites: { [number]: { instances: { Instance }, shop: Vector3?, vending: { string }, stocked: boolean } } = {}
 local suppliedSites: { [number]: { Instance } } = {}
 
 -- Подписи маяка места миссии по типу
@@ -447,8 +447,9 @@ local function dropSupplies(site: number)
 	suppliedSites[site] = list
 end
 
--- Установка шатра района: модель, припасы, автомат и магазин (ShopService)
-local function installTent(site: number)
+-- Установка шатра района: модель и магазин (ShopService). empty = true: шатёр пустой — без ящиков с припасами и автомата; их привозит
+-- следующая ночь с конвоем (stockTent). Ночь 3 ставит пустой шатёр, ночь 4 привозит припасы.
+local function installTent(site: number, empty: boolean?)
 	if installedSites[site] then
 		return
 	end
@@ -457,12 +458,30 @@ local function installTent(site: number)
 	if not f or not tent then
 		return
 	end
-	local rec: { instances: { Instance }, shop: Vector3?, vending: { string } } = { instances = {}, shop = nil, vending = {} }
+	local rec: { instances: { Instance }, shop: Vector3?, vending: { string }, stocked: boolean } = { instances = {}, shop = nil, vending = {}, stocked = false }
 	local clone = tent:Clone()
 	clone.Parent = workspace:FindFirstChild("Base") or workspace
 	table.insert(rec.instances, clone)
+	local cf, size = clone:GetBoundingBox()
+	local center = Vector3.new(cf.Position.X, cf.Position.Y - size.Y / 2, cf.Position.Z)
+	ShopService.addPoint("Military tent", center, math.max(size.X, size.Z) / 2 + 18, false, true, true)
+	rec.shop = center
+	installedSites[site] = rec
+	if not empty then
+		MissionService.stockTent(site)
+	end
+end
+
+-- Привезти в установленный шатёр припасы: ящики Site_<n>/Supplies и вендинговый автомат (один раз)
+function MissionService.stockTent(site: number)
+	local rec = installedSites[site]
+	local f = siteFolder(site)
+	if not rec or rec.stocked then
+		return
+	end
+	rec.stocked = true
 	dropSupplies(site)
-	local vend = f:FindFirstChild("Vending")
+	local vend = f and f:FindFirstChild("Vending")
 	local markers = workspace:FindFirstChild("Markers")
 	if vend and markers then
 		for _, m in vend:GetChildren() do
@@ -475,11 +494,12 @@ local function installTent(site: number)
 			end
 		end
 	end
-	local cf, size = clone:GetBoundingBox()
-	local center = Vector3.new(cf.Position.X, cf.Position.Y - size.Y / 2, cf.Position.Z)
-	ShopService.addPoint("Military tent", center, math.max(size.X, size.Z) / 2 + 18, false, true, true)
-	rec.shop = center
-	installedSites[site] = rec
+end
+
+-- Где фактически стоит установленный шатёр района (низ габарита); nil — не установлен
+function MissionService.tentPosition(site: number): Vector3?
+	local rec = installedSites[site]
+	return if rec then rec.shop else nil
 end
 
 function MissionService.isInstalled(site: number): boolean
@@ -610,7 +630,7 @@ local function makeSiteMarker(state: State, enabled: boolean)
 	prompt.Triggered:Connect(function(player: Player)
 		local s = current
 		if s and s == state and s.phase == "install" and PlayerService.isUp(player) then
-			installTent(s.site)
+			installTent(s.site, s.def.supplies == false) -- supplies = false: шатёр пустой, припасы привезёт конвой
 			s.installed = true
 			notify("Tent set up!", 4)
 		end
@@ -721,7 +741,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	end
 	-- место миссии отмечено высоким маяком: команда идёт к нему сама (телепорта нет)
 	if kind ~= "build" then -- у «build» место шатра отмечает собственный круг (makeSiteMarker)
-		makeBeacon(anchor, PLACE_LABELS[kind] or PLACE_LABELS.classic, Config.PlaceBeacon.Color, Config.PlaceBeacon.Radius)
+		makeBeacon(MissionService.tentPosition(def.anchor) or anchor, PLACE_LABELS[kind] or PLACE_LABELS.classic, Config.PlaceBeacon.Color, Config.PlaceBeacon.Radius) -- метка у фактического тента, если он уже стоит
 	end
 	if kind == "scout" then
 		for i, pos in districtPoints(def.anchor, def.points or 3, nil, def.radius) do
@@ -738,13 +758,23 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		local grid = RoadRoute.grid()
 		-- порядок объезда выбирает ConvoyService (кратчайший по дорогам, каждая точка один раз); метки подписываем после старта
 		local route = districtPoints(def.anchor, def.points or 3, grid, def.radius)
+		-- точки маршрута, заданные маркерами карты (например, напротив Barricade_12 у дороги к шатру), заменяют точки района с тем же номером
+			for index, markerName in def.waypointMarkers or {} do
+				local mk = workspace:FindFirstChild("Markers")
+				local m = mk and mk:FindFirstChild(markerName) :: BasePart?
+				if m then
+					route[math.min(index, #route + 1)] = m.Position
+				else
+					warn("[MissionService] no waypoint marker " .. markerName)
+				end
+			end
 		local routeBeacons: { BasePart } = {}
 		for _, p in route do
 			table.insert(routeBeacons, makeBeacon(p, "Route"))
 		end
 		local stop = roadStopNear(grid, anchor)
 		local groundStart = groundAt(start.X, start.Z) or start
-		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed) then
+		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed, def.column) then
 			warn("[MissionService] convoy not started — the mission plays as a regular night")
 			state.kind = "classic"
 			state.infinite = false
@@ -1555,21 +1585,29 @@ function MissionService.update(dt: number): string?
 			end
 			local status = ConvoyService.update(dt, near)
 			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
+			local aliveV, totalV = ConvoyService.vehicleCount()
 			text = if near
-				then string.format("Escort the convoy. Truck durability: %d%%", hp)
-				else string.format("Get close to the convoy: it's waiting (within %d studs). Truck durability: %d%%", Config.Convoy.FollowRadius, hp)
+				then string.format("Escort the convoy (%d of %d vehicles). Lead vehicle durability: %d%%", aliveV, totalV, hp)
+				else string.format("Get close to the convoy: it's waiting (within %d studs). Lead vehicle durability: %d%%", Config.Convoy.FollowRadius, hp)
 			if status == "fail" then
 				notify("The convoy was destroyed!", 5)
 				result = "fail"
 			elseif status == "arrived" then
-				dropSupplies(state.site)
+				-- ночь 3 (supplies = false): шатёр ставится пустым; ночь 4 привозит припасы в уже стоящий шатёр
+				local stocked = state.def.supplies ~= false
+				if stocked and (state.def.install or MissionService.isInstalled(state.site)) then
+					MissionService.stockTent(state.site)
+				end
 				if state.def.install then
 					notify("The convoy has arrived — supplies delivered", 4)
 				else
 					-- без установки руками шатёр ставится сам (если ночью 2 его не ставили, например при пропуске ночи)
-					installTent(state.site)
+					installTent(state.site, not stocked)
 					state.installed = true
-					notify("The convoy has arrived — tent set up, supplies delivered", 4)
+					if stocked then
+						MissionService.stockTent(state.site)
+					end
+					notify(if stocked then "The convoy has arrived — supplies delivered" else "The convoy has arrived — the tent is set up, but empty: supplies come tomorrow", 5)
 				end
 				if state.def.install then
 					state.phase = "install"
@@ -1590,12 +1628,12 @@ function MissionService.update(dt: number): string?
 			ZombieService.moveAnchor(state.anchor)
 			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
 			if state.phase == "install" then
-				text = string.format("Set up the tent: hold E. Truck durability: %d%%", hp)
+				text = string.format("Set up the tent: hold E. Lead vehicle durability: %d%%", hp)
 				if state.installed and not result then
 					result = "done"
 				end
 			else
-				text = string.format("The convoy is in place. Truck durability: %d%%", hp)
+				text = string.format("The convoy is in place. Lead vehicle durability: %d%%", hp)
 				if not result then
 					result = "done"
 				end

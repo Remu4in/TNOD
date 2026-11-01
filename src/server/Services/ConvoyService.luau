@@ -22,7 +22,18 @@ local RoadRoute = require(script.Parent:WaitForChild("RoadRoute"))
 local ConvoyService = {}
 
 type Escort = { model: Model, hum: Humanoid, root: BasePart, hp: number, alive: boolean, offset: Vector3, nextShot: number, farSince: number }
+-- Машина колонны: у каждой своё здоровье (Config.Convoy.Vehicles); ведущая (lead) — главная, её гибель проваливает миссию
+type Vehicle = {
+	model: Model, root: BasePart, name: string, hp: number, maxHp: number, bottom: number, yaw: number, bar: Frame,
+	alive: boolean, lead: boolean, gap: number, -- gap: на сколько студов по пути она позади ведущей (центр к центру)
+	heading: Vector3, gy: number?, parked: boolean,
+}
+type TrailPoint = { pos: Vector3, dist: number } -- след ведущей машины: ведомые идут по нему (значит, тоже по дорогам)
 type State = {
+	followers: { Vehicle },
+	trail: { TrailPoint },
+	maxHp: number, -- здоровье ведущей
+	leadVehicle: Vehicle,
 	truck: Model,
 	root: BasePart,
 	hp: number,
@@ -76,7 +87,7 @@ local function ground(x: number, z: number, _ignore: { Instance }): number?
 	return nil
 end
 
-local function makeBar(root: BasePart): Frame
+local function makeBar(root: BasePart, caption: string): Frame
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(160, 24)
 	gui.StudsOffset = Vector3.new(0, 14, 0)
@@ -102,7 +113,7 @@ local function makeBar(root: BasePart): Frame
 	label.TextScaled = true
 	label.TextColor3 = Color3.new(1, 1, 1)
 	label.TextStrokeTransparency = 0.4
-	label.Text = "CONVOY"
+	label.Text = caption
 	label.Parent = back
 	return fill
 end
@@ -124,18 +135,39 @@ local function tracer(from: Vector3, to: Vector3)
 	Debris:AddItem(p, 0.07)
 end
 
--- Игрокам и зомби — обычная цель-НПС: урон по грузовику
-local function damageTruck(amount: number)
+local function paintBar(v: Vehicle)
+	local f = v.hp / v.maxHp
+	v.bar.Size = UDim2.fromScale(math.max(0, f), 1)
+	v.bar.BackgroundColor3 = if f > 0.5 then Color3.fromRGB(80, 200, 100) elseif f > 0.25 then Color3.fromRGB(230, 190, 60) else Color3.fromRGB(220, 70, 60)
+end
+
+-- Игрокам и зомби — обычная цель-НПС: урон по машине колонны. Ведущая погибла — провал; ведомая погибла — остаётся остовом, колонна едет дальше
+local function damageVehicle(v: Vehicle, amount: number)
 	local s = current
-	if not s or s.failed then
+	if not s or s.failed or not v.alive then
 		return
 	end
-	s.hp = math.max(0, s.hp - amount)
-	s.bar.Size = UDim2.fromScale(s.hp / C.TruckHp, 1)
-	s.bar.BackgroundColor3 = if s.hp / C.TruckHp > 0.5 then Color3.fromRGB(80, 200, 100) elseif s.hp / C.TruckHp > 0.25 then Color3.fromRGB(230, 190, 60) else Color3.fromRGB(220, 70, 60)
-	s.truck:SetAttribute("Hp", s.hp)
-	if s.hp <= 0 then
-		s.failed = true
+	v.hp = math.max(0, v.hp - amount)
+	paintBar(v)
+	v.model:SetAttribute("Hp", v.hp)
+	if v.lead then
+		s.hp = v.hp
+	end
+	if v.hp <= 0 then
+		v.alive = false
+		ZombieService.unregisterTarget(v.model)
+		if v.lead then
+			s.failed = true
+		else
+			v.root.AssemblyLinearVelocity = Vector3.zero
+			v.root.AssemblyAngularVelocity = Vector3.zero
+			v.root.Anchored = true -- остов встаёт на месте
+			local smoke = Instance.new("Smoke")
+			smoke.Color = Color3.fromRGB(40, 40, 40)
+			smoke.Opacity = 0.5
+			smoke.Size = 6
+			smoke.Parent = v.root
+		end
 	end
 end
 
@@ -171,15 +203,15 @@ local function frontYaw(model: Model): number
 end
 
 -- Физическая машина: все детали сварены с корпусом и не заякорены (кроме корпуса — Massless), корпус следует за невидимой точкой
-local function buildTruck(spawn: Vector3, heading: Vector3): (Model?, BasePart?, number, number)
+local function buildTruck(modelName: string, vehicleName: string, spawn: Vector3, heading: Vector3): (Model?, BasePart?, number, number)
 	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("Vehicles")
-	local template = lib and (lib:FindFirstChild(C.Model) or lib:FindFirstChild("TransportTruck"))
+	local template = lib and (lib:FindFirstChild(modelName) or lib:FindFirstChild("TransportTruck"))
 	if not template then
-		warn("[ConvoyService] no ServerStorage.Assets.Vehicles." .. C.Model)
+		warn("[ConvoyService] no ServerStorage.Assets.Vehicles." .. modelName)
 		return nil, nil, 0, 0
 	end
 	local truck = template:Clone() :: Model
-	truck.Name = "ConvoyTruck"
+	truck.Name = vehicleName
 	local biggest: BasePart? = nil
 	for _, d in truck:GetDescendants() do
 		if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ClickDetector") or (d:IsA("BasePart") and d.Name == "Regen Button") then
@@ -490,7 +522,7 @@ end
 
 -- Старт: route — точки по порядку, finalStop — где остановиться; spawn — начальная зона (точка появления игроков): колонна стартует отсюда
 -- и первым отрезком едет к ближайшей дороге. speed — скорость миссии (иначе Config.Convoy.TruckSpeed). true — запущен.
-function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vector3, speed: number?): boolean
+function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vector3, speed: number?, column: string?): boolean
 	ConvoyService.finish()
 	local waypoints, order = planRoute(spawn, route, finalStop)
 	lastOrder = order
@@ -511,22 +543,63 @@ function ConvoyService.start(spawn: Vector3, route: { Vector3 }, finalStop: Vect
 	folder.Name = "Convoy"
 	folder.Parent = workspace
 	local gy = ground(begin.X, begin.Z, {}) or begin.Y
-	local truck, root, bottom, yaw = buildTruck(Vector3.new(begin.X, gy, begin.Z), heading)
+	local columnDef = C.Columns[column or "Light"] or C.Columns.Light
+	local leadSpec = C.Vehicles[columnDef[1]]
+	local truck, root, bottom, yaw = buildTruck(columnDef[1], "ConvoyTruck", Vector3.new(begin.X, gy, begin.Z), heading)
 	if not truck or not root then
 		ConvoyService.finish()
 		return false
 	end
 	local length = pathLength(waypoints)
 	local v = speed or C.TruckSpeed
-	print(string.format("[ConvoyService] road route: %d studs, %d points, about %d s en route at speed %.1f", length, #waypoints, length / v, v))
-	local state: State = {
-		truck = truck, root = root, hp = C.TruckHp, bottom = bottom, kpos = Vector3.new(begin.X, gy, begin.Z), yaw = yaw, waypoints = waypoints, wpIndex = 2, length = length,
-		escorts = {}, bar = makeBar(root), arrived = false, failed = false, heading = heading, speed = v, held = false, curSpeed = 0, phase = 0, roll = 0, gy = nil,
+	print(string.format("[ConvoyService] road route: %d studs, %d points, about %d s en route at speed %.1f, column %s (%d vehicles)", length, #waypoints, length / v, v, column or "Light", #columnDef))
+	local leadMax = leadSpec.hp
+	local leadVehicle: Vehicle = {
+		model = truck, root = root, name = columnDef[1], hp = leadMax, maxHp = leadMax, bottom = bottom, yaw = yaw, bar = makeBar(root, "CONVOY"),
+		alive = true, lead = true, gap = 0, heading = heading, gy = nil, parked = false,
 	}
-	truck:SetAttribute("Hp", C.TruckHp)
+	local _, leadSize = truck:GetBoundingBox()
+	local prevLen = math.max(leadSize.X, leadSize.Z)
+	local state: State = {
+		followers = {}, trail = {}, maxHp = leadMax, leadVehicle = leadVehicle,
+		truck = truck, root = root, hp = leadMax, bottom = bottom, kpos = Vector3.new(begin.X, gy, begin.Z), yaw = yaw, waypoints = waypoints, wpIndex = 2, length = length,
+		escorts = {}, bar = leadVehicle.bar, arrived = false, failed = false, heading = heading, speed = v, held = false, curSpeed = 0, phase = 0, roll = 0, gy = nil,
+	}
+	truck:SetAttribute("Hp", leadMax)
 	truck:SetAttribute("RouteLength", math.floor(length)) -- для проверок: хватит ли ночи (длина / Speed)
 	truck:SetAttribute("Speed", v)
-	ZombieService.registerTarget(truck, root, damageTruck)
+	ZombieService.registerTarget(truck, root, function(amount: number)
+		damageVehicle(leadVehicle, amount)
+	end)
+	-- ведомые машины: позади ведущей на своём месте, ставятся по прямой назад от начала маршрута и дальше идут по следу ведущей
+	local gap = 0
+	for i = 2, #columnDef do
+		local spec = C.Vehicles[columnDef[i]]
+		local tmpPos = Vector3.new(begin.X, gy, begin.Z) - heading * (gap + prevLen / 2 + 8)
+		local fgy = ground(tmpPos.X, tmpPos.Z, {}) or gy
+		local fm, froot, fbottom, fyaw = buildTruck(columnDef[i], "ConvoyVehicle" .. i, Vector3.new(tmpPos.X, fgy, tmpPos.Z), heading)
+		if fm and froot then
+			local _, fsize = fm:GetBoundingBox()
+			local flen = math.max(fsize.X, fsize.Z)
+			gap += prevLen / 2 + 8 + flen / 2
+			prevLen = flen
+			fm:PivotTo(poseFor(Vector3.new(begin.X, fgy, begin.Z) - heading * gap + Vector3.new(0, fbottom, 0), heading, fyaw))
+			local fv: Vehicle = {
+				model = fm, root = froot, name = columnDef[i], hp = spec.hp, maxHp = spec.hp, bottom = fbottom, yaw = fyaw, bar = makeBar(froot, string.upper(columnDef[i])),
+				alive = true, lead = false, gap = gap, heading = heading, gy = nil, parked = false,
+			}
+			fm:SetAttribute("Hp", spec.hp)
+			ZombieService.registerTarget(fm, froot, function(amount: number)
+				damageVehicle(fv, amount)
+			end)
+			table.insert(state.followers, fv)
+		else
+			warn("[ConvoyService] can't build column vehicle " .. columnDef[i])
+		end
+	end
+	-- начало следа: прямо назад от начала маршрута на длину колонны
+	local back = gap + prevLen + 20
+	state.trail = { { pos = Vector3.new(begin.X, gy, begin.Z) - heading * back, dist = 0 }, { pos = Vector3.new(begin.X, gy, begin.Z), dist = back } }
 	for i = 1, 2 do
 		-- смещение: X — вбок от курса (за пределами кузова), Z — назад; считаем по размеру машины
 		local _, bsize = truck:GetBoundingBox()
@@ -552,7 +625,23 @@ function ConvoyService.position(): Vector3?
 end
 
 function ConvoyService.hpFraction(): number
-	return if current then current.hp / C.TruckHp else 0
+	return if current then current.hp / current.maxHp else 0
+end
+
+-- Живых машин колонны / всего (для текста миссии)
+function ConvoyService.vehicleCount(): (number, number)
+	local s = current
+	if not s then
+		return 0, 0
+	end
+	local alive, total = if s.leadVehicle.alive then 1 else 0, 1
+	for _, f in s.followers do
+		total += 1
+		if f.alive then
+			alive += 1
+		end
+	end
+	return alive, total
 end
 
 -- Длина маршрута по дорогам и оценка времени в пути (для проверки, что колонна успеет за ночь)
@@ -608,6 +697,13 @@ local function moveTruck(s: State, dt: number)
 	local bob = math.sin(s.phase * 2.2) * 0.05 * k
 	local pitch = math.sin(s.phase * 1.1) * 0.008 * k
 	s.kpos = Vector3.new(nx, gy, nz)
+	local lastPoint = s.trail[#s.trail]
+	if lastPoint and (s.kpos - lastPoint.pos).Magnitude >= 2 then
+		table.insert(s.trail, { pos = s.kpos, dist = lastPoint.dist + (s.kpos - lastPoint.pos).Magnitude })
+		if #s.trail > 400 then
+			table.remove(s.trail, 1)
+		end
+	end
 	local at = Vector3.new(nx, gy + s.bottom + bob, nz)
 	local pose = poseFor(at, s.heading, s.yaw) * CFrame.Angles(pitch, 0, s.roll)
 	local cur = s.truck:GetPivot()
@@ -630,6 +726,58 @@ local function moveTruck(s: State, dt: number)
 		s.root.AssemblyAngularVelocity = axis * math.clamp(angle * C.TurnGain, -3, 3)
 	else
 		s.root.AssemblyAngularVelocity = Vector3.zero
+	end
+end
+
+-- Ведомые машины: на своём расстоянии позади ведущей по её следу (дорогам); физика та же, что у ведущей: код задаёт скорость каждый кадр
+local function moveFollowers(s: State, dt: number)
+	local trail = s.trail
+	local lastPoint = trail[#trail]
+	local leadDist = lastPoint.dist + (s.kpos - lastPoint.pos).Magnitude
+	for _, v in s.followers do
+		if v.alive and not v.parked then
+			local want = math.max(0, leadDist - v.gap)
+			-- сегмент следа, на который приходится want (ищем с конца: нужный участок всегда близко к хвосту)
+			local i = #trail
+			while i > 1 and trail[i].dist > want do
+				i -= 1
+			end
+			local a, b = trail[i], trail[math.min(#trail, i + 1)]
+			local span = b.dist - a.dist
+			local pos = if span > 0.01 then a.pos:Lerp(b.pos, (want - a.dist) / span) else a.pos
+			local dir = Vector3.new(b.pos.X - a.pos.X, 0, b.pos.Z - a.pos.Z)
+			if dir.Magnitude > 0.05 then
+				local blended = v.heading + (dir.Unit - v.heading) * math.min(1, dt * 6)
+				v.heading = if blended.Magnitude < 0.01 then dir.Unit else blended.Unit
+			end
+			local gyNow = ground(pos.X, pos.Z, {}) or pos.Y
+			local gy = if v.gy then v.gy + (gyNow - v.gy) * math.min(1, dt * 6) else gyNow
+			v.gy = gy
+			local at = Vector3.new(pos.X, gy + v.bottom, pos.Z)
+			local pose = poseFor(at, v.heading, v.yaw)
+			local cur = v.model:GetPivot()
+			local err = at - cur.Position
+			local tilted = cur.UpVector.Y < math.cos(math.rad(C.MaxTilt))
+			if tilted or err.Magnitude > C.MaxLag then
+				v.model:PivotTo(pose)
+				v.root.AssemblyLinearVelocity = Vector3.zero
+				v.root.AssemblyAngularVelocity = Vector3.zero
+			else
+				v.root.AssemblyLinearVelocity = v.heading * s.curSpeed + err * C.FollowGain
+				local axis, angle = (pose.Rotation * cur.Rotation:Inverse()):ToAxisAngle()
+				if angle == angle and angle > 1e-4 and axis.X == axis.X and axis.Y == axis.Y and axis.Z == axis.Z then
+					v.root.AssemblyAngularVelocity = axis * math.clamp(angle * C.TurnGain, -3, 3)
+				else
+					v.root.AssemblyAngularVelocity = Vector3.zero
+				end
+			end
+			if s.arrived and err.Magnitude < 1.5 and want >= leadDist - v.gap - 0.5 then
+				v.parked = true -- ведущая встала, ведомая заняла место: встаёт намертво
+				v.root.AssemblyLinearVelocity = Vector3.zero
+				v.root.AssemblyAngularVelocity = Vector3.zero
+				v.root.Anchored = true
+			end
+		end
 	end
 end
 
@@ -704,6 +852,7 @@ startMotion = function(state: State)
 			if not s.arrived then
 				moveTruck(s, frameDt) -- и в ожидании: плавно тормозит
 			end
+			moveFollowers(s, frameDt)
 			updateEscorts(s, frameDt)
 		end
 	end)
@@ -741,6 +890,9 @@ function ConvoyService.finish()
 	local s = current
 	if s then
 		ZombieService.unregisterTarget(s.truck)
+		for _, f in s.followers do
+			ZombieService.unregisterTarget(f.model)
+		end
 		for _, e in s.escorts do
 			ZombieService.unregisterTarget(e.model)
 		end

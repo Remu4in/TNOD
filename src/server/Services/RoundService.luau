@@ -379,7 +379,9 @@ local function night()
 	local threat = WaveMath.makeThreat(Config.ThreatClasses, Config.Threat.Tiers, loadouts(), roundSeed)
 	local comp = WaveMath.composition(Config.Waves, wave, players, threat)
 	local aliveMinute = 1
-	ZombieService.setNightAliveCap(WaveMath.aliveCap(Config.Round, wave, players, threat, aliveMinute))
+	local missionDef = Config.Missions[wave]
+	local aliveMul = if missionDef and missionDef.type == "escort" then (Config.Round.ConvoyAliveMul or 1) else 1 -- под колонну зомби больше
+	ZombieService.setNightAliveCap(WaveMath.aliveCap(Config.Round, wave, players, threat, aliveMinute, aliveMul))
 	ReplicatedStorage:SetAttribute("AliveCap", ZombieService.nightAliveCap())
 	EconomyService.newWave()
 	PlayerService.takeLosses()
@@ -403,7 +405,7 @@ local function night()
 		local minute = math.floor((os.clock() - nightStart) / 60) + 1
 		if minute ~= aliveMinute then
 			aliveMinute = minute
-			ZombieService.setNightAliveCap(WaveMath.aliveCap(Config.Round, wave, players, threat, minute))
+			ZombieService.setNightAliveCap(WaveMath.aliveCap(Config.Round, wave, players, threat, minute, aliveMul))
 			ReplicatedStorage:SetAttribute("AliveCap", ZombieService.nightAliveCap())
 		end
 		local missionState = MissionService.update(0.25)
