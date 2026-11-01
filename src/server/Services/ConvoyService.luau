@@ -419,13 +419,24 @@ local function bestOrder(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, 
 	return best, bestLen
 end
 
--- Убирает петли: если путь второй раз проходит ту же точку, всё, что между, вырезаем (круг по тем же дорогам не нужен)
-local function cutLoops(waypoints: { Vector3 }): { Vector3 }
+-- Убирает петли: если путь второй раз проходит ту же точку, всё, что между, вырезаем (круг по тем же дорогам не нужен).
+-- Петлю с контрольной точкой внутри не вырезаем: иначе колонна пропустит точку, а выбор выезда (planRoute) примет такой урезанный путь
+-- за самый короткий (ночь 3: выезд налево через точку 2 вместо прямой дороги к точке 1)
+local function cutLoops(waypoints: { Vector3 }, keep: { [string]: boolean }): { Vector3 }
 	local out: { Vector3 } = {}
 	local seen: { [string]: number } = {}
 	for _, p in waypoints do
 		local key = string.format("%d,%d", math.floor(p.X + 0.5), math.floor(p.Z + 0.5))
 		local at = seen[key]
+		if at then
+			for i = at + 1, #out do
+				local q = out[i]
+				if keep[string.format("%d,%d", math.floor(q.X + 0.5), math.floor(q.Z + 0.5))] then
+					at = nil
+					break
+				end
+			end
+		end
 		if at then
 			for _ = #out, at + 1, -1 do
 				local q = table.remove(out) :: Vector3
@@ -477,7 +488,11 @@ local function planFrom(grid: RoadRoute.Grid, cache: LegCache, start: Vector3, r
 	for i = 2, #last do
 		table.insert(waypoints, last[i])
 	end
-	return cutLoops(waypoints), order
+	local keep: { [string]: boolean } = {}
+	for _, p in order do
+		keep[string.format("%d,%d", math.floor(p.X + 0.5), math.floor(p.Z + 0.5))] = true
+	end
+	return cutLoops(waypoints, keep), order
 end
 
 -- Выезд из начальной зоны: дорога начинается в десятках студов от точки появления игроков. Берём ближайшую дорогу и ещё несколько вокруг,
