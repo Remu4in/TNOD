@@ -424,6 +424,7 @@ local function step(now: number)
 					p.lastHit[z.model] = now
 					local impact = if p.kind == "ElectricWire" then { stagger = def.stun, push = 0 } else { stagger = 0.35, push = 0 }
 					ZombieService.damage(z.model, def.damage, p.owner, impact)
+					ZombieService.suffer(z.model, if p.kind == "ElectricWire" then "Electric" else "Barbed", def.stun)
 					if p.kind == "BarbedWire" then
 						p.hits -= 1
 						if p.hits <= 0 then

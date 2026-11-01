@@ -1159,7 +1159,7 @@ Config.Perks = {
 -- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
 -- (сейчас играется как classic). Не указано — classic.
 -- convoySpeed — скорость грузовика этой миссии (студов/с), вместо Config.Convoy.TruckSpeed; clearSandbags — на эту ночь убрать мешки с песком у точки появления игроков (Config.Convoy.Sandbag*)
-export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, column: string?, supplies: boolean?, stopMarker: string?, waypointMarkers: { [number]: string }?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }?, nests: number?, boss: string? }
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, column: string?, supplies: boolean?, stopMarker: string?, waypointMarkers: { [number]: string }?, waypointScout: { [number]: { anchor: number, count: number, index: number, radius: { number }? } }?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }?, nests: number?, boss: string? }
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
 	-- Колонна (баланс v4): настоящие машины из ServerStorage.Assets.Vehicles, у каждой своё здоровье (Vehicles). Columns — составы колонн (первая — ведущая, главная:
@@ -1197,6 +1197,13 @@ Config.Convoy = {
 	StartOffset = 14, -- студов: грузовик ночью-конвоя выезжает из начальной зоны — от точки появления игроков в сторону ближайшей дороги
 	SandbagFolder = "Base", -- где лежат мешки с песком (модели Fort), перекрывающие выезд из начальной зоны
 	SandbagName = "Fort",
+}
+-- Звуки страданий зомби в проволоке (ZombieService.suffer): стоны (озвучка смерти), лязг и электрический треск (встроенные звуки Roblox rbxasset://, проверены в Studio: загружаются)
+Config.HazardSounds = {
+	pain = { "rbxassetid://131138845", "rbxassetid://131138854" },
+	rattle = "rbxasset://sounds/collide.wav",
+	zap = "rbxasset://sounds/electronicpingshort.wav",
+	buzz = "rbxasset://sounds/hit.wav",
 }
 Config.ScoutRadius = { 50, 100 } -- радиус контрольных точек от места шатра по умолчанию (у миссии можно задать свой: radius)
 -- Разговор с солдатами базы (SoldierService, клавиша E на солдате): случайная реплика над головой, подряд одна и та же не повторяется.
@@ -1406,9 +1413,11 @@ Config.Missions = {
 	[1] = { type = "scout", title = "Area recon", anchor = 1, points = 3, hint = "Visit the checkpoints around the tent" },
 	[2] = { type = "build", title = "Clear the zone and set up the tent", anchor = 1, kills = 15, supplies = false, hint = "Clear the zone and set up the tent at the marked spot. It will be empty: supplies come with the convoy" },
 	-- Первый конвой: выезжает из начальной зоны (мешки с песком на эту ночь убираются) и едет только пока рядом игрок. Скорости конвоев — баланс v3 (2026-11):
-	-- ночь 3 — 9 студов/с (маршрут 597 студов ≈ 66 с), 8 — 13 (1101 студ ≈ 85 с), 12 — 13 (1175 ≈ 90 с), 17 — 11 (891 ≈ 81 с); остальное — Config.Convoy.TruckSpeed
-	[3] = { type = "escort", title = "Supply convoy escort", anchor = 1, points = 3, convoySpeed = 9, clearSandbags = true, column = "Light", supplies = false, hint = "Escort the convoy: it will set up an empty tent at the site. Supplies arrive tomorrow" },
-	[4] = { type = "escort", title = "Supply convoy to the tent", anchor = 1, points = 2, column = "Supply", waypointMarkers = { [2] = "Barricade_12" }, hint = "Escort the supply column to the tent set up yesterday: it brings the supplies" },
+	-- ночь 3 — 11 студов/с (маршрут через точку района 2: 1133 студа ≈ 103 с), 8 — 13 (1101 студ ≈ 85 с), 12 — 13 (1175 ≈ 90 с), 17 — 11 (891 ≈ 81 с); остальное — Config.Convoy.TruckSpeed
+	-- Единственный конвой первого района (2 машины): точка 1 — у шатра, точка 2 — точка разведки ночи 6 (waypointScout: район 2, её вторая точка), чтобы маршрут не кружил у шатра.
+	-- Конвой привозит припасы в пустой шатёр ночи 2; ночь 4 — вторая разведка (ближние места, 100–250 студов от шатра), конвоя на ней нет
+	[3] = { type = "escort", title = "Supply convoy escort", anchor = 1, points = 2, convoySpeed = 11, clearSandbags = true, column = "Light", waypointScout = { [2] = { anchor = 2, count = 3, index = 2 } }, hint = "Escort the convoy: it brings supplies to the tent" },
+	[4] = { type = "scout", title = "Recon of nearby locations", anchor = 1, points = 3, radius = { 100, 250 }, hint = "Visit the checkpoints around the tent" },
 	[5] = { type = "classic", title = "Defend the tent from the boss", anchor = 1, planned = "defend-boss", hint = "Kill the boss and the wave" },
 	[6] = { type = "scout", title = "Recon of the second district", anchor = 2, points = 3, hint = "Visit the checkpoints around the tent" },
 	[7] = { type = "build", title = "Clear-out and tent setup", anchor = 2, kills = 20, hint = "Clear the zone and set up the tent at the marked spot" },

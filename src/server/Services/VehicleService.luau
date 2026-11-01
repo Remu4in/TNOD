@@ -202,6 +202,7 @@ end
 -- Поломка: все высажены, управление отключено, остов горит и через время исчезает
 local function wreck(state: VehicleState)
 	state.wrecked = true
+	ZombieService.unregisterTarget(state.model)
 	state.model:SetAttribute("Wrecked", true)
 	for _, seat in state.seats do
 		eject(seat)
@@ -215,6 +216,24 @@ local function wreck(state: VehicleState)
 	setSmoke(state, true)
 	if R.wreckRemoveAfter > 0 then
 		Debris:AddItem(state.model, R.wreckRemoveAfter)
+	end
+end
+
+-- Зомби бьют машину, в которой кто-то сидит (как игрока): урон идёт в прочность; пустая машина зомби не интересует
+local function refreshTarget(state: VehicleState)
+	local occupied = false
+	for _, seat in state.seats do
+		if seat.Occupant then
+			occupied = true
+			break
+		end
+	end
+	if occupied and not state.wrecked then
+		ZombieService.registerTarget(state.model, state.root, function(amount: number)
+			VehicleService.damage(state.model, amount)
+		end)
+	else
+		ZombieService.unregisterTarget(state.model)
 	end
 end
 
@@ -371,6 +390,7 @@ function VehicleService.spawn(modelName: string, cf: CFrame): Model?
 			if occ then
 				occ:UnequipTools()
 			end
+			refreshTarget(state)
 		end)
 	end
 
@@ -416,6 +436,7 @@ function VehicleService.resetRound()
 		return
 	end
 	for model, state in vehicles do
+		ZombieService.unregisterTarget(model)
 		for _, seat in state.seats do
 			local occ = seat.Occupant
 			if occ then

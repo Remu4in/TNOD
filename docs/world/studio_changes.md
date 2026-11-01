@@ -93,3 +93,11 @@
 | W033 | 2026-11-01 | **`Workspace.BaseDonateShop`** (статичная модель, построена `BaseShopService.build()` в Edit из `Assets.Lobby` Wall/ShopSign/Stall, `Props.MilitaryCrates`, `NPC.Lobby.LobbySoldier_1/2`) на базе, центр (78, 432), между «Military Carport Garage Building House» и APC; ассеты в `ServerStorage` не менялись. Скрипты `Config`, `VendorService`, `BaseShopService`, `ShopController`, `InfoController` залиты заново | удалить `Workspace.BaseDonateShop` (сервис построит новую при запуске) |
 
 Итог: Studio в Edit, место **не сохранено** — `Workspace.BaseDonateShop` и новые скрипты `BaseShopService`, `InfoController` лежат только в файле места: сохраните место в Studio.
+
+## Баланс v4, правки по плейтесту (2026-11-01, поручение сессии: правки конвоя, проволоки, машины)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W034 | 2026-11-01 | Скрипты залиты через HTTP (`HttpService:GetAsync`, байты сверены): `Shared.Config`; `Server.Services.MissionService`, `ZombieService`, `EquipmentService`, `VehicleService`; `Client.Controllers.ArmsController`, `VehicleController`. **Новый скрипт `EmoteController`** (ModuleScript в `Client.Controllers`, создан в прошлый сеанс; в журнал не вносился) тоже только в файле места | Залить прежние версии из git (`a2d9879`) |
+| W035 | 2026-11-01 | Временно: скрипт `ServerScriptService.DbgHooks` (вызов `ZombieService.suffer` по атрибуту) и флаги `Config.Source` (`Lobby.ForceMode = "match"`, `DebugStartNight` 3–4) на время Play. После проверок скрипт удалён, `Config` залит из файла заново (136311 байт) | не требуется |
+
+Итог: Studio в Edit, место **не сохранено** — `EmoteController`, `BaseShopService`, `InfoController` и `Workspace.BaseDonateShop` лежат только в файле места: сохранить в Studio.

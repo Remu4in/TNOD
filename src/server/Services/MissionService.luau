@@ -768,6 +768,16 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 					warn("[MissionService] no waypoint marker " .. markerName)
 				end
 			end
+		-- точки маршрута из разведки другого района (ночь 3: вторая точка — точка разведки района 2, снятая на дорогу)
+		for index, spec in def.waypointScout or {} do
+			local p = districtPoints(spec.anchor, spec.count, nil, spec.radius)[spec.index]
+			local onRoad = p and grid.snap(p, 120)
+			if onRoad then
+				route[math.min(index, #route + 1)] = onRoad
+			else
+				warn(string.format("[MissionService] no road near the scouting point %d of the area %d — the convoy route keeps its own point", spec.index, spec.anchor))
+			end
+		end
 		local routeBeacons: { BasePart } = {}
 		for _, p in route do
 			table.insert(routeBeacons, makeBeacon(p, "Route"))

@@ -169,6 +169,36 @@ groundParams.FilterType = Enum.RaycastFilterType.Exclude
 function VehicleController.start()
 	local player = Players.LocalPlayer
 	startSeatPanel(player)
+	-- Обзор: от первого лица кузов и пулемёт закрывают дорогу, а руки торчат из-под руля. На местах 1–4 камера идёт от третьего лица за машиной
+	-- (колесо мыши меняет дальность); место стрелка (0) наводит ствол само. На выходе возвращаются прежние режим и зум.
+	local savedCam: { mode: Enum.CameraMode, minZoom: number, maxZoom: number }? = nil
+	RunService.Heartbeat:Connect(function()
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		local seat = hum and hum.SeatPart
+		local model = seat and seat.Parent
+		local index = seat and seat:GetAttribute("SeatIndex")
+		local inCar = model ~= nil and model:GetAttribute("Vehicle") == true and typeof(index) == "number" and index >= 1
+		if inCar and not savedCam then
+			savedCam = { mode = player.CameraMode, minZoom = player.CameraMinZoomDistance, maxZoom = player.CameraMaxZoomDistance }
+			local root = (model :: Model).PrimaryPart
+			local length = if root then root.Size.Z else 17
+			player.CameraMode = Enum.CameraMode.Classic
+			player.CameraMinZoomDistance = length * 1.5 -- сначала фиксируем дальность, затем разрешаем колесо
+			player.CameraMaxZoomDistance = length * 1.5
+			task.delay(0.15, function()
+				if savedCam then
+					player.CameraMinZoomDistance = length * 0.9
+					player.CameraMaxZoomDistance = length * 3
+				end
+			end)
+		elseif not inCar and savedCam then
+			local s = savedCam
+			savedCam = nil
+			player.CameraMinZoomDistance = s.minZoom
+			player.CameraMaxZoomDistance = s.maxZoom
+			player.CameraMode = s.mode
+		end
+	end)
 	RunService.Heartbeat:Connect(function(dt: number)
 		local character = player.Character
 		local hum = character and character:FindFirstChildOfClass("Humanoid")
