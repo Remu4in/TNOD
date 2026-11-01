@@ -809,6 +809,11 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 			table.insert(routeBeacons, makeBeacon(p, "Route"))
 		end
 		local stop = roadStopNear(grid, anchor)
+		-- конечная остановка колонны, заданная меткой RouteEnd (Workspace.Markers), важнее остановки у шатра
+		local endMarker = workspace:FindFirstChild("Markers") and workspace.Markers:FindFirstChild("RouteEnd")
+		if def.markerRoute and endMarker and endMarker:IsA("BasePart") then
+			stop = endMarker.Position
+		end
 		local groundStart = groundAt(start.X, start.Z) or start
 		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed, def.column, def.keepOrder) then
 			warn("[MissionService] convoy not started — the mission plays as a regular night")
