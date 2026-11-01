@@ -99,5 +99,6 @@
 |---|---|---|---|
 | W034 | 2026-11-01 | Скрипты залиты через HTTP (`HttpService:GetAsync`, байты сверены): `Shared.Config`; `Server.Services.MissionService`, `ZombieService`, `EquipmentService`, `VehicleService`; `Client.Controllers.ArmsController`, `VehicleController`. **Новый скрипт `EmoteController`** (ModuleScript в `Client.Controllers`, создан в прошлый сеанс; в журнал не вносился) тоже только в файле места | Залить прежние версии из git (`a2d9879`) |
 | W035 | 2026-11-01 | Временно: скрипт `ServerScriptService.DbgHooks` (вызов `ZombieService.suffer` по атрибуту) и флаги `Config.Source` (`Lobby.ForceMode = "match"`, `DebugStartNight` 3–4) на время Play. После проверок скрипт удалён, `Config` залит из файла заново (136311 байт) | не требуется |
+| W036 | 2026-11-02 | По просьбе Руслана: в `Workspace.Markers` созданы 8 заготовок `Route1_Via1…4`, `Route2_Via1…4` (копии `Route1`, Anchored, около (60–96, 255–269)) — он расставит их на поворотах маршрута конвоя ночи 3. Лишние можно удалить |
 
 Итог: Studio в Edit, место **не сохранено** — `EmoteController`, `BaseShopService`, `InfoController` и `Workspace.BaseDonateShop` лежат только в файле места: сохранить в Studio.
