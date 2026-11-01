@@ -157,6 +157,8 @@ Config.LocationNights = 10
 -- на базе стоят телепорт-площадки к каждой локации. Выключить (false) — обычная игра на карте City.
 Config.Explore = false -- true: режим осмотра без раундов
 Config.TestStands = true -- стенды у спавна: тестовое оружие бесплатно, вызов волн мутантов (выключить перед релизом)
+-- Донатный магазин на базе (Services/BaseShopService): центр у подхода к базе рядом со спавном игроков, Rot — поворот (180: прилавки смотрят на запад, к спавну)
+Config.BaseShop = { Center = Vector3.new(80, 0, 281), Rot = 180 }
 Config.TentMarkRadius = 250 -- метки на военные палатки каждое утро в этом радиусе, студов (1 стад ≈ 0,28 м)
 Config.ExploreZombies = true -- в режиме осмотра ставить проверочных зомби (Зомби 3.0)
 
@@ -282,17 +284,18 @@ export type BuildingDef = {
 	cost: number,
 	bonus: string?,
 	info: string, -- что внутри (для вывески и уведомления)
+	desc: string?, -- подробнее: зачем здание (справочник зданий, клавиша H)
 }
 
 local Buildings: { BuildingDef } = {
 	{ id = "Cafe", name = "Cafe", cost = 0, info = "Starting shelter" },
 	-- Открытие здания за монеты (вывеска) даёт доступ к НПС-продавцу внутри: он торгует только днём (Config.Vendors)
-	{ id = "Pharmacy", name = "Medical post", cost = 500, info = "Vendor: medkits and energy drinks" },
-	{ id = "Armory", name = "Armory", cost = 1000, info = "Vendor: melee weapons" },
-	{ id = "Garage", name = "Garage", cost = 2000, info = "Vendor: barbed and electric wire" },
-	{ id = "GunShop", name = "Turret shop", cost = 3000, info = "Vendor: turrets" },
-	{ id = "Shelter", name = "Shelter", cost = 4000, bonus = "teamLife", info = "Team extra life and vendor" },
-	{ id = "Factory", name = "Factory", cost = 4000, info = "Inside: a military vehicle with a roof-mounted machine gun" },
+	{ id = "Pharmacy", name = "Medical post", cost = 500, info = "Vendor: medkits and energy drinks", desc = "Heal up between nights. Medkits restore 60 health, energy drinks give unlimited sprint for a wave." },
+	{ id = "Armory", name = "Armory", cost = 1000, info = "Vendor: melee weapons", desc = "Melee weapons never run out of ammo: bat, crowbar, machete, fire axe, sledgehammer and katana." },
+	{ id = "Garage", name = "Garage", cost = 2000, info = "Vendor: barbed and electric wire", desc = "Wire slows and hurts mutants at the barricades. Electric wire stuns, but works only until dawn." },
+	{ id = "GunShop", name = "Turret shop", cost = 3000, info = "Vendor: turrets", desc = "Automatic turrets hold a chokepoint while you reload or rescue a teammate." },
+	{ id = "Shelter", name = "Shelter", cost = 4000, bonus = "teamLife", info = "Team extra life and vendor", desc = "Buy an extra team life: if everyone goes down, the squad gets back up once." },
+	{ id = "Factory", name = "Factory", cost = 4000, info = "Inside: a military vehicle with a roof-mounted machine gun", desc = "A military jeep with a roof-mounted machine gun waits inside. Drive it and let a teammate man the gun." },
 }
 Config.Buildings = Buildings
 

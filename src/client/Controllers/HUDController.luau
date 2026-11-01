@@ -190,7 +190,7 @@ function HUDController.start()
 			AnchorPoint = Vector2.new(0.5, 1),
 			Position = UDim2.fromScale(0.5, 0.985),
 			Size = UDim2.fromScale(0.42, 0.028),
-			Text = "Shift — sprint   ·   Q while sprinting — slide   ·   C — roll",
+			Text = "", -- подсказки клавиш теперь в панели справа (InfoController); здесь только красные отказы подката и кувырка
 			TextTransparency = 0.35,
 			TextStrokeTransparency = 0.7,
 			TextColor3 = Color3.fromRGB(230, 230, 230),

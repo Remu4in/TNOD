@@ -52,13 +52,21 @@ local function updateSign(id: string)
 	if info.signLabel then
 		info.signLabel.Text = if open
 			then def.name .. "\nopen"
-			else string.format("%s\n● %d / %d", def.name, funded[id] or 0, def.cost)
+			else string.format("%s\n● %d / %d\n%s", def.name, funded[id] or 0, def.cost, def.info)
 	end
 	if info.signPrompt then
 		info.signPrompt.Enabled = not open and not isNight
-		info.signPrompt.ObjectText = def.name
+		info.signPrompt.ObjectText = string.format("%s · %d / %d ● · %s", def.name, funded[id] or 0, def.cost, def.info) -- название, цена, что внутри
 		info.signPrompt.ActionText = string.format("Invest %d ●", stepOf(def))
 	end
+	-- состояние для справочника зданий (клиент, клавиша H): "id=open" или "id=вложено/цена"
+	local parts: { string } = {}
+	for _, d in Config.Buildings do
+		if d.cost > 0 then
+			table.insert(parts, d.id .. "=" .. (if unlocked[d.id] then "open" else string.format("%d/%d", funded[d.id] or 0, d.cost)))
+		end
+	end
+	ReplicatedStorage:SetAttribute("BuildingStates", table.concat(parts, ";"))
 end
 
 local function updateSpots(id: string)

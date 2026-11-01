@@ -234,9 +234,9 @@ local function buildVending(marker: BasePart)
 		return
 	end
 	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Buy"
+	prompt.ActionText = "Supplies & donate shop"
 	prompt.ObjectText = def.name
-	prompt.HoldDuration = 0
+	prompt.HoldDuration = 0.6 -- удержание E (у шатра B открывает магазин оружия)
 	prompt.MaxActivationDistance = 9
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = biggest
@@ -245,7 +245,7 @@ local function buildVending(marker: BasePart)
 		if not PlayerService.isUp(player) then
 			return
 		end
-		Remotes.get("ShopOpen"):FireClient(player, { vendorId = marker.Name, title = def.name, greeting = def.greeting, items = def.items })
+		Remotes.get("ShopOpen"):FireClient(player, { vendorId = marker.Name, title = "SUPPLIES & DONATE", greeting = def.greeting, items = def.items, donate = Config.Lobby.Vending })
 	end)
 	model.Parent = live
 	vendors[marker.Name] = v

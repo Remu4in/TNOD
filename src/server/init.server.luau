@@ -87,6 +87,11 @@ local function buildTestStands(sp: Vector3)
 	pad("TestSpecial", Vector3.new(4, 0, 8), Color3.fromRGB(150, 60, 200), "SPECIAL ZOMBIES", "Call specials", function()
 		ZombieService.enqueue(waves["Special"])
 	end)
+	-- +10 000 монет: чтобы открыть все здания и проверить их (только Studio: testStandsOn)
+	pad("TestCoins", Vector3.new(-20, 0, 8), Color3.fromRGB(255, 205, 60), "+10 000 COINS", "Get 10 000 coins", function(player)
+		require(Services:WaitForChild("EconomyService")).add(player, 10000)
+		Remotes.get("Notify"):FireClient(player, "+10 000 coins (test)", 2)
+	end)
 	-- вызывает босса (по кругу: Качок, Гаргантюа, Повелитель тёмных) — проверить его атаки и полоску здоровья, не дожидаясь 5-й ночи
 	local bossCycle, bossNext = { "BossBuff", "BossGarg", "BossStrong", "BossFinal" }, 0
 	pad("TestBoss", Vector3.new(28, 0, 8), Color3.fromRGB(160, 40, 40), "BOSS", "Call a boss", function()
@@ -223,6 +228,7 @@ local function startMatch()
 	RoundService.start(map)
 	EquipmentService.init()
 	VendorService.init(map)
+	require(Services:WaitForChild("BaseShopService")).init() -- донатный магазин на базе
 	SoldierService.init()
 
 	-- ездовые машины: маркеры Workspace.Markers.VehicleSpawn_<Шаблон>

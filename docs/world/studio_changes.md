@@ -78,3 +78,14 @@
 | W027 | 2026-10-31 | Play-проверки (`start_stop_play`): лобби, хост, зоны, матч, итоги, возврат. Изменения в место не сохранялись (runtime) | не требуется |
 
 Итог сеанса: Studio в Edit, место **не сохранено** — новые ассеты лежат только в файле места (нужно сохранить в Studio).
+
+## Баланс v4 (2026-11-01, поручение сессии: «выполни docs/qa/sonnet_prompt_balance_v4.md», согласие — в самом задании)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W028 | 2026-11-01 | Скрипты залиты через HTTP (`HttpService:GetAsync`, байты сверены): `Shared.Config`, `WaveMath`; `Server.Services.RoundService`, `MissionService`, `ConvoyService`, `BossAI`, `BuildingService`, `VendorService`, `Server` (init); клиент `PerkController`, `ShopController`, `HUDController`, `Client` (init) | восстановить из git (`src/…`) |
+| W029 | 2026-11-01 | **Новые скрипты в место:** `ServerScriptService.Server.Services.BaseShopService` (ModuleScript), `StarterPlayer.StarterPlayerScripts.Client.Controllers.InfoController` (ModuleScript) | удалить два модуля |
+| W030 | 2026-11-01 | Ассеты и `Workspace` **не менялись**: `HumveeMedic` и `MilitaryCar` уже лежали в `ServerStorage.Assets.Vehicles` без скриптов (проверено), копировать из `Workspace.Base`/`CarModels` не пришлось. Донатный магазин на базе (`Workspace.BaseDonateShop`) создаётся кодом в рантайме из `Assets.Lobby` (`Wall`, `ShopSign`, `Stall`), `Props.MilitaryCrates`, `NPC.Lobby.LobbySoldier_1/2`; в файл места не сохраняется | не требуется |
+| W031 | 2026-11-01 | Временно в `Shared.Config.Source` на время Play-проверок: `Lobby.ForceMode = "match"`, `DebugStartNight` 3–8 (замеры маршрутов конвоя ночей 3, 8, 12, 17: 597, 1101, 1175, 891 студов); после проверок `Source` возвращён из файла | не требуется |
+| W032 | 2026-11-01 | Play-проверки (`start_stop_play`): ночи 3, 4, 5, 6 (Качок, рывок, окно перков, панель клавиш, метки, справочник, стенд монет). Изменения в место не сохранялись (runtime) | не требуется |
+
+Итог сеанса: Studio в Edit, место **не сохранено** — два новых скрипта (W029) лежат только в файле места: нужно сохранить место в Studio.

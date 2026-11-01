@@ -114,9 +114,9 @@ function ShopController.start()
 	local catButtons: { TextButton } = {}
 	local current = 1
 	-- режим продавца (НПС): вместо оружия по категориям — список товаров продавца за монеты
-	local vendor: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string } } }? = nil
+	local vendor: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string } }, donate: { { id: string, name: string, desc: string, price: string } }? }? = nil
 
-	local function populateVendor(v: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string } } })
+	local function populateVendor(v: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string } }, donate: { { id: string, name: string, desc: string, price: string } }? })
 		title.Text = v.title
 		hint.Text = v.greeting .. "  ·  Esc — close"
 		for order, item in v.items do
@@ -164,11 +164,66 @@ function ShopController.start()
 				Remotes.get("VendorBuy"):FireServer(v.vendorId, item.id)
 			end)
 		end
+		-- донатный раздел: товаров за робуксы пока нет — «Coming soon», как в лобби
+		if v.donate then
+			local base = #v.items + 1
+			local head = Instance.new("TextLabel")
+			head.Size = UDim2.new(1, 0, 0, 30)
+			head.LayoutOrder = base
+			head.BackgroundTransparency = 1
+			head.Font = Enum.Font.GothamBold
+			head.TextSize = 15
+			head.TextColor3 = Color3.fromRGB(214, 190, 96)
+			head.TextXAlignment = Enum.TextXAlignment.Left
+			head.Text = "  DONATE SHOP"
+			head.Parent = list
+			for k, item in v.donate do
+				local row = Instance.new("Frame")
+				row.Size = UDim2.new(1, 0, 0, 50)
+				row.LayoutOrder = base + k
+				row.BackgroundColor3 = Color3.fromRGB(38, 40, 48)
+				row.Parent = list
+				local rc = Instance.new("UICorner")
+				rc.CornerRadius = UDim.new(0, 5)
+				rc.Parent = row
+				local name = Instance.new("TextLabel")
+				name.Position = UDim2.fromOffset(12, 4)
+				name.Size = UDim2.new(1, -170, 0, 22)
+				name.BackgroundTransparency = 1
+				name.Font = Enum.Font.GothamBold
+				name.TextSize = 17
+				name.TextColor3 = Color3.fromRGB(190, 190, 195)
+				name.TextXAlignment = Enum.TextXAlignment.Left
+				name.Text = item.name
+				name.Parent = row
+				local desc = Instance.new("TextLabel")
+				desc.Position = UDim2.fromOffset(12, 27)
+				desc.Size = UDim2.new(1, -170, 0, 18)
+				desc.BackgroundTransparency = 1
+				desc.Font = Enum.Font.Gotham
+				desc.TextSize = 13
+				desc.TextColor3 = Color3.fromRGB(135, 140, 150)
+				desc.TextXAlignment = Enum.TextXAlignment.Left
+				desc.Text = item.desc
+				desc.Parent = row
+				local price = Instance.new("TextLabel")
+				price.AnchorPoint = Vector2.new(1, 0.5)
+				price.Position = UDim2.new(1, -12, 0.5, 0)
+				price.Size = UDim2.fromOffset(140, 24)
+				price.BackgroundTransparency = 1
+				price.Font = Enum.Font.GothamBold
+				price.TextSize = 16
+				price.TextColor3 = Color3.fromRGB(150, 150, 155)
+				price.TextXAlignment = Enum.TextXAlignment.Right
+				price.Text = item.price
+				price.Parent = row
+			end
+		end
 	end
 
 	local function populate()
 		for _, c in list:GetChildren() do
-			if c:IsA("TextButton") then
+			if c:IsA("TextButton") or c:IsA("Frame") or c:IsA("TextLabel") then
 				c:Destroy()
 			end
 		end
@@ -321,6 +376,10 @@ function ShopController.start()
 	markerGui.Name = "TentMarkers"
 	markerGui.ResetOnSpawn = false
 	markerGui.DisplayOrder = 5
+	markerGui.Enabled = player:GetAttribute("MarksOn") ~= false -- переключатель меток (InfoController, клавиша M)
+	player:GetAttributeChangedSignal("MarksOn"):Connect(function()
+		markerGui.Enabled = player:GetAttribute("MarksOn") ~= false
+	end)
 	markerGui.Parent = player:WaitForChild("PlayerGui")
 	local markers: { { part: Part, label: TextLabel, name: string } } = {}
 	local function clearMarkers()
