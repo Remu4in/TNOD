@@ -422,12 +422,12 @@ function InfoController.start()
 	panel.AutomaticSize = Enum.AutomaticSize.XY
 	panel.Size = UDim2.fromOffset(0, 0)
 	panel.BackgroundColor3 = PANEL
-	panel.BackgroundTransparency = 0.45
+	panel.BackgroundTransparency = 0.8
 	panel.Parent = gui
 	corner(panel, 6)
 	local ps = Instance.new("UIStroke")
 	ps.Color = OLIVE
-	ps.Transparency = 0.5
+	ps.Transparency = 0.8
 	ps.Thickness = 1
 	ps.Parent = panel
 	local pad = Instance.new("UIPadding")
@@ -448,6 +448,8 @@ function InfoController.start()
 		chip.AnchorPoint = Vector2.new(0, 0.5)
 		chip.Position = UDim2.new(0, 0, 0.5, 0)
 		chip.BackgroundColor3 = Color3.fromRGB(46, 54, 44)
+		chip.BackgroundTransparency = 0.6
+		chip.TextTransparency = 0.35
 		chip.Font = Enum.Font.GothamBold
 		chip.TextSize = 11
 		chip.TextColor3 = GOLD
@@ -457,6 +459,7 @@ function InfoController.start()
 		local cs = Instance.new("UIStroke")
 		cs.Color = OLIVE
 		cs.Thickness = 1
+		cs.Transparency = 0.7
 		cs.Parent = chip
 		local t = Instance.new("TextLabel")
 		t.Position = UDim2.fromOffset(44, 0)
@@ -466,7 +469,7 @@ function InfoController.start()
 		t.TextSize = 12
 		t.TextColor3 = TEXT
 		t.TextXAlignment = Enum.TextXAlignment.Left
-		t.TextTransparency = 0.1
+		t.TextTransparency = 0.35
 		t.Text = text
 		t.Parent = row
 		return row
