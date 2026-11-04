@@ -134,13 +134,16 @@ Config.Round = {
 	GameOverTime = 8,
 	-- Одновременно живых зомби (остальные ждут в очереди спавна). База в начале ночи по числу игроков 1…6, растёт с номером ночи (до +60 % к 20-й)
 	-- и с уровнем угрозы (Config.Threat.Tiers[].alive на игрока), затем с каждой минутой ночи на AliveStep, но не выше AliveCaps; всего ≤ AliveHardCap.
-	AliveBase = { 10, 15, 22, 30, 40, 50 } :: { number },
-	AliveStep = { 5, 6, 8, 10, 10, 10 } :: { number },
-	AliveCaps = { 50, 70, 90, 110, 130, 130 } :: { number },
+	-- плейтест на 4 игроках (2026-11-05): 60–80 живых уже на 1-й минуте — база в 1,5 раза меньше, рост по минутам в 2 раза меньше и только с 3-й минуты (121 с),
+	-- потолок команды — по 15 на игрока и не выше ни на каких ночах (конвой тоже)
+	AliveBase = { 7, 10, 15, 20, 27, 33 } :: { number },
+	AliveStep = { 2.5, 3, 4, 5, 5, 5 } :: { number },
+	AliveStepFrom = 3, -- с этой минуты ночи начинается рост
+	AliveCaps = { 15, 30, 45, 60, 75, 90 } :: { number },
 	AliveNightGrowth = 0.6,
 	ConvoyAliveMul = 1.3, -- на конвойных ночах (escort) живых зомби больше: колонна из нескольких машин
 	AliveWaves = 20,
-	AliveMin = 8,
+	AliveMin = 5,
 	AliveHardCap = 130, -- потолок нагрузки на сервер
 	SpawnsPerTick = 2,
 	SpawnTick = 0.25,
@@ -310,7 +313,7 @@ export type ItemDef = {
 }
 
 local Items: { [string]: ItemDef } = {
-	Medkit = { name = "Medkit", heal = 60, color = Color3.fromRGB(235, 235, 235) },
+	Medkit = { name = "Medkit", heal = 80, color = Color3.fromRGB(235, 235, 235) },
 	EnergyDrink = { name = "Energy drink", infiniteWaves = 1, color = Color3.fromRGB(60, 190, 255) },
 }
 Config.Items = Items
@@ -332,8 +335,8 @@ Config.Economy = {
 	-- Цель на игрока (вдвоём): к 15-й ночи около 6500 монет с учётом стартовых 500 (до 7200 с перками «Looter» на максимуме), к 20-й около 9700 (до 11 300).
 	-- Провал миссии — доля MissionFailShare (0: награды нет). Лежащему на конец ночи — DownedRewardFactor от награды.
 	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту ночь.
-	MissionPersonalTotal = 7250,
-	MissionTeamTotal = 6000,
+	MissionPersonalTotal = 14500, -- ×2 по плейтесту 2026-11-05: «ни на что почти не хватило»
+	MissionTeamTotal = 12000,
 	MissionGrowth = 0.10,
 	MissionRewardWaves = 20,
 	TeamShareMinPlayers = 1, -- командная часть делится на число игроков (соло получает всю)
@@ -1097,6 +1100,7 @@ Config.Waves = {
 	JitterPct = 10,
 	CapSolo = 80,
 	CapPerExtraPlayer = 0.45,
+	CountMul = 1 / 1.5, -- всего зомби за ночь в 1,5 раза меньше кривой выше (плейтест 2026-11-05)
 	HpGrowthPerWave = 0, -- было 0,12: здоровье не растёт, прогрессия — числом зомби
 	DamageGrowthPerWave = 0.02, -- было 0,03: при плоском здоровье урон к 20-й ночи ×1,38
 	SpeedGrowthPerWave = 0.01,
@@ -1118,9 +1122,9 @@ Config.ThreatClasses = {
 Config.Threat = {
 	Tiers = {
 		{ min = 0, hp = 1, runners = 0, early = 0, alive = 0 },
-		{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 1 },
-		{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 2 },
-		{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 3 },
+		{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 0.7 },
+		{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 1.3 },
+		{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 2 },
 	},
 }
 
@@ -1188,7 +1192,7 @@ Config.Convoy = {
 	SoldierDps = 15, -- урон по зомби в секунду каждого солдата (было 50)
 	SoldierShotInterval = 0.5,
 	SoldierRange = 40,
-	InstallHold = 6, -- сколько секунд держать «Установить шатёр»
+	InstallHold = 5, -- сколько секунд держать «Установить шатёр»; прогресс не сбрасывается, если отпустить (MissionService)
 	Model = "APC", -- машина конвоя из ServerStorage.Assets.Vehicles (бронетранспортёр Stryker); запасная — TransportTruck
 	Solid = false, -- true: машина твёрдая (толкает игроков, но на стыках дороги скорость неровная)
 	FollowGain = 6, -- 1/с: как сильно машина подтягивается к расчётной точке маршрута (скорость = курс × скорость + ошибка × FollowGain)
@@ -1470,7 +1474,7 @@ Config.Vendors = {
 	Vending = {
 		name = "Rifle", greeting = "Runs on backup power. No change given.",
 		items = {
-			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item", robux = 25, requires = "Pharmacy" },
+			{ id = "Medkit", name = "Medkit", desc = "+80 health", price = 150, kind = "item", robux = 25, requires = "Pharmacy" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite energy for 1 wave", price = 100, kind = "item", robux = 20 },
 			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo", robux = 15 },
 			-- оборудование: как аптечка — купить можно только после открытия своего здания (Garage — проволока, Turret shop — турель)
@@ -1482,7 +1486,7 @@ Config.Vendors = {
 	Pharmacy = {
 		name = "Pharmacist", greeting = "Mutants fear the sun — and we fear the night. Take it while it's light.",
 		items = {
-			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item" },
+			{ id = "Medkit", name = "Medkit", desc = "+80 health", price = 150, kind = "item" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite sprint energy for 1 wave", price = 100, kind = "item" },
 		},
 	},
@@ -1499,7 +1503,7 @@ Config.Vendors = {
 		name = "Supply sergeant", greeting = "Medkits, energy, wire, a turret. Whatever keeps you breathing in the tunnels.",
 		items = {
 			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo" },
-			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item" },
+			{ id = "Medkit", name = "Medkit", desc = "+80 health", price = 150, kind = "item" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite sprint energy for 1 wave", price = 100, kind = "item" },
 			{ id = "BarbedWire", name = "Barbed wire", desc = "Traps the first 2 mutants, slows the next 2", price = 250, kind = "equip" },
 			{ id = "ElectricWire", name = "Electric wire", desc = "Burns up to 5 mutants at 50 damage/s; lasts until dawn", price = 600, kind = "equip" },
@@ -1569,6 +1573,18 @@ Config.MetroCamp = {
 	guards = { Vector3.new(402, 0.1, 239), Vector3.new(438, 0.1, 239) },
 	vending = Vector3.new(420, 0.1, 237),
 	message = "Tomorrow night you go down into the metro. Stock up now: traders and a vending machine are waiting by the metro entrance!",
+}
+
+-- Мини-карта, иконки тиммейтов и метки (SquadService, SquadController, MinimapController)
+Config.Squad = {
+	PosInterval = 0.5, -- с: как часто сервер публикует позиции игроков (персонажи вдали могут быть не загружены стримингом)
+	IconSize = 22, -- пикселей: иконка тиммейта
+	IconTransparency = 0.72, -- почти прозрачная
+	PingSeconds = 7, -- сколько живёт метка (колёсико мыши)
+	PingInterval = 0.8, -- с: не чаще одной метки от игрока
+	PingRange = 900, -- студов: дальность луча метки
+	MapSize = 170, -- пикселей: сторона мини-карты
+	MapRadius = 220, -- студов от игрока до края карты
 }
 
 -- Лобби (LobbyService, Locations/Lobby): публичный сервер места — лобби, резервный сервер того же места — матч

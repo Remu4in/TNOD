@@ -120,3 +120,8 @@
 | W042 | 2026-11-04 | Временно на время Play: в `Config.Source` `Lobby.ForceMode = "match"` и `TestStands = true`. После проверок `Config` залит из файла заново (149572 байт, `ForceMode = nil`, `TestStands = false`) | не требуется |
 
 Итог: Studio в Edit, `Workspace` и `Lighting` в Edit без изменений, `Workspace.CurrentCamera` пуст. Место **не сохранено** — три новых модуля (W041) лежат только в файле места: сохранить в Studio.
+
+## Правки по плейтесту (2026-11-05)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W043 | 2026-11-05 | Новые ModuleScript: `Client.Controllers.CursorController`, `MinimapController`, `SpectateController`, `SquadController`, `Server.Services.SquadService`; залиты изменённые скрипты. Лежат только в файле места — сохранить | Удалить модули, залить прежние версии из git |

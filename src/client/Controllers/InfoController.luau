@@ -34,6 +34,7 @@ local KEYS: { { key: string, text: string } } = {
 	{ key = "G", text = "Drop weapon" },
 	{ key = "Z/X/T", text = "Emote: wave/cheer/dance" },
 	{ key = "V", text = "End the day" },
+	{ key = "MMB", text = "Ping" },
 	{ key = "M", text = "Map marks on / off" },
 	{ key = "H", text = "Buildings guide" },
 }

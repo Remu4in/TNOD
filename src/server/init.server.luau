@@ -230,6 +230,7 @@ local function startMatch()
 	VendorService.init(map)
 	require(Services:WaitForChild("BaseShopService")).init() -- донатный магазин на базе
 	SoldierService.init()
+	require(Services:WaitForChild("SquadService")).init() -- позиции тиммейтов, метки, план мини-карты
 
 	-- ездовые машины: маркеры Workspace.Markers.VehicleSpawn_<Шаблон>
 	local VehicleService = require(Services:WaitForChild("VehicleService"))
