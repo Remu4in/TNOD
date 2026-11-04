@@ -1,7 +1,8 @@
 --!strict
 -- Чистые формулы волн: без сервисов Roblox, поэтому тестируются вне Studio.
 -- Состав волны = обычные по долям и особые по таблице WaveMath.Plan + боссы (цикл WaveMath.BossCycle).
--- Количество — кривая от старта до потолка (zombieCount); монеты — общий бюджет команды (Config.Economy).
+-- Количество — кривая от старта до потолка (zombieCount); одновременно живых — aliveCap; длина дня и ночи — dayLength/nightLength;
+-- монеты — награда за миссию (Config.Economy). Здоровье зомби не растёт ни с волной, ни с уровнем угрозы (баланс v3, 2026-11): прогрессия — числом.
 
 local WaveMath = {}
 
@@ -23,7 +24,7 @@ export type WaveTuning = {
 
 -- Уровень угрозы команды (вооружённость): считается один раз в начале ночи (makeThreat)
 export type ClassDef = { weight: number, bonusMin: number, bonusMax: number }
-export type Tier = { min: number, hp: number, runners: number, early: number }
+export type Tier = { min: number, hp: number, runners: number, early: number, alive: number } -- alive: добавка к числу одновременно живых на игрока
 export type Threat = { classes: { string }, defs: { [string]: ClassDef }, tier: Tier, score: number, seed: number }
 
 -- Состав: тип зомби → сколько. Типы боссов начинаются с «Boss».
@@ -31,7 +32,8 @@ export type Composition = { [string]: number }
 
 -- План состава по волнам: shares — доли обычных зомби (нормируются), counts — особые в штуках (в команде растут вместе с общим
 -- числом зомби), fractions — доля от всех зомби волны, only — все обычные одного типа. Волны дальше последней берут последнюю запись.
-export type PlanRow = { shares: { [string]: number }, counts: { [string]: number }?, fractions: { [string]: number }?, only: string? }
+-- countMul — множитель общего числа зомби волны (броня-ночь 10: меньше, но жирнее).
+export type PlanRow = { shares: { [string]: number }, counts: { [string]: number }?, fractions: { [string]: number }?, only: string?, countMul: number? }
 WaveMath.Plan = {
 	[1] = { shares = { Walker = 100 } },
 	[2] = { shares = { Walker = 88, Runner = 12 } },
@@ -42,17 +44,17 @@ WaveMath.Plan = {
 	[7] = { shares = { Walker = 52, Runner = 25, Crawler = 10 }, counts = { Brute = 2, Chemist = 2 } },
 	[8] = { shares = { Walker = 48, Runner = 26, Crawler = 10 }, counts = { Brute = 3, Chemist = 3 } },
 	[9] = { shares = { Walker = 44, Runner = 28, Crawler = 12 }, counts = { Brute = 4, Chemist = 4 } },
-	[10] = { shares = { BucketHead = 100 }, only = "BucketHead" },
+	[10] = { shares = { BucketHead = 100 }, only = "BucketHead", countMul = 0.6 }, -- ночь брони: зомби в 1,7 раза меньше, но каждый 200–450 HP
 	[11] = { shares = { Walker = 45, Crawler = 10, Dark = 35 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
 	[12] = { shares = { Walker = 45, Crawler = 10, Dark = 35 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
 	[13] = { shares = { Walker = 45, Crawler = 10, Dark = 35 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
 	[14] = { shares = { Walker = 45, Crawler = 10, Dark = 35 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
 	[15] = { shares = { Walker = 40, Crawler = 10, Dark = 40 }, counts = { Brute = 5, Chemist = 4, Military = 2 } },
-	[16] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 5, Chemist = 5, Military = 3 } },
-	[17] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 5, Chemist = 5, Military = 3 } },
-	[18] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 6, Chemist = 5, Military = 4 } },
-	[19] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 6, Chemist = 5, Military = 4 } },
-	[20] = { shares = { Walker = 25, Runner = 10, Crawler = 5 }, counts = { Brute = 6, Chemist = 5 }, fractions = { Military = 0.5 } },
+	[16] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 5, Chemist = 5, Military = 3, MilitaryArmored = 1 } },
+	[17] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 5, Chemist = 5, Military = 3, MilitaryArmored = 1 } },
+	[18] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 6, Chemist = 5, Military = 4, MilitaryArmored = 2 } },
+	[19] = { shares = { Walker = 40, Runner = 30, Crawler = 12 }, counts = { Brute = 6, Chemist = 5, Military = 4, MilitaryArmored = 2 } },
+	[20] = { shares = { Walker = 25, Runner = 10, Crawler = 5 }, counts = { Brute = 6, Chemist = 5, MilitaryArmored = 2 }, fractions = { Military = 0.5 } },
 } :: { [number]: PlanRow }
 
 local LAST_PLAN = 20
@@ -72,7 +74,7 @@ function WaveMath.roll(seed: number, key: number, a: number, b: number): number
 	return a + x % (b - a + 1)
 end
 
-local NEUTRAL_TIER: Tier = { min = 0, hp = 1, runners = 0, early = 0 }
+local NEUTRAL_TIER: Tier = { min = 0, hp = 1, runners = 0, early = 0, alive = 0 }
 
 -- classesCfg — Config.ThreatClasses, tiers — Config.Threat.Tiers (по возрастанию min), loadouts — для каждого игрока список классов его оружия
 function WaveMath.makeThreat(classesCfg: { [string]: ClassDef }, tiers: { Tier }, loadouts: { { string } }, seed: number): Threat
@@ -143,9 +145,11 @@ function WaveMath.zombieCount(t: WaveTuning, wave: number, players: number, thre
 		end
 	end
 	local scale = t.CountScale or 1
-	return math.max(if scale < 1 then 3 else 1, math.floor(math.min(total, capFor(t, players) * scale) + 0.5))
+	total = math.min(total, capFor(t, players) * scale) * (planAt(wave).countMul or 1)
+	return math.max(if scale < 1 then 3 else 1, math.floor(total + 0.5))
 end
 
+-- Множитель здоровья зомби: в релизе всегда 1 (HpGrowthPerWave = 0 и hp = 1 у всех уровней угрозы); формула оставлена, чтобы тест ловил возврат роста
 function WaveMath.hpMultiplier(t: WaveTuning, wave: number, threat: Threat?): number
 	return (1 + t.HpGrowthPerWave * (wave - 1)) * (if threat then threat.tier.hp else 1)
 end
@@ -162,6 +166,52 @@ end
 
 function WaveMath.speedOf(t: WaveTuning, base: number, wave: number): number
 	return math.max(base, math.min(base * WaveMath.speedMultiplier(t, wave), t.SpeedCeil))
+end
+
+-- Одновременно живых зомби и длина фаз ------------------------------------------------------------------------------
+export type RoundTuning = {
+	AliveBase: { number }, -- одновременно живых в начале ночи по размеру команды (индекс — число игроков 1…6)
+	AliveStep: { number }, -- прибавка к живым за каждую следующую минуту ночи, по размеру команды
+	AliveCaps: { number }, -- потолок живых по размеру команды (минутный рост выше него не идёт)
+	ConvoyAliveMul: number?, -- множитель живых на конвойных ночах
+	AliveNightGrowth: number, -- рост базы к 20-й ночи: база × (1 + AliveNightGrowth · (ночь − 1) / (AliveWaves − 1))
+	AliveWaves: number,
+	AliveMin: number,
+	AliveHardCap: number, -- всего, не больше (потолок нагрузки на сервер)
+	FirstDayTime: number,
+	DayTime: number,
+	DayAfterBossBonus: number, -- добавка ко дню после ночи с боссом
+	NightTimes: { [number]: number }, -- особый предел ночи по номеру (метро); у остальных NightDefaultTime
+	NightDefaultTime: number,
+}
+
+local function bySize(list: { number }, players: number): number
+	return list[math.clamp(math.floor(players), 1, #list)]
+end
+
+-- Сколько зомби может быть живо одновременно (остальные ждут в очереди). База по размеру команды, растёт с номером ночи и уровнем угрозы
+-- (вооружённость команды: tier.alive на игрока), а затем — с каждой минутой ночи (minute = 1, 2, 3…: давление на тех, кто не выполняет миссию).
+-- Итог не выше потолка команды (AliveCaps) и AliveHardCap, не ниже AliveMin.
+function WaveMath.aliveCap(r: RoundTuning, wave: number, players: number, threat: Threat?, minute: number?, mul: number?): number
+	local p = math.max(1, players)
+	local k = math.clamp((wave - 1) / math.max(1, r.AliveWaves - 1), 0, 1)
+	local base = bySize(r.AliveBase, p) * (1 + r.AliveNightGrowth * k) + (if threat then threat.tier.alive else 0) * p
+	local grown = base + bySize(r.AliveStep, p) * (math.max(1, minute or 1) - 1)
+	local m = mul or 1 -- множитель ночи (конвой): больше зомби под колонну, но не выше AliveHardCap
+	return math.clamp(math.floor(math.min(grown * m, bySize(r.AliveCaps, p) * m) + 0.5), r.AliveMin, r.AliveHardCap)
+end
+
+-- Предел длины ночи, секунд: своя для каждой ночи (зависит от миссии), иначе NightDefaultTime
+function WaveMath.nightLength(r: RoundTuning, wave: number): number
+	return r.NightTimes[wave] or r.NightDefaultTime
+end
+
+-- Длина дня перед ночью wave + 1 (wave — сколько ночей уже прошло): первый день, обычный, после босса чуть дольше
+function WaveMath.dayLength(r: RoundTuning, t: WaveTuning, wave: number, first: boolean): number
+	if first then
+		return r.FirstDayTime
+	end
+	return r.DayTime + (if WaveMath.isBossWave(t, wave) then r.DayAfterBossBonus else 0)
 end
 
 function WaveMath.isBossWave(t: WaveTuning, wave: number): boolean
@@ -256,8 +306,10 @@ function WaveMath.composition(t: WaveTuning, wave: number, players: number, thre
 		table.insert(ids, id)
 	end
 	table.sort(ids)
+	-- тестовый масштаб числа зомби (CountScale) уменьшает и особых: иначе в маленькой тестовой волне остаются одни громилы
+	local countScale = t.CountScale or 1
 	for _, id in ids do
-		local n = math.min(free, math.floor(counts[id] * scale + 0.5))
+		local n = math.min(free, math.floor(counts[id] * scale * countScale + 0.5))
 		if n > 0 then
 			comp[id] = (comp[id] or 0) + n
 			free -= n
@@ -317,22 +369,17 @@ function WaveMath.spawnQueue(comp: Composition, rng: Random): { string }
 	return queue
 end
 
--- Экономика команды ------------------------------------------------------------------------------------
--- Вариант C (docs/balance/economy_2026-10.md). За ночь: награда за миссию (missionReward: личная часть + командная, делится на игроков)
--- + монеты за убийства: пул (killPool) делится по весам типов, убийство в голову платит полную долю, в тело — KillBodyShare; сверх killCap
--- на игрока за ночь убийства не платят.
+-- Экономика ------------------------------------------------------------------------------------------------------------
+-- Монеты — только за миссии (баланс v3, docs/balance/balance_2026-11.md); за убийства дают очки, не монеты. Награда за ночь: личная часть —
+-- каждому целиком, командная — общий банк, делится поровну (но не меньше чем на TeamShareMinPlayers: соло получает столько же, сколько вдвоём,
+-- и здания дальше оплачиваются взносами игрока). Сумма командной части не зависит от числа игроков — поэтому у большой команды
+-- на здания в сумме не больше, чем у маленькой.
 export type EconomyTuning = {
 	MissionPersonalTotal: number,
 	MissionTeamTotal: number,
 	MissionGrowth: number,
 	MissionRewardWaves: number,
-	KillCapMin: number,
-	KillCapMax: number,
-	KillCapWaves: number,
-	KillPoolShare: number,
-	KillBodyShare: number,
-	KillWeights: { [string]: number },
-	BossKillWeight: number,
+	TeamShareMinPlayers: number,
 }
 
 -- Награда за миссию ночи: (личная — каждому игроку целиком, командная — всего, делится поровну). Рост от ночи к ночи линейный;
@@ -343,35 +390,10 @@ function WaveMath.missionReward(e: EconomyTuning, wave: number): (number, number
 	return e.MissionPersonalTotal * k, e.MissionTeamTotal * k
 end
 
--- Потолок монет за убийства на игрока за ночь: растёт от KillCapMin к KillCapMax за KillCapWaves ночей
-function WaveMath.killCap(e: EconomyTuning, wave: number): number
-	local k = math.clamp((wave - 1) / math.max(1, e.KillCapWaves - 1), 0, 1)
-	return e.KillCapMin + (e.KillCapMax - e.KillCapMin) * k
-end
-
--- Пул монет за убийства всей волны (если убить всех): доля потолка на каждого игрока команды
-function WaveMath.killPool(e: EconomyTuning, wave: number, players: number?): number
-	return e.KillPoolShare * WaveMath.killCap(e, wave) * math.max(1, players or 1)
-end
-
--- Монеты за убийство в голову по типам (в тело — умножить на KillBodyShare); сумма по всей волне = killPool
-function WaveMath.killUnits(e: EconomyTuning, wave: number, comp: Composition, players: number?): { [string]: number }
-	local function weight(id: string): number
-		return e.KillWeights[id] or (if WaveMath.isBossType(id) then e.BossKillWeight else 1)
-	end
-	local sum = 0
-	for id, n in comp do
-		sum += weight(id) * n
-	end
-	local units: { [string]: number } = {}
-	if sum <= 0 then
-		return units
-	end
-	local pool = WaveMath.killPool(e, wave, players)
-	for id in comp do
-		units[id] = pool * weight(id) / sum
-	end
-	return units
+-- Сколько получает каждый стоящий на ногах игрок за выполненную миссию ночи (до множителя перка монет)
+function WaveMath.playerReward(e: EconomyTuning, wave: number, players: number): number
+	local personal, team = WaveMath.missionReward(e, wave)
+	return personal + team / math.max(e.TeamShareMinPlayers, players)
 end
 
 return WaveMath

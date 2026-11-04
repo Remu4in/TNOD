@@ -67,17 +67,23 @@ function ArmsController.start()
 		end
 		-- пока работает viewmodel (руки и оружие в кадре), настоящие руки и Tool себе прячем
 		local vm = ViewModel.active()
+		-- в машине от первого лица (стрелок) руки не нужны: прячем и их
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local head = char:FindFirstChild("Head") :: BasePart?
+		local cam = workspace.CurrentCamera
+		local seatedFirst = hum ~= nil and hum.SeatPart ~= nil and head ~= nil and cam ~= nil and (cam.CFrame.Position - head.Position).Magnitude < 1.5
+		local hide = vm or seatedFirst
 		for _, name in ARM_PARTS do
 			local part = char:FindFirstChild(name)
 			if part and part:IsA("BasePart") then
-				part.LocalTransparencyModifier = if vm then 1 else 0
+				part.LocalTransparencyModifier = if hide then 1 else 0
 			end
 		end
 		local held = char:FindFirstChildOfClass("Tool")
 		if held then
 			for _, d in held:GetChildren() do
 				if d:IsA("BasePart") then
-					d.LocalTransparencyModifier = if vm then 1 else 0
+					d.LocalTransparencyModifier = if hide then 1 else 0
 				end
 			end
 		end

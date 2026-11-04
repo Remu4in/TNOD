@@ -79,13 +79,18 @@ local function buildTestStands(sp: Vector3)
 	end)
 	local waves: { [string]: { string } } = {
 		["Wave"] = { "Walker", "Walker", "Walker", "Walker", "Walker", "Walker", "Runner", "Runner", "Runner", "Brute" },
-		["Special"] = { "Military", "Military", "Chemist", "Dark", "Dark", "BucketHead", "BucketHead", "Crawler", "Crawler" },
+		["Special"] = { "Military", "MilitaryArmored", "Chemist", "Dark", "Dark", "BucketHead", "BucketHead", "Crawler", "Crawler" },
 	}
 	pad("TestWave", Vector3.new(-4, 0, 8), Color3.fromRGB(220, 60, 60), "ZOMBIE WAVE", "Call a wave", function()
 		ZombieService.enqueue(waves["Wave"]) -- без множителей: сила текущей ночи не сбрасывается
 	end)
 	pad("TestSpecial", Vector3.new(4, 0, 8), Color3.fromRGB(150, 60, 200), "SPECIAL ZOMBIES", "Call specials", function()
 		ZombieService.enqueue(waves["Special"])
+	end)
+	-- +10 000 монет: чтобы открыть все здания и проверить их (только Studio: testStandsOn)
+	pad("TestCoins", Vector3.new(-20, 0, 8), Color3.fromRGB(255, 205, 60), "+10 000 COINS", "Get 10 000 coins", function(player)
+		require(Services:WaitForChild("EconomyService")).add(player, 10000)
+		Remotes.get("Notify"):FireClient(player, "+10 000 coins (test)", 2)
 	end)
 	-- вызывает босса (по кругу: Качок, Гаргантюа, Повелитель тёмных) — проверить его атаки и полоску здоровья, не дожидаясь 5-й ночи
 	local bossCycle, bossNext = { "BossBuff", "BossGarg", "BossStrong", "BossFinal" }, 0
@@ -223,6 +228,7 @@ local function startMatch()
 	RoundService.start(map)
 	EquipmentService.init()
 	VendorService.init(map)
+	require(Services:WaitForChild("BaseShopService")).init() -- донатный магазин на базе
 	SoldierService.init()
 
 	-- ездовые машины: маркеры Workspace.Markers.VehicleSpawn_<Шаблон>

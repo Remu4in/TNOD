@@ -59,7 +59,8 @@ type State = {
 	installed: boolean,
 	bossIndex: number, -- bossfight: номер вышедшего босса из def.bosses
 	nestsBurned: number, -- metro: сожжено гнёзд
-	bossOut: boolean, -- metro: босс станции уже вызван
+	bossOut: boolean, -- metro: босс станции уже вызван; classic с bossAfterKills: босс ночи уже выпущен
+	bossKills: number, -- classic с bossAfterKills: сколько убийств игроков нужно до выхода босса (0 — босс в начале ночи)
 	bossSeen: boolean, -- metro: босс появился (миссия ждёт его смерти)
 	gensOn: number, -- metro: запущено генераторов
 	tnt: number, -- metro: установлено зарядов ТНТ
@@ -77,7 +78,7 @@ local hubFolder: Folder? = nil -- тоннель в горе после метр
 local objects: Folder? = nil
 local finalePos: Vector3? = nil -- финал акта 1: вход в бункер (MissionService.beginFinale)
 local rng = Random.new()
-local installedSites: { [number]: { instances: { Instance }, shop: Vector3?, vending: { string } } } = {}
+local installedSites: { [number]: { instances: { Instance }, shop: Vector3?, vending: { string }, stocked: boolean } } = {}
 local suppliedSites: { [number]: { Instance } } = {}
 
 -- Подписи маяка места миссии по типу
@@ -221,10 +222,13 @@ local function districtPoints(anchorIndex: number, count: number, grid: RoadRout
 		return list
 	end
 	local width = math.pi * 2 / count
+	-- путь пешком проверяем от дороги у места шатра: когда шатёр уже стоит, место шатра внутри его модели — оттуда пути нет никуда,
+	-- и разведка ночи 4 получала одну случайную точку после сотен неудачных поисков пути
+	local walkFrom = RoadRoute.grid().snap(anchor, 150) or anchor
 	local function candidate(angle: number, needWalk: boolean): Vector3?
 		local radius = rr[1] + seeded:NextNumber() * (rr[2] - rr[1])
 		local p = groundAt(anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius)
-		if p and farEnough(p) and openSpot(p) and (not needWalk or walkable(anchor, p)) then
+		if p and farEnough(p) and openSpot(p) and (not needWalk or walkable(walkFrom, p)) then
 			return p
 		end
 		return nil
@@ -447,8 +451,9 @@ local function dropSupplies(site: number)
 	suppliedSites[site] = list
 end
 
--- Установка шатра района: модель, припасы, автомат и магазин (ShopService)
-local function installTent(site: number)
+-- Установка шатра района: модель и магазин (ShopService). empty = true: шатёр пустой — без ящиков с припасами и автомата; их привозит
+-- следующая ночь с конвоем (stockTent). Ночь 3 ставит пустой шатёр, ночь 4 привозит припасы.
+local function installTent(site: number, empty: boolean?)
 	if installedSites[site] then
 		return
 	end
@@ -457,12 +462,30 @@ local function installTent(site: number)
 	if not f or not tent then
 		return
 	end
-	local rec: { instances: { Instance }, shop: Vector3?, vending: { string } } = { instances = {}, shop = nil, vending = {} }
+	local rec: { instances: { Instance }, shop: Vector3?, vending: { string }, stocked: boolean } = { instances = {}, shop = nil, vending = {}, stocked = false }
 	local clone = tent:Clone()
 	clone.Parent = workspace:FindFirstChild("Base") or workspace
 	table.insert(rec.instances, clone)
+	local cf, size = clone:GetBoundingBox()
+	local center = Vector3.new(cf.Position.X, cf.Position.Y - size.Y / 2, cf.Position.Z)
+	ShopService.addPoint("Military tent", center, math.max(size.X, size.Z) / 2 + 18, false, true, true)
+	rec.shop = center
+	installedSites[site] = rec
+	if not empty then
+		MissionService.stockTent(site)
+	end
+end
+
+-- Привезти в установленный шатёр припасы: ящики Site_<n>/Supplies и вендинговый автомат (один раз)
+function MissionService.stockTent(site: number)
+	local rec = installedSites[site]
+	local f = siteFolder(site)
+	if not rec or rec.stocked then
+		return
+	end
+	rec.stocked = true
 	dropSupplies(site)
-	local vend = f:FindFirstChild("Vending")
+	local vend = f and f:FindFirstChild("Vending")
 	local markers = workspace:FindFirstChild("Markers")
 	if vend and markers then
 		for _, m in vend:GetChildren() do
@@ -475,11 +498,12 @@ local function installTent(site: number)
 			end
 		end
 	end
-	local cf, size = clone:GetBoundingBox()
-	local center = Vector3.new(cf.Position.X, cf.Position.Y - size.Y / 2, cf.Position.Z)
-	ShopService.addPoint("Military tent", center, math.max(size.X, size.Z) / 2 + 18, false, true, true)
-	rec.shop = center
-	installedSites[site] = rec
+end
+
+-- Где фактически стоит установленный шатёр района (низ габарита); nil — не установлен
+function MissionService.tentPosition(site: number): Vector3?
+	local rec = installedSites[site]
+	return if rec then rec.shop else nil
 end
 
 function MissionService.isInstalled(site: number): boolean
@@ -610,7 +634,7 @@ local function makeSiteMarker(state: State, enabled: boolean)
 	prompt.Triggered:Connect(function(player: Player)
 		local s = current
 		if s and s == state and s.phase == "install" and PlayerService.isUp(player) then
-			installTent(s.site)
+			installTent(s.site, s.def.supplies == false) -- supplies = false: шатёр пустой, припасы привезёт конвой
 			s.installed = true
 			notify("Tent set up!", 4)
 		end
@@ -675,7 +699,7 @@ local function setupBaseBattle(night: number, comp: WaveMath.Composition, hpMult
 		ZombieService.setAnchor(nil)
 		ZombieService.setSpawnPoints(points)
 	end
-	ZombieService.setAliveCap(B.AliveCap)
+	ZombieService.setAliveCap(math.max(B.AliveCap, ZombieService.nightAliveCap())) -- не меньше ночного потолка (растёт с числом игроков и оружием)
 	BarricadeService.clearRegion(Z.minX, Z.maxX, Z.minZ, Z.maxZ)
 	BaseBattleService.start(playerSpawnPosition())
 end
@@ -700,9 +724,14 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
 		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0, nestsBurned = 0, bossOut = false, bossSeen = false, gensOn = 0, tnt = 0, detStage = 0, defendLeft = 0, detPos = Vector3.zero, hasKey = false, keyOut = false, tntModels = {}, actions = {},
+		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0, nestsBurned = 0, bossOut = false, bossKills = 0, bossSeen = false, gensOn = 0, tnt = 0, detStage = 0, defendLeft = 0, detPos = Vector3.zero, hasKey = false, keyOut = false, tntModels = {}, actions = {},
 	}
 	current = state
+	if def.bossAfterKills then
+		-- босс ночи выйдет после стольких убийств (RoundService не ставит его в начальную очередь); тестовый масштаб — как у минимума убийств
+		state.bossKills = math.max(Config.MissionKillsFloor, math.floor(def.bossAfterKills * (Config.Waves.CountScale or 1) + 0.5))
+		state.minKills = math.max(state.minKills, state.bossKills)
+	end
 	ZombieService.setAnchor(anchor)
 	if def.baseBattle then
 		setupBaseBattle(night, comp, hpMult)
@@ -714,14 +743,14 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		local list = def.bosses or { "BossStrong" }
 		state.bossIndex = 1
 		ZombieService.enqueue({ list[1] }, hpMult, night, true)
-		ZombieService.setAliveCap(Config.Round.ZombiesAliveMin)
+		ZombieService.setAliveCap(Config.Round.AliveMin)
 	end
 	if Config.MissionMoveTeam and kind ~= "escort" then
 		moveTeam(anchor)
 	end
 	-- место миссии отмечено высоким маяком: команда идёт к нему сама (телепорта нет)
 	if kind ~= "build" then -- у «build» место шатра отмечает собственный круг (makeSiteMarker)
-		makeBeacon(anchor, PLACE_LABELS[kind] or PLACE_LABELS.classic, Config.PlaceBeacon.Color, Config.PlaceBeacon.Radius)
+		makeBeacon(MissionService.tentPosition(def.anchor) or anchor, PLACE_LABELS[kind] or PLACE_LABELS.classic, Config.PlaceBeacon.Color, Config.PlaceBeacon.Radius) -- метка у фактического тента, если он уже стоит
 	end
 	if kind == "scout" then
 		for i, pos in districtPoints(def.anchor, def.points or 3, nil, def.radius) do
@@ -738,19 +767,87 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 		local grid = RoadRoute.grid()
 		-- порядок объезда выбирает ConvoyService (кратчайший по дорогам, каждая точка один раз); метки подписываем после старта
 		local route = districtPoints(def.anchor, def.points or 3, grid, def.radius)
+		-- точки маршрута, заданные маркерами карты (например, напротив Barricade_12 у дороги к шатру), заменяют точки района с тем же номером
+			for index, markerName in def.waypointMarkers or {} do
+				local mk = workspace:FindFirstChild("Markers")
+				local m = mk and mk:FindFirstChild(markerName) :: BasePart?
+				if m then
+					route[math.min(index, #route + 1)] = m.Position
+				else
+					warn("[MissionService] no waypoint marker " .. markerName)
+				end
+			end
+		-- точки маршрута из разведки другого района (ночь 3: вторая точка — точка разведки района 2, снятая на дорогу)
+		local mkFolder = workspace:FindFirstChild("Markers")
+		for index, spec in def.waypointScout or {} do
+			local named = def.waypointMarkers and def.waypointMarkers[index]
+			if named and mkFolder and mkFolder:FindFirstChild(named) then
+				continue -- точку задал маркер на карте: он важнее
+			end
+			local p = districtPoints(spec.anchor, spec.count, nil, spec.radius)[spec.index]
+			local onRoad = p and grid.snap(p, 120)
+			if onRoad then
+				route[math.min(index, #route + 1)] = onRoad
+			else
+				warn(string.format("[MissionService] no road near the scouting point %d of the area %d — the convoy route keeps its own point", spec.index, spec.anchor))
+			end
+		end
+		-- маршрут целиком по меткам карты (Workspace.Markers), строго по порядку: перед каждой главной точкой <имя>_Via1, <имя>_Via2, … — промежуточные
+		-- повороты (колонна едет между соседними метками кратчайшей дорогой, поэтому метки на углах задают, где ехать прямо, а где поворачивать)
+		if def.markerRoute then
+			local mkDir = workspace:FindFirstChild("Markers")
+			local list: { Vector3 } = {}
+			for _, name in def.markerRoute do
+				for k = 1, 12 do
+					local via = mkDir and mkDir:FindFirstChild(name .. "_Via" .. k)
+					if via and via:IsA("BasePart") then
+						table.insert(list, via.Position)
+					end
+				end
+				local m = mkDir and mkDir:FindFirstChild(name)
+				if m and m:IsA("BasePart") then
+					table.insert(list, m.Position)
+				end
+			end
+			if #list > 0 then
+				route = list
+			end
+		end
+		-- dropFirstPoint (ночь 12): первую по пути точку убираем, остальные — в найденном порядке объезда
+		if def.dropFirstPoint and #route >= 2 then
+			local siteStop = roadStopNear(grid, anchor)
+			local order = if siteStop then ConvoyService.planOrder(groundAt(start.X, start.Z) or start, route, siteStop) else {}
+			if #order >= 2 then
+				table.remove(order, 1)
+				route = order
+			end
+		end
+		-- маршрут по меткам (или endAtLastPoint): последняя точка — конечная остановка, колонна доехала до неё — миссия выполнена (к шатру не возвращается)
+		local finalPoint: Vector3? = nil
+		if (def.markerRoute or def.endAtLastPoint) and #route >= 2 then
+			finalPoint = table.remove(route)
+		end
 		local routeBeacons: { BasePart } = {}
 		for _, p in route do
 			table.insert(routeBeacons, makeBeacon(p, "Route"))
 		end
 		local stop = roadStopNear(grid, anchor)
+		if finalPoint then
+			stop = finalPoint
+			makeBeacon(finalPoint, "Route"):SetAttribute("BaseText", string.format("◆ Route %d", #route + 1))
+		end
+		-- конечная остановка колонны, заданная меткой RouteEnd (Workspace.Markers), важнее остановки у шатра
+		local endMarker = workspace:FindFirstChild("Markers") and workspace.Markers:FindFirstChild("RouteEnd")
+		if def.markerRoute and endMarker and endMarker:IsA("BasePart") then
+			stop = endMarker.Position
+		end
 		local groundStart = groundAt(start.X, start.Z) or start
-		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed) then
+		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed, def.column, def.keepOrder or def.dropFirstPoint) then
 			warn("[MissionService] convoy not started — the mission plays as a regular night")
 			state.kind = "classic"
 			state.infinite = false
 		else
 			ZombieService.setAnchor(groundStart)
-			ZombieService.setAliveCap(Config.Convoy.AliveCap)
 			for i, p in ConvoyService.routeOrder() do
 				local nearest, nd = nil :: BasePart?, math.huge
 				for _, b in routeBeacons do
@@ -782,7 +879,9 @@ local function topUp(state: State)
 	-- classic/clear: волна может быть меньше минимума убийств — тогда подсылаем ещё, пока не наберётся
 	local short = not state.infinite and (state.kind == "classic" or state.kind == "clear")
 		and ZombieService.remaining() + state.playerKills < state.minKills
-	if (state.infinite or short) and ZombieService.queueSize() < 8 then
+	-- метро (финал): пока жив босс станции, других зомби не подсылаем
+	local bossDuel = state.def.finale and state.bossOut and (not state.bossSeen or ZombieService.bossAlive())
+	if (state.infinite or short) and not bossDuel and ZombieService.queueSize() < 8 then
 		-- подпитка потока: обычные зомби волны (боссы приходят один раз, в начале ночи)
 		local normal: WaveMath.Composition = {}
 		for id, n in state.comp do
@@ -1189,7 +1288,7 @@ local function buildTnt(state: State, metro: Instance)
 		warn("[MissionService] metro: no TNT model or markers — there will be no charges")
 		return
 	end
-	for i = 1, Config.Metro.Tnt do
+	for _, i in Config.Metro.TntMarkers do
 		local marker = markers:FindFirstChild("Metro_Tnt_" .. i)
 		if marker and marker:IsA("BasePart") then
 			local floor = metroFloor(marker.Position.X, marker.Position.Z, marker.Position.Y + 3) or marker.Position
@@ -1317,6 +1416,9 @@ local function buildDetonator(state: State, metro: Instance)
 		if s.tnt < Config.Metro.Tnt then
 			table.insert(missing, string.format("TNT charges (%d of %d)", s.tnt, Config.Metro.Tnt))
 		end
+		if s.def.boss and (not s.bossSeen or ZombieService.bossAlive()) then
+			table.insert(missing, "the station boss killed")
+		end
 		if #missing > 0 then
 			Remotes.get("Notify"):FireClient(player, "The detonator isn't ready. Needed: " .. table.concat(missing, ", "), 4)
 			return
@@ -1430,14 +1532,14 @@ function MissionService.onEntranceTouched(player: Player)
 				buildNest(s, marker, i)
 			end
 		end
-		if (s.def.nests or 0) > 0 then
+		if s.def.finale or (s.def.nests or 0) > 0 then
 			-- финал: генераторы, места под ТНТ, детонатор и костяная дверь выхода
 			buildGenerators(s, metro :: Instance)
 			buildTnt(s, metro :: Instance)
 			buildDetonator(s, metro :: Instance)
 			buildExitDoor(s, metro :: Instance)
 		end
-		notify(if (s.def.nests or 0) > 0 then "The team went down into the metro — burn the nests, kill the boss, start the generators and plant the charges!" else "The team went down into the metro — clear the station", 4)
+		notify(if (s.def.nests or 0) > 0 then "The team went down into the metro — burn the nests, kill the boss, start the generators and plant the charges!" elseif s.def.finale then "The team went down into the metro — kill the boss, start the generators and plant the charges!" else "The team went down into the metro — clear the station", 4)
 	end
 end
 
@@ -1470,6 +1572,15 @@ function MissionService.init()
 	Players.PlayerRemoving:Connect(function(player: Player)
 		metroDebounce[player] = nil
 	end)
+	-- скамейки метро — декор: на них не садятся (игрок садился случайно, проходя мимо)
+	local metro = workspace:FindFirstChild("Metro")
+	if metro then
+		for _, d in metro:GetDescendants() do
+			if d:IsA("Seat") then
+				d.Disabled = true
+			end
+		end
+	end
 end
 
 -- Раз в 0,25 с: "done" — миссия выполнена, "fail" — провалена; nil — идёт (classic/clear завершает RoundService по числу зомби)
@@ -1556,21 +1667,29 @@ function MissionService.update(dt: number): string?
 			end
 			local status = ConvoyService.update(dt, near)
 			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
+			local aliveV, totalV = ConvoyService.vehicleCount()
 			text = if near
-				then string.format("Escort the convoy. Truck durability: %d%%", hp)
-				else string.format("Get close to the convoy: it's waiting (within %d studs). Truck durability: %d%%", Config.Convoy.FollowRadius, hp)
+				then string.format("Escort the convoy (%d of %d vehicles). Lead vehicle durability: %d%%", aliveV, totalV, hp)
+				else string.format("Get close to the convoy: it's waiting (within %d studs). Lead vehicle durability: %d%%", Config.Convoy.FollowRadius, hp)
 			if status == "fail" then
 				notify("The convoy was destroyed!", 5)
 				result = "fail"
 			elseif status == "arrived" then
-				dropSupplies(state.site)
+				-- ночь 3 (supplies = false): шатёр ставится пустым; ночь 4 привозит припасы в уже стоящий шатёр
+				local stocked = state.def.supplies ~= false
+				if stocked and (state.def.install or MissionService.isInstalled(state.site)) then
+					MissionService.stockTent(state.site)
+				end
 				if state.def.install then
 					notify("The convoy has arrived — supplies delivered", 4)
 				else
 					-- без установки руками шатёр ставится сам (если ночью 2 его не ставили, например при пропуске ночи)
-					installTent(state.site)
+					installTent(state.site, not stocked)
 					state.installed = true
-					notify("The convoy has arrived — tent set up, supplies delivered", 4)
+					if stocked then
+						MissionService.stockTent(state.site)
+					end
+					notify(if stocked then "The convoy has arrived — supplies delivered" else "The convoy has arrived — the tent is set up, but empty: supplies come tomorrow", 5)
 				end
 				if state.def.install then
 					state.phase = "install"
@@ -1591,12 +1710,12 @@ function MissionService.update(dt: number): string?
 			ZombieService.moveAnchor(state.anchor)
 			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
 			if state.phase == "install" then
-				text = string.format("Set up the tent: hold E. Truck durability: %d%%", hp)
+				text = string.format("Set up the tent: hold E. Lead vehicle durability: %d%%", hp)
 				if state.installed and not result then
 					result = "done"
 				end
 			else
-				text = string.format("The convoy is in place. Truck durability: %d%%", hp)
+				text = string.format("The convoy is in place. Lead vehicle durability: %d%%", hp)
 				if not result then
 					result = "done"
 				end
@@ -1613,18 +1732,25 @@ function MissionService.update(dt: number): string?
 				result = "done"
 			elseif state.nestsBurned < nests then
 				text = string.format("Burn the mutant nests: %d of %d (hold E at a nest)", state.nestsBurned, nests)
+			elseif state.def.finale and state.def.boss and not state.bossOut and (state.gensOn < Config.Metro.Gens or state.tnt < Config.Metro.Tnt) then
+				-- финал без гнёзд: сначала генераторы и заряды, босс — потом
+				text = finaleStep(state, dt, need)
 			elseif state.def.boss and not state.bossOut then
-				-- гнёзда сожжены: на станцию выходит босс (из туннелей, вне очереди)
+				-- гнёзда сожжены (или их нет; в финале — запущены генераторы и заложены заряды): на станцию выходит босс (из туннелей, вне очереди)
 				state.bossOut = true
+				if state.def.finale then
+					-- бой с боссом один на один: остальных зомби убираем, поток стоит, пока босс жив (topUp)
+					ZombieService.clearAll()
+				end
 				ZombieService.enqueue({ state.def.boss }, state.hpMult, state.night, true)
-				notify("Nests burned — the boss has come out onto the station!", 5)
+				notify(if nests > 0 then "Nests burned — the boss has come out onto the station!" else "The station boss has come out!", 5)
 				text = "Kill the station boss"
 			elseif state.def.boss and not state.bossSeen then
 				state.bossSeen = ZombieService.bossAlive() -- ждём, пока босс появится
 				text = "Kill the station boss"
 			elseif state.def.boss and ZombieService.bossAlive() then
 				text = "Kill the station boss"
-			elseif nests > 0 then
+			elseif nests > 0 or state.def.finale then
 				text = finaleStep(state, dt, need)
 			else
 				text = string.format("Clear the station: killed %d of %d", math.min(state.metroKills, need), need)
@@ -1652,7 +1778,15 @@ function MissionService.update(dt: number): string?
 		if state.def.baseBattle then
 			text ..= string.format("\nSoldiers at the rally point: %d of %d", BaseBattleService.alive(), Config.BaseBattle.Defenders)
 		end
-		if left == 0 then
+		if state.bossKills > 0 and not state.bossOut then
+			-- сначала зомби, потом босс
+			text = string.format("Kill the mutants: %d of %d — then the boss comes", math.min(state.playerKills, state.bossKills), state.bossKills)
+			if state.playerKills >= state.bossKills then
+				state.bossOut = true
+				ZombieService.enqueue(WaveMath.bossTypes(Config.Waves, state.night), state.hpMult, state.night, true)
+				notify("The boss is coming!", 5)
+			end
+		elseif left == 0 then
 			result = "done"
 		end
 	end

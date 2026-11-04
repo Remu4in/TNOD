@@ -72,6 +72,7 @@ type Zombie = {
 	nextRock: number, -- когда босс снова может бросить обломок
 	phase2: boolean, -- финальный босс во второй фазе: только способности, неуязвим к огнестрелу (принимает лишь удары Impact.melee)
 	nextAtk: { [string]: number }, -- когда можно снова каждую атаку из def.attacks (BossAI): slam, crawlers, charge, swing
+	sufferVoiceAt: number, -- когда зомби в последний раз стонал от проволоки
 }
 
 -- Атака босса. kind: "jump" (прыжок на игрока) | "rock" (бросок обломка). Фазы: jump — "charge" (3 с, на земле под игроком красная зона) → "air" → посадка;
@@ -715,6 +716,7 @@ local function acquire(typeId: string): Zombie
 		nextRock = 0,
 		nextAtk = {},
 		phase2 = false,
+		sufferVoiceAt = 0,
 	}
 end
 
@@ -1236,6 +1238,93 @@ local function flinch(z: Zombie, kind: string, hitName: string, flat: Vector3, p
 	end
 end
 
+-- Страдания в проволоке (вызывает EquipmentService): "Barbed" — корчится, вскидывает руки, воет и лязгает; "Electric" — бьётся в судорогах, искры и треск.
+-- Звук создаёт сервер на корне зомби (слышат все, кто рядом); позы — суставы C0, как при попадании.
+local function hazardSound(z: Zombie, id: string, volume: number, speed: number, distortion: number?)
+	local s = Instance.new("Sound")
+	s.SoundId = id
+	s.Volume = volume
+	s.PlaybackSpeed = speed
+	s.RollOffMode = Enum.RollOffMode.InverseTapered
+	s.RollOffMinDistance = 8
+	s.RollOffMaxDistance = 70
+	if distortion then
+		local d = Instance.new("DistortionSoundEffect")
+		d.Level = distortion
+		d.Parent = s
+	end
+	s.Parent = z.root
+	s:Play()
+	Debris:AddItem(s, 3)
+end
+
+function ZombieService.suffer(model: Model, kind: string, seconds: number?)
+	local z = active[model]
+	if not z or not z.alive or z.bossAct then
+		return
+	end
+	local now = os.clock()
+	local H = Config.HazardSounds
+	local gen = z.poseGen
+	if kind == "Electric" then
+		local len = seconds or 2
+		hazardSound(z, H.zap, 0.9, 2.4, 0.9)
+		hazardSound(z, H.zap, 0.7, 3.6, 0.8)
+		hazardSound(z, H.buzz, 0.5, 2.2, 0.85)
+		if now - z.sufferVoiceAt > 1.2 then
+			z.sufferVoiceAt = now
+			hazardSound(z, H.pain[math.random(1, #H.pain)], 0.45, 1.5)
+		end
+		local spark = Instance.new("Sparkles")
+		spark.SparkleColor = Color3.fromRGB(110, 180, 255)
+		spark.Parent = z.root
+		Debris:AddItem(spark, len)
+		local light = Instance.new("PointLight")
+		light.Color = Color3.fromRGB(110, 180, 255)
+		light.Range = 12
+		light.Brightness = 3
+		light.Parent = z.root
+		Debris:AddItem(light, len)
+		-- судороги: суставы дёргаются случайно около десяти раз в секунду, потом возвращаются в покой
+		task.spawn(function()
+			local spread = { Torso = 9, Head = 28, LeftArm = 65, RightArm = 65 }
+			for _ = 1, math.max(3, math.floor(len / 0.1)) do
+				if not z.alive or z.poseGen ~= gen then
+					return
+				end
+				for name, deg in spread do
+					local pv = CFrame.new(z.pivots[name])
+					local a = function()
+						return math.rad((math.random() * 2 - 1) * deg)
+					end
+					tweenJoint(z, name, TweenInfo.new(0.06, Enum.EasingStyle.Linear), pv * CFrame.Angles(a(), a() * 0.5, a()) * pv:Inverse() * z.rest[name])
+				end
+				task.wait(0.1)
+			end
+			if z.alive and z.poseGen == gen then
+				for name in spread do
+					tweenJoint(z, name, TweenInfo.new(0.25, Enum.EasingStyle.Quad), z.rest[name])
+				end
+			end
+		end)
+	else
+		hazardSound(z, H.rattle, 0.5, 0.55 + math.random() * 0.25)
+		if now - z.sufferVoiceAt > 1.4 then
+			z.sufferVoiceAt = now
+			hazardSound(z, H.pain[math.random(1, #H.pain)], 0.5, 1.1 + math.random() * 0.25)
+		end
+		for _, name in { "LeftArm", "RightArm" } do
+			local sh = CFrame.new(z.pivots[name])
+			local side = if name == "LeftArm" then -1 else 1
+			jerk(z, name, sh * CFrame.Angles(math.rad(95 + math.random() * 50), 0, math.rad(side * (15 + math.random() * 25))) * sh:Inverse(), 0.12, 0.3)
+		end
+		local neck = CFrame.new(z.pivots.Head)
+		jerk(z, "Head", neck * CFrame.Angles(math.rad(20 + math.random() * 20), math.rad((math.random() - 0.5) * 50), 0) * neck:Inverse(), 0.1, 0.3)
+		local ang = math.random() * math.pi * 2
+		leanBody(z, Vector3.new(math.cos(ang), 0, math.sin(ang)), 14, { "Torso" })
+	end
+end
+
 -- Полоска здоровья босса сверху экрана (клиент: BossBarController): атрибуты ReplicatedStorage BossName, BossHp, BossMaxHp (боссов несколько — сумма)
 local function refreshBossBar()
 	local hp, maxHp, name = 0, 0, ""
@@ -1290,6 +1379,7 @@ local spawnCount = 0
 -- Точка миссии: зомби появляются кольцом 100–150 студов вокруг неё, сектора чередуются (поток со всех сторон)
 local anchorPos: Vector3? = nil
 local aliveCapOverride: number? = nil
+local nightAliveCap: number = Config.Round.AliveMin -- одновременно живых в эту ночь (WaveMath.aliveCap: ночь, игроки, уровень угрозы)
 local anchorUse: { number } = {}
 for i = 1, SECTORS do
 	anchorUse[i] = 0
@@ -1367,6 +1457,15 @@ end
 -- Свой потолок живых зомби на время миссии (конвой: меньше, иначе грузовик не доживёт); nil — обычный
 function ZombieService.setAliveCap(cap: number?)
 	aliveCapOverride = cap
+end
+
+-- Потолок живых зомби на ночь, посчитанный в начале ночи (RoundService); миссия может заменить его своим через setAliveCap
+function ZombieService.setNightAliveCap(cap: number)
+	nightAliveCap = cap
+end
+
+function ZombieService.nightAliveCap(): number
+	return nightAliveCap
 end
 
 function ZombieService.moveAnchor(pos: Vector3)
@@ -2374,6 +2473,22 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 end
 
 -- Живые зомби в радиусе от точки (для ближнего боя и ловушек): модель и корневая часть
+-- Задержать зомби (колючая и электро-проволока, EquipmentService): hold — стоит на месте seconds секунд (как от попадания),
+-- иначе — идёт со скоростью factor от своей seconds секунд (как с подстреленной ногой). Боссов проволока не держит.
+function ZombieService.hold(model: Model, seconds: number, factor: number?)
+	local z = active[model]
+	if not z or not z.alive or WaveMath.isBossType(z.def.id) then
+		return
+	end
+	local now = os.clock()
+	if factor then
+		z.slowUntil = math.max(z.slowUntil, now + seconds)
+		z.humanoid.WalkSpeed = z.speed * factor
+	else
+		z.staggerUntil = math.max(z.staggerUntil, now + seconds)
+	end
+end
+
 function ZombieService.queryNear(pos: Vector3, radius: number): { { model: Model, root: BasePart } }
 	local result: { { model: Model, root: BasePart } } = {}
 	for model, z in active do
@@ -2384,6 +2499,27 @@ function ZombieService.queryNear(pos: Vector3, radius: number): { { model: Model
 	return result
 end
 
+-- Зомби под солнцем загорается и гибнет за несколько секунд (без награды); повторно тот же зомби той же жизни не поджигается
+local burning: { [Zombie]: number } = {}
+local function ignite(model: Model, z: Zombie)
+	if burning[z] == z.gen then
+		return
+	end
+	burning[z] = z.gen
+	local gen = z.gen
+	local delay = 0.5 + math.random() * 3.5
+	local fire = Instance.new("Fire")
+	fire.Size = 9
+	fire.Heat = 8
+	fire.Parent = z.root
+	Debris:AddItem(fire, delay + 0.4)
+	task.delay(delay, function()
+		if z.alive and z.gen == gen and active[model] == z then
+			ZombieService.damage(model, z.hp + 1, nil, nil)
+		end
+	end)
+end
+
 -- Рассвет: мутанты не переносят солнце — загораются и гибнут за несколько секунд (без награды); очередь спавна сбрасывается
 function ZombieService.sunrise()
 	table.clear(queue)
@@ -2391,18 +2527,7 @@ function ZombieService.sunrise()
 	BossAI.clearAll()
 	for model, z in active do
 		if z.alive then
-			local gen = z.gen
-			local delay = 0.5 + math.random() * 3.5
-			local fire = Instance.new("Fire")
-			fire.Size = 9
-			fire.Heat = 8
-			fire.Parent = z.root
-			Debris:AddItem(fire, delay + 0.4)
-			task.delay(delay, function()
-				if z.alive and z.gen == gen and active[model] == z then
-					ZombieService.damage(model, z.hp + 1, nil, nil)
-				end
-			end)
+			ignite(model, z)
 		end
 	end
 end
@@ -2519,12 +2644,25 @@ function ZombieService.init(mapInfo: Types.MapInfo, killedCallback: (Player?, an
 	task.spawn(function()
 		while true do
 			task.wait(Config.Round.SpawnTick)
+			-- днём и в перерыве зомби не живут: появившийся случайно (хвост очереди, миссия, отложенный спавн) сразу загорается
+			local phase = game:GetService("ReplicatedStorage"):GetAttribute("Phase")
+			if not Config.Explore and (phase == "Day" or phase == "Intermission") then
+				if #queue > 0 then
+					table.clear(queue)
+				end
+				for model, z in active do
+					if z.alive then
+						ignite(model, z)
+					end
+				end
+				continue
+			end
 			local alive = 0
 			for _ in active do
 				alive += 1
 			end
-			-- одновременно живых: 40 на игрока, остальные ждут в очереди
-			local aliveCap = aliveCapOverride or math.max(Config.Round.ZombiesAliveMin, Config.Round.ZombiesAlivePerPlayer * #Players:GetPlayers())
+			-- одновременно живых: растёт с ночью и уровнем угрозы (WaveMath.aliveCap), остальные ждут в очереди
+			local aliveCap = aliveCapOverride or nightAliveCap
 			local testScale = Config.Waves.CountScale
 			if testScale and testScale < 1 then
 				aliveCap = math.max(4, math.floor(aliveCap * testScale + 0.5)) -- тестовое уменьшение числа зомби касается и бесконечного потока

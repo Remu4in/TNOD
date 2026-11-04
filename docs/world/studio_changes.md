@@ -78,3 +78,28 @@
 | W027 | 2026-10-31 | Play-проверки (`start_stop_play`): лобби, хост, зоны, матч, итоги, возврат. Изменения в место не сохранялись (runtime) | не требуется |
 
 Итог сеанса: Studio в Edit, место **не сохранено** — новые ассеты лежат только в файле места (нужно сохранить в Studio).
+
+## Баланс v4 (2026-11-01, поручение сессии: «выполни docs/qa/sonnet_prompt_balance_v4.md», согласие — в самом задании)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W028 | 2026-11-01 | Скрипты залиты через HTTP (`HttpService:GetAsync`, байты сверены): `Shared.Config`, `WaveMath`; `Server.Services.RoundService`, `MissionService`, `ConvoyService`, `BossAI`, `BuildingService`, `VendorService`, `Server` (init); клиент `PerkController`, `ShopController`, `HUDController`, `Client` (init) | восстановить из git (`src/…`) |
+| W029 | 2026-11-01 | **Новые скрипты в место:** `ServerScriptService.Server.Services.BaseShopService` (ModuleScript), `StarterPlayer.StarterPlayerScripts.Client.Controllers.InfoController` (ModuleScript) | удалить два модуля |
+| W030 | 2026-11-01 | Ассеты и `Workspace` **не менялись**: `HumveeMedic` и `MilitaryCar` уже лежали в `ServerStorage.Assets.Vehicles` без скриптов (проверено), копировать из `Workspace.Base`/`CarModels` не пришлось. Донатный магазин на базе (`Workspace.BaseDonateShop`) создаётся кодом в рантайме из `Assets.Lobby` (`Wall`, `ShopSign`, `Stall`), `Props.MilitaryCrates`, `NPC.Lobby.LobbySoldier_1/2`; в файл места не сохраняется | не требуется |
+| W031 | 2026-11-01 | Временно в `Shared.Config.Source` на время Play-проверок: `Lobby.ForceMode = "match"`, `DebugStartNight` 3–8 (замеры маршрутов конвоя ночей 3, 8, 12, 17: 597, 1101, 1175, 891 студов); после проверок `Source` возвращён из файла | не требуется |
+| W032 | 2026-11-01 | Play-проверки (`start_stop_play`): ночи 3, 4, 5, 6 (Качок, рывок, окно перков, панель клавиш, метки, справочник, стенд монет). Изменения в место не сохранялись (runtime) | не требуется |
+
+Итог сеанса: Studio в Edit, место **не сохранено** — два новых скрипта (W029) лежат только в файле места: нужно сохранить место в Studio.
+
+| W033 | 2026-11-01 | **`Workspace.BaseDonateShop`** (статичная модель, построена `BaseShopService.build()` в Edit из `Assets.Lobby` Wall/ShopSign/Stall, `Props.MilitaryCrates`, `NPC.Lobby.LobbySoldier_1/2`) на базе, центр (78, 432), между «Military Carport Garage Building House» и APC; ассеты в `ServerStorage` не менялись. Скрипты `Config`, `VendorService`, `BaseShopService`, `ShopController`, `InfoController` залиты заново | удалить `Workspace.BaseDonateShop` (сервис построит новую при запуске) |
+
+Итог: Studio в Edit, место **не сохранено** — `Workspace.BaseDonateShop` и новые скрипты `BaseShopService`, `InfoController` лежат только в файле места: сохраните место в Studio.
+
+## Баланс v4, правки по плейтесту (2026-11-01, поручение сессии: правки конвоя, проволоки, машины)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W034 | 2026-11-01 | Скрипты залиты через HTTP (`HttpService:GetAsync`, байты сверены): `Shared.Config`; `Server.Services.MissionService`, `ZombieService`, `EquipmentService`, `VehicleService`; `Client.Controllers.ArmsController`, `VehicleController`. **Новый скрипт `EmoteController`** (ModuleScript в `Client.Controllers`, создан в прошлый сеанс; в журнал не вносился) тоже только в файле места | Залить прежние версии из git (`a2d9879`) |
+| W035 | 2026-11-01 | Временно: скрипт `ServerScriptService.DbgHooks` (вызов `ZombieService.suffer` по атрибуту) и флаги `Config.Source` (`Lobby.ForceMode = "match"`, `DebugStartNight` 3–4) на время Play. После проверок скрипт удалён, `Config` залит из файла заново (136311 байт) | не требуется |
+| W036 | 2026-11-02 | По просьбе Руслана: в `Workspace.Markers` созданы 8 заготовок `Route1_Via1…4`, `Route2_Via1…4` (копии `Route1`, Anchored, около (60–96, 255–269)) — он расставит их на поворотах маршрута конвоя ночи 3. Лишние можно удалить |
+| W037 | 2026-11-02 | По просьбе Руслана удалены 8 меток `Route1_Via1…4`, `Route2_Via1…4` из `Workspace.Markers`; остались `Route1` и `Route2` (маршрут ночи 3 — две точки) |
+
+Итог: Studio в Edit, место **не сохранено** — `EmoteController`, `BaseShopService`, `InfoController` и `Workspace.BaseDonateShop` лежат только в файле места: сохранить в Studio.
