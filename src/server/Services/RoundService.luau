@@ -280,6 +280,12 @@ local function day(first: boolean, finale: boolean?)
 		p:SetAttribute("VotedDay", false)
 	end
 	countVotes()
+	if wave == Config.MetroCamp.afterNight and not finale then
+		-- завтра метро: напоминаем закупиться у лагеря у входа (VendorService показывает его этим днём)
+		task.delay(3, function()
+			notifyAll(Config.MetroCamp.message, 10)
+		end)
+	end
 	if finale then
 		-- финал акта 1: день без таймера и без следующей ночи — миссия «зайти в бункер», затем поздравление
 		setPhase("Day", nil)

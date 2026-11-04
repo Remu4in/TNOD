@@ -879,7 +879,9 @@ local function topUp(state: State)
 	-- classic/clear: волна может быть меньше минимума убийств — тогда подсылаем ещё, пока не наберётся
 	local short = not state.infinite and (state.kind == "classic" or state.kind == "clear")
 		and ZombieService.remaining() + state.playerKills < state.minKills
-	if (state.infinite or short) and ZombieService.queueSize() < 8 then
+	-- метро (финал): пока жив босс станции, других зомби не подсылаем
+	local bossDuel = state.def.finale and state.bossOut and (not state.bossSeen or ZombieService.bossAlive())
+	if (state.infinite or short) and not bossDuel and ZombieService.queueSize() < 8 then
 		-- подпитка потока: обычные зомби волны (боссы приходят один раз, в начале ночи)
 		local normal: WaveMath.Composition = {}
 		for id, n in state.comp do
@@ -1414,6 +1416,9 @@ local function buildDetonator(state: State, metro: Instance)
 		if s.tnt < Config.Metro.Tnt then
 			table.insert(missing, string.format("TNT charges (%d of %d)", s.tnt, Config.Metro.Tnt))
 		end
+		if s.def.boss and (not s.bossSeen or ZombieService.bossAlive()) then
+			table.insert(missing, "the station boss killed")
+		end
 		if #missing > 0 then
 			Remotes.get("Notify"):FireClient(player, "The detonator isn't ready. Needed: " .. table.concat(missing, ", "), 4)
 			return
@@ -1567,6 +1572,15 @@ function MissionService.init()
 	Players.PlayerRemoving:Connect(function(player: Player)
 		metroDebounce[player] = nil
 	end)
+	-- скамейки метро — декор: на них не садятся (игрок садился случайно, проходя мимо)
+	local metro = workspace:FindFirstChild("Metro")
+	if metro then
+		for _, d in metro:GetDescendants() do
+			if d:IsA("Seat") then
+				d.Disabled = true
+			end
+		end
+	end
 end
 
 -- Раз в 0,25 с: "done" — миссия выполнена, "fail" — провалена; nil — идёт (classic/clear завершает RoundService по числу зомби)
@@ -1718,9 +1732,16 @@ function MissionService.update(dt: number): string?
 				result = "done"
 			elseif state.nestsBurned < nests then
 				text = string.format("Burn the mutant nests: %d of %d (hold E at a nest)", state.nestsBurned, nests)
+			elseif state.def.finale and state.def.boss and not state.bossOut and (state.gensOn < Config.Metro.Gens or state.tnt < Config.Metro.Tnt) then
+				-- финал без гнёзд: сначала генераторы и заряды, босс — потом
+				text = finaleStep(state, dt, need)
 			elseif state.def.boss and not state.bossOut then
-				-- гнёзда сожжены (или их нет): на станцию выходит босс (из туннелей, вне очереди)
+				-- гнёзда сожжены (или их нет; в финале — запущены генераторы и заложены заряды): на станцию выходит босс (из туннелей, вне очереди)
 				state.bossOut = true
+				if state.def.finale then
+					-- бой с боссом один на один: остальных зомби убираем, поток стоит, пока босс жив (topUp)
+					ZombieService.clearAll()
+				end
 				ZombieService.enqueue({ state.def.boss }, state.hpMult, state.night, true)
 				notify(if nests > 0 then "Nests burned — the boss has come out onto the station!" else "The station boss has come out!", 5)
 				text = "Kill the station boss"

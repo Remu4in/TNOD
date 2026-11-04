@@ -19,7 +19,7 @@ local EquipmentService = require(script.Parent:WaitForChild("EquipmentService"))
 
 local VendorService = {}
 
-type Vendor = { id: string, model: Model, root: BasePart, track: AnimationTrack?, shown: boolean, always: boolean? }
+type Vendor = { id: string, model: Model, root: BasePart, track: AnimationTrack?, shown: boolean, always: boolean?, camp: boolean? }
 
 local vendors: { [string]: Vendor } = {}
 local stash: Folder
@@ -32,9 +32,17 @@ local function isDay(): boolean
 	return phase == "Day" or phase == "Intermission"
 end
 
+-- Лагерь у входа в метро (Config.MetroCamp): только днём после ночи afterNight — команда закупается перед спуском
+local function campOpen(): boolean
+	return isDay() and ReplicatedStorage:GetAttribute("Wave") == Config.MetroCamp.afterNight
+end
+
 local function open(v: Vendor): boolean
 	if v.always then
 		return true
+	end
+	if v.camp then
+		return campOpen()
 	end
 	return isDay() and BuildingService.isUnlocked(v.id)
 end
@@ -57,10 +65,10 @@ local function playIdle(v: Vendor)
 	end
 end
 
-local function build(id: string, position: Vector3, facing: Vector3, index: number): Vendor?
+local function build(id: string, position: Vector3, facing: Vector3, index: number, modelName: string?): Vendor?
 	local def = Config.Vendors[id]
 	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("NPC")
-	local template = lib and lib:FindFirstChild(if index % 2 == 0 then "Survivor2" else "Survivor1")
+	local template = lib and lib:FindFirstChild(modelName or (if index % 2 == 0 then "Survivor2" else "Survivor1"))
 	if not def or not template then
 		warn("[VendorService] no vendor or model for " .. id)
 		return nil
@@ -300,6 +308,49 @@ function VendorService.init(map: Types.MapInfo)
 				buildVending(m)
 			end
 		end
+	end
+	-- лагерь у входа в метро: 2 торговца-военных, 2 часовых и автомат (видны только днём перед метро — campOpen)
+	local camp = Config.MetroCamp
+	for i, t in camp.traders do
+		local v = build(t.vendor, t.position, camp.facing, i, "Soldier")
+		if v then
+			v.camp = true
+			vendors[t.vendor] = v
+		end
+	end
+	local lib = ServerStorage:FindFirstChild("Assets") and ServerStorage.Assets:FindFirstChild("NPC")
+	local soldier = lib and lib:FindFirstChild("Soldier")
+	for i, pos in camp.guards do
+		if soldier then
+			local m = soldier:Clone()
+			m.Name = "CampGuard_" .. i
+			local at = pos + Vector3.new(0, 3, 0)
+			m:PivotTo(CFrame.lookAt(at, at + camp.facing))
+			local root = m:FindFirstChild("HumanoidRootPart") :: BasePart?
+			for _, d in m:GetDescendants() do
+				if d:IsA("BasePart") then
+					d.Anchored = true
+					d.CanQuery = false
+				elseif d:IsA("Script") or d:IsA("LocalScript") then
+					d:Destroy()
+				end
+			end
+			if root then
+				m.Parent = stash
+				vendors[m.Name] = { id = m.Name, model = m, root = root, track = nil, shown = false, camp = true }
+			end
+		end
+	end
+	local mk = Instance.new("Part")
+	mk.Name = "Vending_MetroCamp"
+	mk.Size = Vector3.new(1, 1, 1)
+	mk.CFrame = CFrame.lookAt(camp.vending + Vector3.new(0, 0.5, 0), camp.vending + Vector3.new(0, 0.5, 0) + camp.facing)
+	buildVending(mk)
+	local vend = vendors[mk.Name]
+	if vend then
+		vend.always = false
+		vend.camp = true
+		vend.shown = true
 	end
 	Remotes.get("VendorBuy").OnServerEvent:Connect(onBuy)
 	task.spawn(function()

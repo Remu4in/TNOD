@@ -1436,7 +1436,7 @@ Config.Missions = {
 	[15] = { type = "classic", title = "The boss attacks the main base", anchor = 1, planned = "boss", hint = "Kill the boss and the wave" },
 	[16] = { type = "scout", title = "Approaches to the ruins", anchor = 6, points = 3, radius = { 120, 220 }, hint = "Scout the approaches to the ruins: visit the checkpoints" },
 	[17] = { type = "scout", title = "The ruins: find the way down", anchor = 6, points = 3, radius = { 25, 70 }, hint = "Enter the ruins and explore them: somewhere here is the way into the metro" },
-	[18] = { type = "metro", title = "Catacombs: metro clear-out", anchor = 6, kills = 40, finale = true, boss = "BossBuff", hint = "Go down the stairs at the metro entrance, kill the station boss, start 4 generators and plant 10 TNT charges" },
+	[18] = { type = "metro", title = "Catacombs: metro clear-out", anchor = 6, kills = 40, finale = true, boss = "BossBuff", hint = "Go down into the metro: start 4 generators and plant 10 TNT charges — then the station boss comes out" },
 	[19] = { type = "clear", title = "Military base: clear-out and capture", anchor = 5, baseBattle = true, hint = "Retake the base: kill 150 mutants coming from the base side, soldiers at the rally point help" },
 	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,
 	-- пока Повелитель тёмных); победа — убит последний босс (RoundService: атрибут Victory и сообщение; титры и награда — после решения Руслана)
@@ -1489,6 +1489,26 @@ Config.Vendors = {
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite sprint energy for 1 wave", price = 100, kind = "item" },
 		},
 	},
+	-- Лагерь у входа в метро (Config.MetroCamp): днём перед ночью метро — всё, что нужно внизу, без условий на здания
+	MetroQuartermaster = {
+		name = "Quartermaster", greeting = "Down there you're on your own. Take a gun you trust — and fill it up.",
+		items = (function(): { VendorItem }
+			local list = weaponItems({ "SMG", "Shotgun", "Rifle", "Revolver", "LMG", "Sniper" })
+			table.insert(list, 1, { id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo" })
+			return list
+		end)(),
+	},
+	MetroSupply = {
+		name = "Supply sergeant", greeting = "Medkits, energy, wire, a turret. Whatever keeps you breathing in the tunnels.",
+		items = {
+			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo" },
+			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item" },
+			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite sprint energy for 1 wave", price = 100, kind = "item" },
+			{ id = "BarbedWire", name = "Barbed wire", desc = "Traps the first 2 mutants, slows the next 2", price = 250, kind = "equip" },
+			{ id = "ElectricWire", name = "Electric wire", desc = "Burns up to 5 mutants at 50 damage/s; lasts until dawn", price = 600, kind = "equip" },
+			{ id = "Turret", name = "Turret", desc = "Stationary machine gun: fast bursts, 700 rounds", price = 1500, kind = "equip" },
+		},
+	},
 	Armory = {
 		name = "Armorer", greeting = "Melee weapons never run out, unlike ammo.",
 		items = weaponItems({ "Bat", "Crowbar", "Machete", "FireAxe", "Sledge", "Katana" }),
@@ -1538,6 +1558,20 @@ Config.Equipment = {
 	ElectricWire = { name = "Electric wire", dps = 50, tick = 0.25, maxTargets = 5, max = 4, size = Vector3.new(10, 0.6, 2.5), reach = 22 },
 	-- Турель: очереди по fireInterval, урон за пулю damage, разброс spreadDeg, звук выстрела у ствола. length — длина модели (масштаб ×1,3 к прежней)
 	Turret = { name = "Turret", damage = 14, fireInterval = 0.12, spreadDeg = 2, range = 90, ammo = 700, max = 2, length = 4.4, reach = 22, volume = 0.7 },
+}
+
+-- Лагерь у входа в метро (VendorService): днём после ночи afterNight (перед спуском в метро) у ящиков Crates рядом с Entrance стоят
+-- 2 торговца-военных (Vendors.MetroQuartermaster / MetroSupply), 2 часовых и автомат; ночью их нет. facing — куда смотрят (к входу).
+Config.MetroCamp = {
+	afterNight = 17,
+	facing = Vector3.new(0, 0, 1),
+	traders = {
+		{ vendor = "MetroQuartermaster", position = Vector3.new(408, 0.1, 232) },
+		{ vendor = "MetroSupply", position = Vector3.new(432, 0.1, 232) },
+	},
+	guards = { Vector3.new(402, 0.1, 239), Vector3.new(438, 0.1, 239) },
+	vending = Vector3.new(420, 0.1, 237),
+	message = "Tomorrow night you go down into the metro. Stock up now: traders and a vending machine are waiting by the metro entrance!",
 }
 
 -- Лобби (LobbyService, Locations/Lobby): публичный сервер места — лобби, резервный сервер того же места — матч
