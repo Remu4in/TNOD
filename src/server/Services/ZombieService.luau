@@ -2165,6 +2165,18 @@ local function think(z: Zombie, now: number, dt: number)
 	end
 	z.lastPos = pos
 
+	-- игрок рядом и на виду важнее баррикады: бросаем вход (кафе и т. п.) и идём на игрока
+	if z.state == "ToWindow" or z.state == "Breaking" then
+		local _, tRoot, tDist = nearestUpCharacter(pos)
+		if tRoot and tDist < 30 and hasLineOfSight(z, tRoot) then
+			z.state = "Hunt"
+			z.window = nil
+			z.waypoints = nil
+			z.pathFailed = false
+			return
+		end
+	end
+
 	if z.state == "ToWindow" then
 		local w = z.window
 		if not w then
@@ -2210,8 +2222,10 @@ local function think(z: Zombie, now: number, dt: number)
 		if not player or not targetRoot then
 			return
 		end
+		-- игрок рядом и на виду: баррикады не трогаем, идём прямо на него
+		local playerInSight = dist < 30 and hasLineOfSight(z, targetRoot)
 		-- упёрся в баррикаду (почти не двигаемся, а рядом закрытый вход): ломаем её
-		if z.stuckTime > 0.6 then
+		if z.stuckTime > 0.6 and not playerInSight then
 			local near = BarricadeService.closedEntranceNear(pos, 8)
 			if near then
 				z.window = near
@@ -2222,7 +2236,7 @@ local function think(z: Zombie, now: number, dt: number)
 			end
 		end
 		-- пути к игроку нет (он за баррикадой): идём ломать вход, который его защищает, где бы зомби ни стоял
-		if z.pathFailed and not z.pathBusy then
+		if z.pathFailed and not z.pathBusy and not playerInSight then
 			local w = BarricadeService.guardingEntrance(targetRoot.Position, 45)
 			if w then
 				z.window = w

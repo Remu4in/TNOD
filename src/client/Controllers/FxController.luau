@@ -598,7 +598,44 @@ end
 
 local appliedKick: CFrame? = nil -- сдвиг камеры, наложенный в прошлом кадре
 
+-- Упавший игрок (атрибут Downed) лежит лицом вниз и ползёт: к позе корневого сустава (R15 — LowerTorso.Root, R6 — HumanoidRootPart.RootJoint)
+-- после анимации (Stepped) добавляем наклон вперёд у пояса и опускаем тело к земле; на ходу оно покачивается из стороны в сторону, а анимация
+-- ходьбы двигает руки и ноги как при ползании. Transform пишет каждый клиент для всех персонажей — поэтому видят все. Работает и с Motor6D,
+-- и с AnimationConstraint новых аватаров (у него C0 только для чтения, а Attachment0 двигает сам Roblox).
+local crawlPhase: { [Instance]: number } = setmetatable({}, { __mode = "k" }) :: any
+
+local function rootJointOf(char: Model): (Motor6D | AnimationConstraint)?
+	local lower = char:FindFirstChild("LowerTorso")
+	local m = if lower then lower:FindFirstChild("Root") else nil
+	if not m then
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		m = if hrp then hrp:FindFirstChild("RootJoint") else nil
+	end
+	if m and (m:IsA("Motor6D") or m:IsA("AnimationConstraint")) then
+		return m :: any
+	end
+	return nil
+end
+
+local function stepDownedPoses(_time: number, dt: number)
+	for _, p in Players:GetPlayers() do
+		local char = p.Character
+		local joint = if char and p:GetAttribute("Downed") == true then rootJointOf(char) else nil
+		if joint then
+			local hrp = (char :: Model):FindFirstChild("HumanoidRootPart") :: BasePart?
+			local v = if hrp then hrp.AssemblyLinearVelocity else Vector3.zero
+			local speed = Vector3.new(v.X, 0, v.Z).Magnitude
+			local phase = (crawlPhase[joint] or 0) + dt * speed * 1.4
+			crawlPhase[joint] = phase
+			local sway = if speed > 0.5 then math.sin(phase) * 0.14 else 0
+			local lie = CFrame.new(0, -1.5, 0) * CFrame.Angles(math.rad(-82), sway * 0.6, sway)
+			;(joint :: any).Transform = lie * (joint :: any).Transform
+		end
+	end
+end
+
 function FxController.start()
+	RunService.Stepped:Connect(stepDownedPoses)
 	-- Стандартная камера берёт за основу текущий CFrame, поэтому наш сдвиг нужно снять до её обновления,
 	-- иначе он копится кадр за кадром и камера уезжает вверх.
 	RunService:BindToRenderStep("NotdFxPre", Enum.RenderPriority.First.Value, function()
