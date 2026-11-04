@@ -103,3 +103,11 @@
 | W037 | 2026-11-02 | По просьбе Руслана удалены 8 меток `Route1_Via1…4`, `Route2_Via1…4` из `Workspace.Markers`; остались `Route1` и `Route2` (маршрут ночи 3 — две точки) |
 
 Итог: Studio в Edit, место **не сохранено** — `EmoteController`, `BaseShopService`, `InfoController` и `Workspace.BaseDonateShop` лежат только в файле места: сохранить в Studio.
+
+## Чистка недоступных ассетов перед релизом (2026-11-05)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W038 | 2026-11-05 | Удалены 37 `Sound` с недоступными id (двери и генераторы метро, эмбиент дороги — `Workspace.Metro.*`, `Workspace.Roads`, копии в `ServerStorage.Assets.Metro`); у 38 `ImageLabel` (номера и панели машин) стёрт `Image = rbxassetid://0/1`; у 66 `MeshPart/SpecialMesh/Decal/Texture` стёрты недоступные текстуры (детали остались, без текстуры они и так рисовались серыми). У `ServerStorage.Assets.Zombies.Z_Walker1` снят атрибут `Anim_walk` (124233113391066 недоступна, код и так брал стандартную) | Studio: File → история версий места до 2026-11-05 |
+| W039 | 2026-11-05 | Удалены 60 объектов с недоступными id: `MeshPart` с удалённой из Roblox моделью (невидимые: дробовик-декор `Workspace.Buildings.Armory.Itacha 37`, бочки `Garage.Model.oil`, фары `Base.CrashFire…Light` и их копии в `ServerStorage.Assets`), `Shirt` у `Z_P4_2`, мёртвые звуки в `ServerStorage.AssetStaging` | то же |
+
+Итог: в Play (день, ночь, метро, база, лобби) в Output осталась одна строка про ассеты — `189782328 Asset type does not match` (где лежит, не нашлось, на игру не влияет). Место **не сохранено** — сохранить в Studio.

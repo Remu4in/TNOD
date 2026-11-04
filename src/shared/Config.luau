@@ -629,7 +629,7 @@ Config.Animations = {
 Config.Sounds = {
 	fire = "rbxassetid://3806566911",
 	reload = "rbxassetid://3821789416",
-	hit = "rbxassetid://1489924400",
+	hit = "rbxasset://sounds/hit.wav", -- встроенный звук клиента (прежний 1489924400 удалён из Roblox)
 	click = "rbxassetid://3909012115", -- сухой щелчок при пустом магазине
 	swing = "rbxasset://sounds/swordslash.wav", -- взмах ближнего боя (встроенный звук Roblox)
 }
