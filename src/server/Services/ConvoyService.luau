@@ -532,6 +532,12 @@ local function planRoute(spawn: Vector3, route: { Vector3 }, finalStop: Vector3,
 	return best, bestOrder
 end
 
+-- Порядок объезда точек, который выбрал бы start (по дорогам, кратчайший); точки — уже на дороге. Пусто — до остановки не доехать
+function ConvoyService.planOrder(spawn: Vector3, route: { Vector3 }, finalStop: Vector3): { Vector3 }
+	local _, order = planRoute(spawn, route, finalStop, false)
+	return order
+end
+
 -- Смещение сопровождающего в мире: X — вправо от курса, Z — назад
 local function escortWorldOffset(heading: Vector3, offset: Vector3): Vector3
 	local right = Vector3.new(-heading.Z, 0, heading.X)

@@ -385,13 +385,23 @@ local function night()
 	ReplicatedStorage:SetAttribute("AliveCap", ZombieService.nightAliveCap())
 	EconomyService.newWave()
 	PlayerService.takeLosses()
-	ZombieService.enqueue(WaveMath.spawnQueue(comp, rng), WaveMath.hpMultiplier(Config.Waves, wave, threat), wave)
+	-- ночь, где босс выходит после bossAfterKills убийств (ночи 5, 10): боссов в начальную очередь не ставим — их выпустит MissionService
+	local startComp = comp
+	if missionDef and missionDef.bossAfterKills then
+		startComp = {}
+		for id, n in comp do
+			if not WaveMath.isBossType(id) then
+				startComp[id] = n
+			end
+		end
+	end
+	ZombieService.enqueue(WaveMath.spawnQueue(startComp, rng), WaveMath.hpMultiplier(Config.Waves, wave, threat), wave)
 	print(string.format("[RoundService] night %d: players %d, zombies %d (alive at once up to %d, minute 1), threat %.1f (+%d alive per player), night %d s, weapons: %s", wave, players, WaveMath.total(comp), WaveMath.aliveCap(Config.Round, wave, players, threat), threat.score, threat.tier.alive, nightLength, table.concat(threat.classes, ",")))
 	local bossName: string? = nil
 	for _, bossId in WaveMath.bossTypes(Config.Waves, wave) do
 		bossName = Config.Zombies[bossId].name
 	end
-	if bossName then
+	if bossName and not (missionDef and missionDef.bossAfterKills) then
 		notifyAll(string.format("Boss incoming: %s!", bossName), 3)
 	end
 	-- миссия ночи (MissionService): точка, задача, поток зомби вокруг точки; ночь засчитана, когда задача выполнена и убит минимум зомби

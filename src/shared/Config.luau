@@ -1159,7 +1159,9 @@ Config.Perks = {
 -- type: scout (points контрольных точек), defend (seconds секунд у шатра), clear, classic — убить всю волну; planned — тип, который ещё не сделан
 -- (сейчас играется как classic). Не указано — classic.
 -- convoySpeed — скорость грузовика этой миссии (студов/с), вместо Config.Convoy.TruckSpeed; clearSandbags — на эту ночь убрать мешки с песком у точки появления игроков (Config.Convoy.Sandbag*)
-export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, column: string?, supplies: boolean?, stopMarker: string?, waypointMarkers: { [number]: string }?, keepOrder: boolean?, markerRoute: { string }?, waypointScout: { [number]: { anchor: number, count: number, index: number, radius: { number }? } }?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }?, nests: number?, boss: string? }
+-- bossAfterKills — босс ночи выходит только после стольких убийств игроков (ночи 5, 10); dropFirstPoint — конвой пропускает первую по пути точку,
+-- endAtLastPoint — последняя точка маршрута — конечная остановка (ночь 12); finale — метро: генераторы, ТНТ, детонатор и костяная дверь (без гнёзд)
+export type MissionDef = { type: string, title: string, anchor: number, points: number?, radius: { number }?, seconds: number?, hint: string?, planned: string?, kills: number?, install: boolean?, brief: string?, convoySpeed: number?, column: string?, supplies: boolean?, stopMarker: string?, waypointMarkers: { [number]: string }?, keepOrder: boolean?, markerRoute: { string }?, waypointScout: { [number]: { anchor: number, count: number, index: number, radius: { number }? } }?, clearSandbags: boolean?, baseBattle: boolean?, day: boolean?, bosses: { string }?, nests: number?, boss: string?, bossAfterKills: number?, dropFirstPoint: boolean?, endAtLastPoint: boolean?, finale: boolean? }
 -- Конвой (ConvoyService): грузовик и два военных-сопровождающих; зомби атакуют их наравне с игроками
 Config.Convoy = {
 	-- Колонна (баланс v4): настоящие машины из ServerStorage.Assets.Vehicles, у каждой своё здоровье (Vehicles). Columns — составы колонн (первая — ведущая, главная:
@@ -1367,10 +1369,10 @@ Config.Finale = {
 -- темнее (Dark.cave, x > Cave.minX и z > Cave.minZ), включается фонарик у камеры.
 Config.Metro = {
 	NestHold = 6,
-	Gens = 2, -- сколько генераторов нужно запустить (из пяти на карте: берём ближайшие к цели)
+	Gens = 4, -- сколько генераторов нужно запустить (из пяти на карте, любые)
 	GenHold = 4,
-	Tnt = 4, -- сколько зарядов ставить: маркеры из TntMarkers (восточная часть станции, по пути к детонатору)
-	TntMarkers = { 14, 15, 16, 17 } :: { number },
+	Tnt = 10, -- сколько зарядов ставить: маркеры из TntMarkers (от центра станции на восток, к детонатору)
+	TntMarkers = { 8, 12, 13, 14, 15, 16, 17, 18, 19, 20 } :: { number },
 	TntHold = 2,
 	MarkDistance = 100,
 	DefendSeconds = 30,
@@ -1419,20 +1421,20 @@ Config.Missions = {
 	-- Конвой привозит припасы в пустой шатёр ночи 2; ночь 4 — вторая разведка (ближние места, 100–250 студов от шатра), конвоя на ней нет
 	[3] = { type = "escort", title = "Supply convoy escort", anchor = 1, points = 3, convoySpeed = 11, clearSandbags = true, column = "Light", keepOrder = true, markerRoute = { "Route1", "Route2" }, waypointMarkers = { [1] = "Route1", [2] = "Route2" }, waypointScout = { [2] = { anchor = 2, count = 3, index = 2 } }, hint = "Escort the convoy: it brings supplies to the tent" },
 	[4] = { type = "scout", title = "Recon of nearby locations", anchor = 1, points = 3, radius = { 150, 250 }, hint = "Visit the checkpoints around the tent" },
-	[5] = { type = "classic", title = "Defend the tent from the boss", anchor = 1, planned = "defend-boss", hint = "Kill the boss and the wave" },
+	[5] = { type = "classic", title = "Defend the tent from the boss", anchor = 1, planned = "defend-boss", bossAfterKills = 30, hint = "Kill 30 mutants — then the boss comes. Kill the boss and the wave" },
 	[6] = { type = "scout", title = "Recon of the second district", anchor = 2, points = 3, hint = "Visit the checkpoints around the tent" },
 	[7] = { type = "build", title = "Clear-out and tent setup", anchor = 2, kills = 20, hint = "Clear the zone and set up the tent at the marked spot" },
 	[8] = { type = "escort", title = "Convoy escort", anchor = 2, points = 3, convoySpeed = 13, column = "Heavy", hint = "Don't let the truck be destroyed" },
 	[9] = { type = "scout", title = "Recon of the third tent's territory", anchor = 3, points = 3 },
-	[10] = { type = "classic", title = "Boss: zombies vs plants", anchor = 2, planned = "boss", hint = "Kill the boss and the wave" },
-	[11] = { type = "scout", title = "Surveying the locations around the tents", anchor = 2, points = 4 },
-	[12] = { type = "escort", title = "Convoy to the third tent", anchor = 3, points = 3, install = true, convoySpeed = 13, column = "Heavy", hint = "Bring the truck and set up the tent at the site" },
+	[10] = { type = "classic", title = "Boss: zombies vs plants", anchor = 2, planned = "boss", bossAfterKills = 30, hint = "Kill 30 mutants — then the boss comes. Kill the boss and the wave" },
+	[11] = { type = "scout", title = "Surveying the locations around the tents", anchor = 2, points = 4, radius = { 100, 200 } },
+	[12] = { type = "escort", title = "Convoy to the third tent", anchor = 3, points = 3, dropFirstPoint = true, endAtLastPoint = true, convoySpeed = 13, column = "Heavy", hint = "Escort the convoy to the last route point: the tent is set up on arrival" },
 	[13] = { type = "defend", title = "Anomalies and attacks on shops", anchor = 1, seconds = 35, planned = "anomaly" },
 	[14] = { type = "defend", title = "Attack on all tents", anchor = 2, seconds = 40, planned = "multi-defend" },
 	[15] = { type = "classic", title = "The boss attacks the main base", anchor = 1, planned = "boss", hint = "Kill the boss and the wave" },
-	[16] = { type = "scout", title = "Territory recon", anchor = 4, points = 3, planned = "daytime" },
-	[17] = { type = "escort", title = "Tent setup and convoy", anchor = 4, points = 3, install = true, convoySpeed = 11, column = "Heavy", hint = "Bring the truck and set up the tent at the site" },
-	[18] = { type = "metro", title = "Catacombs: metro clear-out", anchor = 6, kills = 40, nests = 3, boss = "BossBuff", hint = "Go down the stairs at the metro entrance, burn the nests (E) and kill the station boss" },
+	[16] = { type = "scout", title = "Approaches to the ruins", anchor = 6, points = 3, radius = { 120, 220 }, hint = "Scout the approaches to the ruins: visit the checkpoints" },
+	[17] = { type = "scout", title = "The ruins: find the way down", anchor = 6, points = 3, radius = { 25, 70 }, hint = "Enter the ruins and explore them: somewhere here is the way into the metro" },
+	[18] = { type = "metro", title = "Catacombs: metro clear-out", anchor = 6, kills = 40, finale = true, boss = "BossBuff", hint = "Go down the stairs at the metro entrance, kill the station boss, start 4 generators and plant 10 TNT charges" },
 	[19] = { type = "clear", title = "Military base: clear-out and capture", anchor = 5, baseBattle = true, hint = "Retake the base: kill 150 mutants coming from the base side, soldiers at the rally point help" },
 	-- Финал (каркас, 2026-10-28): босс-файт ДНЁМ без обычных зомби — свет и небо дневные (day), выходит только босс из bosses (по очереди; кто финальный босс — решает Руслан,
 	-- пока Повелитель тёмных); победа — убит последний босс (RoundService: атрибут Victory и сообщение; титры и награда — после решения Руслана)
@@ -1472,6 +1474,10 @@ Config.Vendors = {
 			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item", robux = 25, requires = "Pharmacy" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite energy for 1 wave", price = 100, kind = "item", robux = 20 },
 			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo", robux = 15 },
+			-- оборудование: как аптечка — купить можно только после открытия своего здания (Garage — проволока, Turret shop — турель)
+			{ id = "BarbedWire", name = "Barbed wire", desc = "Wounds and holds mutants until it breaks", price = 250, kind = "equip", requires = "Garage" },
+			{ id = "ElectricWire", name = "Electric wire", desc = "Shocks and stuns; lasts until dawn", price = 600, kind = "equip", requires = "Garage" },
+			{ id = "Turret", name = "Turret", desc = "Stationary: 50 damage every 2–4 s, 300 shots", price = 1500, kind = "equip", requires = "GunShop" },
 		},
 	},
 	Pharmacy = {

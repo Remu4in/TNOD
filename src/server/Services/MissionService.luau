@@ -59,7 +59,8 @@ type State = {
 	installed: boolean,
 	bossIndex: number, -- bossfight: номер вышедшего босса из def.bosses
 	nestsBurned: number, -- metro: сожжено гнёзд
-	bossOut: boolean, -- metro: босс станции уже вызван
+	bossOut: boolean, -- metro: босс станции уже вызван; classic с bossAfterKills: босс ночи уже выпущен
+	bossKills: number, -- classic с bossAfterKills: сколько убийств игроков нужно до выхода босса (0 — босс в начале ночи)
 	bossSeen: boolean, -- metro: босс появился (миссия ждёт его смерти)
 	gensOn: number, -- metro: запущено генераторов
 	tnt: number, -- metro: установлено зарядов ТНТ
@@ -723,9 +724,14 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
 		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0, nestsBurned = 0, bossOut = false, bossSeen = false, gensOn = 0, tnt = 0, detStage = 0, defendLeft = 0, detPos = Vector3.zero, hasKey = false, keyOut = false, tntModels = {}, actions = {},
+		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, bossIndex = 0, nestsBurned = 0, bossOut = false, bossKills = 0, bossSeen = false, gensOn = 0, tnt = 0, detStage = 0, defendLeft = 0, detPos = Vector3.zero, hasKey = false, keyOut = false, tntModels = {}, actions = {},
 	}
 	current = state
+	if def.bossAfterKills then
+		-- босс ночи выйдет после стольких убийств (RoundService не ставит его в начальную очередь); тестовый масштаб — как у минимума убийств
+		state.bossKills = math.max(Config.MissionKillsFloor, math.floor(def.bossAfterKills * (Config.Waves.CountScale or 1) + 0.5))
+		state.minKills = math.max(state.minKills, state.bossKills)
+	end
 	ZombieService.setAnchor(anchor)
 	if def.baseBattle then
 		setupBaseBattle(night, comp, hpMult)
@@ -807,9 +813,18 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 				route = list
 			end
 		end
-		-- маршрут по меткам: последняя метка — конечная остановка, колонна доехала до неё — миссия выполнена (к шатру не возвращается)
+		-- dropFirstPoint (ночь 12): первую по пути точку убираем, остальные — в найденном порядке объезда
+		if def.dropFirstPoint and #route >= 2 then
+			local siteStop = roadStopNear(grid, anchor)
+			local order = if siteStop then ConvoyService.planOrder(groundAt(start.X, start.Z) or start, route, siteStop) else {}
+			if #order >= 2 then
+				table.remove(order, 1)
+				route = order
+			end
+		end
+		-- маршрут по меткам (или endAtLastPoint): последняя точка — конечная остановка, колонна доехала до неё — миссия выполнена (к шатру не возвращается)
 		local finalPoint: Vector3? = nil
-		if def.markerRoute and #route >= 2 then
+		if (def.markerRoute or def.endAtLastPoint) and #route >= 2 then
 			finalPoint = table.remove(route)
 		end
 		local routeBeacons: { BasePart } = {}
@@ -827,7 +842,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 			stop = endMarker.Position
 		end
 		local groundStart = groundAt(start.X, start.Z) or start
-		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed, def.column, def.keepOrder) then
+		if not stop or not ConvoyService.start(groundStart, route, stop, def.convoySpeed, def.column, def.keepOrder or def.dropFirstPoint) then
 			warn("[MissionService] convoy not started — the mission plays as a regular night")
 			state.kind = "classic"
 			state.infinite = false
@@ -1512,14 +1527,14 @@ function MissionService.onEntranceTouched(player: Player)
 				buildNest(s, marker, i)
 			end
 		end
-		if (s.def.nests or 0) > 0 then
+		if s.def.finale or (s.def.nests or 0) > 0 then
 			-- финал: генераторы, места под ТНТ, детонатор и костяная дверь выхода
 			buildGenerators(s, metro :: Instance)
 			buildTnt(s, metro :: Instance)
 			buildDetonator(s, metro :: Instance)
 			buildExitDoor(s, metro :: Instance)
 		end
-		notify(if (s.def.nests or 0) > 0 then "The team went down into the metro — burn the nests, kill the boss, start the generators and plant the charges!" else "The team went down into the metro — clear the station", 4)
+		notify(if (s.def.nests or 0) > 0 then "The team went down into the metro — burn the nests, kill the boss, start the generators and plant the charges!" elseif s.def.finale then "The team went down into the metro — kill the boss, start the generators and plant the charges!" else "The team went down into the metro — clear the station", 4)
 	end
 end
 
@@ -1704,17 +1719,17 @@ function MissionService.update(dt: number): string?
 			elseif state.nestsBurned < nests then
 				text = string.format("Burn the mutant nests: %d of %d (hold E at a nest)", state.nestsBurned, nests)
 			elseif state.def.boss and not state.bossOut then
-				-- гнёзда сожжены: на станцию выходит босс (из туннелей, вне очереди)
+				-- гнёзда сожжены (или их нет): на станцию выходит босс (из туннелей, вне очереди)
 				state.bossOut = true
 				ZombieService.enqueue({ state.def.boss }, state.hpMult, state.night, true)
-				notify("Nests burned — the boss has come out onto the station!", 5)
+				notify(if nests > 0 then "Nests burned — the boss has come out onto the station!" else "The station boss has come out!", 5)
 				text = "Kill the station boss"
 			elseif state.def.boss and not state.bossSeen then
 				state.bossSeen = ZombieService.bossAlive() -- ждём, пока босс появится
 				text = "Kill the station boss"
 			elseif state.def.boss and ZombieService.bossAlive() then
 				text = "Kill the station boss"
-			elseif nests > 0 then
+			elseif nests > 0 or state.def.finale then
 				text = finaleStep(state, dt, need)
 			else
 				text = string.format("Clear the station: killed %d of %d", math.min(state.metroKills, need), need)
@@ -1742,7 +1757,15 @@ function MissionService.update(dt: number): string?
 		if state.def.baseBattle then
 			text ..= string.format("\nSoldiers at the rally point: %d of %d", BaseBattleService.alive(), Config.BaseBattle.Defenders)
 		end
-		if left == 0 then
+		if state.bossKills > 0 and not state.bossOut then
+			-- сначала зомби, потом босс
+			text = string.format("Kill the mutants: %d of %d — then the boss comes", math.min(state.playerKills, state.bossKills), state.bossKills)
+			if state.playerKills >= state.bossKills then
+				state.bossOut = true
+				ZombieService.enqueue(WaveMath.bossTypes(Config.Waves, state.night), state.hpMult, state.night, true)
+				notify("The boss is coming!", 5)
+			end
+		elseif left == 0 then
 			result = "done"
 		end
 	end
