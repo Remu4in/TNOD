@@ -3,6 +3,8 @@
 -- Сервер в атрибуте Mode говорит, лобби это или матч: игровые контроллеры запускаются, только когда начался матч.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Controllers = script:WaitForChild("Controllers")
+require(Controllers:WaitForChild("LookController")).start() -- свет и цветокоррекция по фазам (и в лобби, и в матче)
+require(Controllers:WaitForChild("CursorController")).start() -- убирает значок мыши из центра экрана (и в лобби, и в матче)
 require(Controllers:WaitForChild("LobbyController")).start() -- лобби и экран итогов
 
 local started = false
@@ -33,9 +35,13 @@ local function startGame()
 	require(Controllers:WaitForChild("StatusController")).start()
 	require(Controllers:WaitForChild("MetroAmbienceController")).start()
 	require(Controllers:WaitForChild("MetroLightController")).start()
+	require(Controllers:WaitForChild("NightLightsController")).start()
 	require(Controllers:WaitForChild("SfxController")).start()
 	require(Controllers:WaitForChild("TestStandController")).start()
 	require(Controllers:WaitForChild("BossBarController")).start()
+	require(Controllers:WaitForChild("SquadController")).start()
+	require(Controllers:WaitForChild("MinimapController")).start()
+	require(Controllers:WaitForChild("SpectateController")).start()
 end
 
 -- режим выставляется сервером в первые секунды; нет атрибута (старый сервер, режим осмотра) — играем как раньше

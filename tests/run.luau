@@ -25,12 +25,13 @@ local Tuning = {
 }
 
 local RoundCfg = {
-	AliveBase = { 10, 15, 22, 30, 40, 50 },
-	AliveStep = { 5, 6, 8, 10, 10, 10 },
-	AliveCaps = { 50, 70, 90, 110, 130, 130 },
+	AliveBase = { 7, 10, 15, 20, 27, 33 },
+	AliveStep = { 2.5, 3, 4, 5, 5, 5 },
+	AliveStepFrom = 3,
+	AliveCaps = { 15, 30, 45, 60, 75, 90 },
 	AliveNightGrowth = 0.6,
 	AliveWaves = 20,
-	AliveMin = 8,
+	AliveMin = 5,
 	AliveHardCap = 130,
 	FirstDayTime = 120,
 	DayTime = 120,
@@ -40,8 +41,8 @@ local RoundCfg = {
 }
 
 local Economy = {
-	MissionPersonalTotal = 7250,
-	MissionTeamTotal = 6000,
+	MissionPersonalTotal = 14500,
+	MissionTeamTotal = 12000,
 	MissionGrowth = 0.10,
 	MissionRewardWaves = 20,
 	TeamShareMinPlayers = 1,
@@ -88,9 +89,9 @@ local ClassDefs = {
 }
 local Tiers = {
 	{ min = 0, hp = 1, runners = 0, early = 0, alive = 0 },
-	{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 1 },
-	{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 2 },
-	{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 3 },
+	{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 0.7 },
+	{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 1.3 },
+	{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 2 },
 }
 local function threatOf(loadouts: { { string } }, seed: number?)
 	return WaveMath.makeThreat(ClassDefs, Tiers, loadouts, seed or 1)
@@ -167,10 +168,10 @@ end)
 
 test("threat level: no weapons 1st, rifle 3rd, everything 4th — extra living zombies, health never changes", function()
 	eq(threatOf({ {} }).tier.alive, 0, "no weapons")
-	eq(threatOf({ { "SMG" } }).tier.alive, 1, "SMGs")
-	eq(threatOf({ { "Rifle" } }).tier.alive, 2, "rifle")
-	eq(threatOf({ { "SMG", "Shotgun", "Rifle", "MG" } }).tier.alive, 3, "everything")
-	eq(threatOf({ { "Rifle" }, {} }).tier.alive, 1, "one of two: average 7.5")
+	eq(threatOf({ { "SMG" } }).tier.alive, 0.7, "SMGs")
+	eq(threatOf({ { "Rifle" } }).tier.alive, 1.3, "rifle")
+	eq(threatOf({ { "SMG", "Shotgun", "Rifle", "MG" } }).tier.alive, 2, "everything")
+	eq(threatOf({ { "Rifle" }, {} }).tier.alive, 0.7, "one of two: average 7.5")
 	for _, loadout in { {}, { "SMG" }, { "Rifle" }, { "SMG", "Shotgun", "Rifle", "MG" } } do
 		eq(threatOf({ loadout }).tier.hp, 1, "tier hp is always 1")
 	end
@@ -378,12 +379,12 @@ local function teamBank(mult: ((number) -> number)?): number
 	return sum
 end
 
-test("economy: team bank is the same for 1–6 players and buys 3–4 buildings (4 only with the top coin perk)", function()
-	check(buildingsFor(teamBank()) == 3, "without a perk: " .. buildingsFor(teamBank()))
-	check(buildingsFor(teamBank(greed)) <= 4 and buildingsFor(teamBank(greed)) >= 3, "with Looter: " .. buildingsFor(teamBank(greed)))
+test("economy: team bank is the same for 1–6 players and buys 5 buildings without a perk", function()
+	check(buildingsFor(teamBank()) == 5, "without a perk: " .. buildingsFor(teamBank()))
+	check(buildingsFor(teamBank(greed)) >= 5, "with Looter: " .. buildingsFor(teamBank(greed)))
 end)
 
-test("economy: for every team size 1–6 the weapons budget is 3–4 guns of 1500 with supplies", function()
+test("economy: for every team size 1–6 the weapons budget is 7–8 guns of 1500 with supplies", function()
 	for players = 1, 6 do
 		-- личные деньги к 20-й ночи (без командной доли) минус 2500 на припасы
 		local personal = 500
@@ -391,7 +392,7 @@ test("economy: for every team size 1–6 the weapons budget is 3–4 guns of 150
 			personal += (WaveMath.missionReward(Economy, w))
 		end
 		local guns = math.floor((personal - 2500) / 1500)
-		check(guns >= 3 and guns <= 4, string.format("players %d: %d guns", players, guns))
+		check(guns >= 7 and guns <= 8, string.format("players %d: %d guns", players, guns))
 		-- и вся сумма игрока: больше, чем у меньшей команды, быть не может
 		if players > 1 then
 			check(income(players, 20) < income(players - 1, 20), "a bigger team gets less per head: " .. players)
@@ -403,21 +404,21 @@ test("economy: by night 15 and 20 income per player falls with team size; solo g
 	local p, t = WaveMath.missionReward(Economy, 3)
 	check(math.abs(WaveMath.playerReward(Economy, 3, 1) - (p + t)) < 1e-9, "solo")
 	check(math.abs(WaveMath.playerReward(Economy, 3, 6) - (p + t / 6)) < 1e-9, "six")
-	check(income(2, 15) <= 9000 and income(6, 15) >= 4500, string.format("night 15: %d / %d", income(2, 15), income(6, 15)))
-	check(income(6, 20) >= 7700 and income(1, 20) <= 14500, string.format("night 20: %d / %d", income(6, 20), income(1, 20)))
+	check(income(2, 15) <= 18000 and income(6, 15) >= 9000, string.format("night 15: %d / %d", income(2, 15), income(6, 15)))
+	check(income(6, 20) >= 15400 and income(1, 20) <= 29000, string.format("night 20: %d / %d", income(6, 20), income(1, 20)))
 end)
 
-test("alive zombies: night 1 base 10 / 15 / 22 / 30 / 40 / 50 for 1–6 players", function()
-	local want = { 10, 15, 22, 30, 40, 50 }
+test("alive zombies: night 1 base 7 / 10 / 15 / 20 / 27 / 33 for 1–6 players", function()
+	local want = { 7, 10, 15, 20, 27, 33 }
 	for players = 1, 6 do
 		eq(WaveMath.aliveCap(RoundCfg, 1, players), want[players], "players " .. players)
 	end
-	eq(WaveMath.aliveCap(RoundCfg, 1, 0), 10, "0 players count as 1")
-	eq(WaveMath.aliveCap(RoundCfg, 1, 9), 50, "more than 6 count as 6")
+	eq(WaveMath.aliveCap(RoundCfg, 1, 0), 7, "0 players count as 1")
+	eq(WaveMath.aliveCap(RoundCfg, 1, 9), 33, "more than 6 count as 6")
 end)
 
-test("alive zombies: grow by night minute up to the team cap, never above 130", function()
-	local caps = { 50, 70, 90, 110, 130, 130 }
+test("alive zombies: grow from minute 3 up to the team cap of 15 per player", function()
+	local caps = { 15, 30, 45, 60, 75, 90 }
 	for players = 1, 6 do
 		local prev = 0
 		for minute = 1, 12 do
@@ -428,9 +429,10 @@ test("alive zombies: grow by night minute up to the team cap, never above 130", 
 		end
 		eq(prev, caps[players], "players " .. players .. " reach their cap")
 	end
-	-- соло: 10 → 15 → 20 → 25 → 30 по минутам 1-й ночи
-	eq(WaveMath.aliveCap(RoundCfg, 1, 1, nil, 3), 20, "solo, minute 3")
-	eq(WaveMath.aliveCap(RoundCfg, 1, 6, nil, 3), 70, "six, minute 3")
+	-- первые две минуты база, рост — с третьей
+	eq(WaveMath.aliveCap(RoundCfg, 1, 4, nil, 2), 20, "four, minute 2: no growth yet")
+	eq(WaveMath.aliveCap(RoundCfg, 1, 4, nil, 3), 25, "four, minute 3")
+	eq(WaveMath.aliveCap(RoundCfg, 1, 1, nil, 3), 10, "solo, minute 3 (9.5 rounded)")
 end)
 
 test("alive zombies: grow with the night number and the threat level (weapons of the team)", function()
@@ -449,9 +451,9 @@ test("alive zombies: grow with the night number and the threat level (weapons of
 	end
 end)
 
-test("alive zombies: convoy nights get a multiplier, still capped at 130", function()
-	eq(WaveMath.aliveCap(RoundCfg, 1, 2, nil, 1, 1.3), 20, "two players, convoy")
-	eq(WaveMath.aliveCap(RoundCfg, 20, 6, nil, 5, 1.3), 130, "six players are capped")
+test("alive zombies: convoy nights get a multiplier, still capped at the team cap", function()
+	eq(WaveMath.aliveCap(RoundCfg, 1, 2, nil, 1, 1.3), 13, "two players, convoy")
+	eq(WaveMath.aliveCap(RoundCfg, 20, 6, nil, 9, 1.3), 90, "six players are capped")
 	check(WaveMath.aliveCap(RoundCfg, 8, 4, nil, 1, 1.3) > WaveMath.aliveCap(RoundCfg, 8, 4, nil, 1), "more on convoy nights")
 end)
 

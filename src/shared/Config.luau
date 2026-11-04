@@ -134,13 +134,16 @@ Config.Round = {
 	GameOverTime = 8,
 	-- Одновременно живых зомби (остальные ждут в очереди спавна). База в начале ночи по числу игроков 1…6, растёт с номером ночи (до +60 % к 20-й)
 	-- и с уровнем угрозы (Config.Threat.Tiers[].alive на игрока), затем с каждой минутой ночи на AliveStep, но не выше AliveCaps; всего ≤ AliveHardCap.
-	AliveBase = { 10, 15, 22, 30, 40, 50 } :: { number },
-	AliveStep = { 5, 6, 8, 10, 10, 10 } :: { number },
-	AliveCaps = { 50, 70, 90, 110, 130, 130 } :: { number },
+	-- плейтест на 4 игроках (2026-11-05): 60–80 живых уже на 1-й минуте — база в 1,5 раза меньше, рост по минутам в 2 раза меньше и только с 3-й минуты (121 с),
+	-- потолок команды — по 15 на игрока и не выше ни на каких ночах (конвой тоже)
+	AliveBase = { 7, 10, 15, 20, 27, 33 } :: { number },
+	AliveStep = { 2.5, 3, 4, 5, 5, 5 } :: { number },
+	AliveStepFrom = 3, -- с этой минуты ночи начинается рост
+	AliveCaps = { 15, 30, 45, 60, 75, 90 } :: { number },
 	AliveNightGrowth = 0.6,
 	ConvoyAliveMul = 1.3, -- на конвойных ночах (escort) живых зомби больше: колонна из нескольких машин
 	AliveWaves = 20,
-	AliveMin = 8,
+	AliveMin = 5,
 	AliveHardCap = 130, -- потолок нагрузки на сервер
 	SpawnsPerTick = 2,
 	SpawnTick = 0.25,
@@ -310,7 +313,7 @@ export type ItemDef = {
 }
 
 local Items: { [string]: ItemDef } = {
-	Medkit = { name = "Medkit", heal = 60, color = Color3.fromRGB(235, 235, 235) },
+	Medkit = { name = "Medkit", heal = 80, color = Color3.fromRGB(235, 235, 235) },
 	EnergyDrink = { name = "Energy drink", infiniteWaves = 1, color = Color3.fromRGB(60, 190, 255) },
 }
 Config.Items = Items
@@ -332,8 +335,8 @@ Config.Economy = {
 	-- Цель на игрока (вдвоём): к 15-й ночи около 6500 монет с учётом стартовых 500 (до 7200 с перками «Looter» на максимуме), к 20-й около 9700 (до 11 300).
 	-- Провал миссии — доля MissionFailShare (0: награды нет). Лежащему на конец ночи — DownedRewardFactor от награды.
 	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту ночь.
-	MissionPersonalTotal = 7250,
-	MissionTeamTotal = 6000,
+	MissionPersonalTotal = 14500, -- ×2 по плейтесту 2026-11-05: «ни на что почти не хватило»
+	MissionTeamTotal = 12000,
 	MissionGrowth = 0.10,
 	MissionRewardWaves = 20,
 	TeamShareMinPlayers = 1, -- командная часть делится на число игроков (соло получает всю)
@@ -1097,6 +1100,7 @@ Config.Waves = {
 	JitterPct = 10,
 	CapSolo = 80,
 	CapPerExtraPlayer = 0.45,
+	CountMul = 1 / 1.5, -- всего зомби за ночь в 1,5 раза меньше кривой выше (плейтест 2026-11-05)
 	HpGrowthPerWave = 0, -- было 0,12: здоровье не растёт, прогрессия — числом зомби
 	DamageGrowthPerWave = 0.02, -- было 0,03: при плоском здоровье урон к 20-й ночи ×1,38
 	SpeedGrowthPerWave = 0.01,
@@ -1118,9 +1122,9 @@ Config.ThreatClasses = {
 Config.Threat = {
 	Tiers = {
 		{ min = 0, hp = 1, runners = 0, early = 0, alive = 0 },
-		{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 1 },
-		{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 2 },
-		{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 3 },
+		{ min = 7, hp = 1, runners = 0.05, early = 0, alive = 0.7 },
+		{ min = 15, hp = 1, runners = 0.1, early = 1, alive = 1.3 },
+		{ min = 29, hp = 1, runners = 0.15, early = 1, alive = 2 },
 	},
 }
 
@@ -1188,7 +1192,7 @@ Config.Convoy = {
 	SoldierDps = 15, -- урон по зомби в секунду каждого солдата (было 50)
 	SoldierShotInterval = 0.5,
 	SoldierRange = 40,
-	InstallHold = 6, -- сколько секунд держать «Установить шатёр»
+	InstallHold = 5, -- сколько секунд держать «Установить шатёр»; прогресс не сбрасывается, если отпустить (MissionService)
 	Model = "APC", -- машина конвоя из ServerStorage.Assets.Vehicles (бронетранспортёр Stryker); запасная — TransportTruck
 	Solid = false, -- true: машина твёрдая (толкает игроков, но на стыках дороги скорость неровная)
 	FollowGain = 6, -- 1/с: как сильно машина подтягивается к расчётной точке маршрута (скорость = курс × скорость + ошибка × FollowGain)
@@ -1400,10 +1404,7 @@ Config.Metro = {
 	},
 	InsideMaxY = -200,
 	Cave = { minX = 640, minZ = 22 },
-	Dark = {
-		station = { Brightness = 0, Ambient = Color3.fromRGB(34, 36, 48), OutdoorAmbient = Color3.fromRGB(34, 36, 48), ExposureCompensation = -0.35, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
-		cave = { Brightness = 0, Ambient = Color3.fromRGB(7, 7, 11), OutdoorAmbient = Color3.fromRGB(7, 7, 11), ExposureCompensation = -0.6, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
-	},
+	-- свет станции и пещеры — пресеты Config.Visual.Presets.metro / .cave (ставит клиент, LookController)
 	Flashlight = { Range = 70, Angle = 75, Brightness = 3.2, Color = Color3.fromRGB(255, 244, 220) },
 	Sounds = {
 		{ name = "tunnel ambience", id = "rbxassetid://9118773471", volume = 0.18 },
@@ -1473,7 +1474,7 @@ Config.Vendors = {
 	Vending = {
 		name = "Rifle", greeting = "Runs on backup power. No change given.",
 		items = {
-			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item", robux = 25, requires = "Pharmacy" },
+			{ id = "Medkit", name = "Medkit", desc = "+80 health", price = 150, kind = "item", robux = 25, requires = "Pharmacy" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite energy for 1 wave", price = 100, kind = "item", robux = 20 },
 			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo", robux = 15 },
 			-- оборудование: как аптечка — купить можно только после открытия своего здания (Garage — проволока, Turret shop — турель)
@@ -1485,7 +1486,7 @@ Config.Vendors = {
 	Pharmacy = {
 		name = "Pharmacist", greeting = "Mutants fear the sun — and we fear the night. Take it while it's light.",
 		items = {
-			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item" },
+			{ id = "Medkit", name = "Medkit", desc = "+80 health", price = 150, kind = "item" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite sprint energy for 1 wave", price = 100, kind = "item" },
 		},
 	},
@@ -1502,7 +1503,7 @@ Config.Vendors = {
 		name = "Supply sergeant", greeting = "Medkits, energy, wire, a turret. Whatever keeps you breathing in the tunnels.",
 		items = {
 			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo" },
-			{ id = "Medkit", name = "Medkit", desc = "+60 health", price = 150, kind = "item" },
+			{ id = "Medkit", name = "Medkit", desc = "+80 health", price = 150, kind = "item" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite sprint energy for 1 wave", price = 100, kind = "item" },
 			{ id = "BarbedWire", name = "Barbed wire", desc = "Traps the first 2 mutants, slows the next 2", price = 250, kind = "equip" },
 			{ id = "ElectricWire", name = "Electric wire", desc = "Burns up to 5 mutants at 50 damage/s; lasts until dawn", price = 600, kind = "equip" },
@@ -1574,6 +1575,18 @@ Config.MetroCamp = {
 	message = "Tomorrow night you go down into the metro. Stock up now: traders and a vending machine are waiting by the metro entrance!",
 }
 
+-- Мини-карта, иконки тиммейтов и метки (SquadService, SquadController, MinimapController)
+Config.Squad = {
+	PosInterval = 0.5, -- с: как часто сервер публикует позиции игроков (персонажи вдали могут быть не загружены стримингом)
+	IconSize = 22, -- пикселей: иконка тиммейта
+	IconTransparency = 0.72, -- почти прозрачная
+	PingSeconds = 7, -- сколько живёт метка (колёсико мыши)
+	PingInterval = 0.8, -- с: не чаще одной метки от игрока
+	PingRange = 900, -- студов: дальность луча метки
+	MapSize = 170, -- пикселей: сторона мини-карты
+	MapRadius = 220, -- студов от игрока до края карты
+}
+
 -- Лобби (LobbyService, Locations/Lobby): публичный сервер места — лобби, резервный сервер того же места — матч
 Config.Lobby = {
 	Enabled = true, -- false: старое поведение, игрок сразу попадает в раунд
@@ -1600,8 +1613,7 @@ Config.Lobby = {
 	ReturnSeconds = 30, -- с: экран итогов, потом всех возвращает в лобби
 	BoardSize = 10, -- строк в таблице лидеров
 	BoardRefresh = 120, -- с: как часто обновляем таблицу
-	-- Освещение лобби: тёплый вечер (ClockTime — «часы суток»), чтобы были видны цвета ассетов
-	Lighting = { ClockTime = 17.4, Brightness = 2.2, Ambient = Color3.fromRGB(96, 100, 118), OutdoorAmbient = Color3.fromRGB(118, 112, 120), FogEnd = 1600, FogColor = Color3.fromRGB(170, 150, 140), Exposure = 0.1 },
+	-- освещение лобби — пресет Config.Visual.Presets.lobby (тёплый вечер)
 	-- Военные НПС лобби (Locations/Lobby расставляет точки, Services/LobbyNpcService ведёт)
 	NpcWalkSpeed = 7, -- студов/с у патрульных
 	-- Магазин и автоматы: покупок пока нет (монетизация не подключена) — окна показывают список с пометкой «Coming soon».
@@ -1618,6 +1630,100 @@ Config.Lobby = {
 		{ id = "don_large", name = "Commander box", desc = "Big bundle: coins, ammo and a supporter badge", price = "Coming soon" },
 		{ id = "don_vip", name = "VIP pass", desc = "Supporter title and priority in the lobby", price = "Coming soon" },
 	},
+}
+
+-- ===== Визуальный проход (2026-11-04): свет, туман, цветокоррекция и эффекты, ориентир — промо-арты =====
+-- Lighting целиком ставит клиент (LookController): сервер пишет только атрибут ReplicatedStorage.Look (day | night | boss | lobby) и меняет небо.
+-- Под картой (метро, пещера) клиент берёт пресеты metro / cave. Поля пресета: lighting — свойства Lighting, atmosphere, bloom, sunRays,
+-- grade (ColorCorrectionEffect «LookGrade»). Поле, которого нет в пресете, не меняется (у метро нет ClockTime — время суток остаётся наверху).
+local rgb = Color3.fromRGB
+Config.Visual = {
+	TweenTime = 4, -- с: смена дня и ночи
+	MetroTweenTime = 1.2, -- с: спуск в метро и подъём
+	MoonSize = 20, -- угловой размер луны (у неба по умолчанию 11): крупная луна, как на артах; клиент включает небу CelestialBodiesShown
+	StarCount = 4000,
+	Presets = {
+		day = {
+			lighting = { ClockTime = 14.5, GeographicLatitude = 0, Brightness = 3, Ambient = rgb(72, 74, 82), OutdoorAmbient = rgb(92, 94, 104), ExposureCompensation = 0, EnvironmentDiffuseScale = 1, EnvironmentSpecularScale = 1 },
+			atmosphere = { Density = 0.3, Offset = 0.25, Color = rgb(206, 202, 192), Decay = rgb(106, 112, 126), Haze = 0.6, Glare = 0.2 },
+			bloom = { Intensity = 0.6, Size = 24, Threshold = 1.4 },
+			sunRays = { Intensity = 0.05, Spread = 0.25 },
+			grade = { Brightness = 0, Contrast = 0.12, Saturation = 0.12, TintColor = rgb(255, 250, 242) },
+		},
+		-- глубокая синяя ночь: лунный свет и синий туман, сильное свечение неона (вспышки, трассеры, глаза зомби), контраст
+		-- ClockTime = 24 — полночь (переход из дня идёт через закат, см. LookController); GeographicLatitude = -48: луна стоит низко (≈18° над горизонтом, со стороны −Z), её видно в кадре, а не только в зените
+		night = {
+			lighting = { ClockTime = 24, GeographicLatitude = -48, Brightness = 2.6, Ambient = rgb(50, 60, 108), OutdoorAmbient = rgb(90, 110, 185), ExposureCompensation = 0.3, EnvironmentDiffuseScale = 0.6, EnvironmentSpecularScale = 0.6 },
+			atmosphere = { Density = 0.4, Offset = 0.3, Color = rgb(96, 116, 196), Decay = rgb(60, 74, 150), Haze = 2.4, Glare = 0.8 },
+			bloom = { Intensity = 1.3, Size = 40, Threshold = 0.85 },
+			sunRays = { Intensity = 0, Spread = 0.3 },
+			grade = { Brightness = 0.04, Contrast = 0.12, Saturation = 0.2, TintColor = rgb(180, 200, 255) },
+		},
+		-- ночь с боссом (небо RedNight): та же ночь, но туман и оттенок уходят в багровый
+		boss = {
+			lighting = { ClockTime = 24, GeographicLatitude = -48, Brightness = 2.4, Ambient = rgb(78, 46, 60), OutdoorAmbient = rgb(150, 82, 100), ExposureCompensation = 0.3, EnvironmentDiffuseScale = 0.6, EnvironmentSpecularScale = 0.6 },
+			atmosphere = { Density = 0.42, Offset = 0.3, Color = rgb(160, 66, 80), Decay = rgb(96, 30, 46), Haze = 2.4, Glare = 0.8 },
+			bloom = { Intensity = 1.4, Size = 40, Threshold = 0.85 },
+			sunRays = { Intensity = 0, Spread = 0.3 },
+			grade = { Brightness = 0.03, Contrast = 0.14, Saturation = 0.2, TintColor = rgb(255, 200, 200) },
+		},
+		-- лобби: тёплый вечер, видны цвета ассетов
+		lobby = {
+			lighting = { ClockTime = 17.4, GeographicLatitude = 0, Brightness = 2.2, Ambient = rgb(96, 100, 118), OutdoorAmbient = rgb(118, 112, 120), ExposureCompensation = 0.1, EnvironmentDiffuseScale = 1, EnvironmentSpecularScale = 1 },
+			atmosphere = { Density = 0.3, Offset = 0.2, Color = rgb(200, 162, 142), Decay = rgb(120, 90, 104), Haze = 1.5, Glare = 0.5 },
+			bloom = { Intensity = 0.8, Size = 32, Threshold = 1.1 },
+			sunRays = { Intensity = 0.12, Spread = 0.3 },
+			grade = { Brightness = 0, Contrast = 0.15, Saturation = 0.15, TintColor = rgb(255, 238, 225) },
+		},
+		-- станция метро: холодный синий полумрак, туман в тоннелях; красные и белые лампы светятся через bloom; основной свет — фонарик
+		metro = {
+			lighting = { Brightness = 0, Ambient = rgb(30, 34, 54), OutdoorAmbient = rgb(30, 34, 54), ExposureCompensation = -0.1, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
+			atmosphere = { Density = 0.42, Offset = 0, Color = rgb(36, 44, 76), Decay = rgb(26, 26, 48), Haze = 2, Glare = 0 },
+			bloom = { Intensity = 1.6, Size = 30, Threshold = 0.7 },
+			sunRays = { Intensity = 0, Spread = 0.3 },
+			grade = { Brightness = 0.03, Contrast = 0.3, Saturation = 0.15, TintColor = rgb(202, 214, 255) },
+		},
+		-- пещера: почти полная темнота, только фонарик
+		cave = {
+			lighting = { Brightness = 0, Ambient = rgb(7, 7, 11), OutdoorAmbient = rgb(7, 7, 11), ExposureCompensation = -0.6, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
+			atmosphere = { Density = 0.5, Offset = 0, Color = rgb(14, 16, 26), Decay = rgb(8, 8, 14), Haze = 2, Glare = 0 },
+			bloom = { Intensity = 1.4, Size = 30, Threshold = 0.75 },
+			sunRays = { Intensity = 0, Spread = 0.3 },
+			grade = { Brightness = 0, Contrast = 0.22, Saturation = -0.05, TintColor = rgb(212, 218, 240) },
+		},
+	},
+	-- Прожекторы на дозорных вышках (Workspace.Base.WatchTower), только ночью; строит клиент (NightLightsController), луч — Beam
+	Searchlights = {
+		Color = rgb(215, 228, 255),
+		Range = 60, -- студов: максимум SpotLight
+		Angle = 26,
+		Brightness = 7,
+		Pitch = 26, -- градусов вниз от горизонта
+		SwayDeg = 32, -- размах качания по сторонам
+		SwayPeriod = 11, -- с: полный цикл
+		BeamLength = 75,
+		BeamWidth0 = 1.2,
+		BeamWidth1 = 18,
+		BeamTransparency = 0.8, -- у прожектора; к концу луч растворяется полностью
+	},
+	-- Мигающие красные огни: на крыше каждой вышки и над воротами базы (Workspace.Base.BaseGate)
+	Beacons = { Color = rgb(255, 36, 24), Size = 0.8, Range = 16, Brightness = 3, Period = 1.3, OnFraction = 0.45 },
+	-- Вспышка у ствола и трассеры (FxController); MaxLights — сколько PointLight вспышек живут одновременно, остальные вспышки без света
+	Muzzle = { Brightness = 9, RangeBase = 14, RangePerSize = 7, Color = rgb(255, 176, 80), MaxLights = 6, SizeMul = 1.3 },
+	Tracer = { Width = 0.14, Length = 12, OwnColor = rgb(255, 214, 120), OtherColor = rgb(255, 196, 110) },
+	-- Турель и пулемёт машины (сервер): короткий свет вспышки
+	GunFlashLight = { Brightness = 7, Range = 16, Color = rgb(255, 176, 80) },
+	-- Светящиеся глаза зомби: две неоновые детали на голове (без PointLight — зомби до 130). Смещение — в долях высоты Head (у рига 1 студ),
+	-- от центра головы; Offsets — свои смещения для голов-мешей; Skip — модели без глаз (у B_Garg голова невидима, у B_Final свои красные глаза)
+	ZombieEyes = {
+		Color = rgb(150, 255, 70),
+		Size = Vector3.new(0.24, 0.13, 0.06),
+		Offset = Vector3.new(0.21, 0.12, -0.6),
+		Offsets = {} :: { [string]: Vector3 },
+		Skip = { B_Garg = true, B_Final = true } :: { [string]: boolean },
+	},
+	-- Фары: машины игроков (VehicleService, кроме декора) и колонна (ConvoyService); горят ночью (клиент включает по тегу NightLight)
+	Headlights = { Range = 60, Angle = 60, Brightness = 6, Color = rgb(255, 240, 214), LensSize = Vector3.new(0.9, 0.5, 0.12) },
 }
 
 return Config

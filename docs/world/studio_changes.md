@@ -111,3 +111,17 @@
 | W039 | 2026-11-05 | Удалены 60 объектов с недоступными id: `MeshPart` с удалённой из Roblox моделью (невидимые: дробовик-декор `Workspace.Buildings.Armory.Itacha 37`, бочки `Garage.Model.oil`, фары `Base.CrashFire…Light` и их копии в `ServerStorage.Assets`), `Shirt` у `Z_P4_2`, мёртвые звуки в `ServerStorage.AssetStaging` | то же |
 
 Итог: в Play (день, ночь, метро, база, лобби) в Output осталась одна строка про ассеты — `189782328 Asset type does not match` (где лежит, не нашлось, на игру не влияет). Место **не сохранено** — сохранить в Studio.
+
+## Визуальный проход: свет, туман, эффекты (2026-11-04, ветка `claude/visual-pass-83785d`)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W040 | 2026-11-04 | Временно, для снимков «до» в Edit: `Lighting` переведён в старую ночь и старое метро (`ClockTime 0`, `Sky` ↔ `ServerStorage.Skies.NightSky`, свойства `Atmosphere`, `Bloom`, `SunRays`, временный `ColorCorrectionEffect TmpGrade`). Сразу возвращено: `ClockTime 14.5`, `Brightness 3`, `Ambient/OutdoorAmbient (70,70,70)`, `Atmosphere D 0.30 O 0.25 Haze 0 Glare 0`, `Bloom I 1 S 24 T 2`, `SunRays I 0.01 S 0.1` (прежнее значение `SunRays.Intensity` читалось с округлением до 0,01), небо `Sky` в `Lighting`, `TmpGrade` удалён | не требуется (клиент теперь сам ставит весь Lighting) |
+| W041 | 2026-11-04 | Скрипты залиты через HTTP (байты сверены построчным сравнением с файлами): `Shared.Config`; `Server.Services.RoundService`, `LobbyService`, `VehicleService`, `ConvoyService`, `EquipmentService`, `ZombieService`; `Client` (LocalScript), `Client.Controllers.MetroLightController`, `FxController`. **Новые ModuleScript:** `Server.Services.LightKit`, `Client.Controllers.LookController`, `Client.Controllers.NightLightsController` | Залить прежние версии из git (`27ce98d`), удалить три новых модуля |
+| W042 | 2026-11-04 | Временно на время Play: в `Config.Source` `Lobby.ForceMode = "match"` и `TestStands = true`. После проверок `Config` залит из файла заново (149572 байт, `ForceMode = nil`, `TestStands = false`) | не требуется |
+
+Итог: Studio в Edit, `Workspace` и `Lighting` в Edit без изменений, `Workspace.CurrentCamera` пуст. Место **не сохранено** — три новых модуля (W041) лежат только в файле места: сохранить в Studio.
+
+## Правки по плейтесту (2026-11-05)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W043 | 2026-11-05 | Новые ModuleScript: `Client.Controllers.CursorController`, `MinimapController`, `SpectateController`, `SquadController`, `Server.Services.SquadService`; залиты изменённые скрипты. Лежат только в файле места — сохранить | Удалить модули, залить прежние версии из git |

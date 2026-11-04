@@ -48,7 +48,6 @@ local friendCache: { [string]: boolean } = {}
 local nameCache: { [number]: string } = {}
 local dirty = true
 local lastHint: { [Player]: number } = {}
-local savedLighting: { [string]: any }? = nil
 local bannerShown: { [number]: string } = {}
 
 -- Studio: ждём, пока кто-то снова запустит матч после возврата в лобби
@@ -106,26 +105,12 @@ local function setMode(m: string)
 	ReplicatedStorage:SetAttribute("Mode", m)
 end
 
--- ===== Свет лобби (в Studio лобби и матч делят Lighting: запоминаем и возвращаем) =====
-
-local LIGHT_PROPS = { "ClockTime", "Brightness", "Ambient", "OutdoorAmbient", "ExposureCompensation", "FogEnd", "FogColor" }
+-- ===== Свет лобби =====
+-- Свет ставит клиент (LookController, пресет Config.Visual.Presets.lobby): сервер пишет атрибут Look и меняет небо.
+-- В Studio лобби и матч делят Lighting: при переходе в матч возвращаем ночное небо в запас RoundService и дневной вид.
 
 local function applyLobbyLighting()
-	if not savedLighting then
-		local snap: { [string]: any } = {}
-		for _, k in LIGHT_PROPS do
-			snap[k] = (Lighting :: any)[k]
-		end
-		savedLighting = snap
-	end
-	local lc = L.Lighting
-	Lighting.ClockTime = lc.ClockTime
-	Lighting.Brightness = lc.Brightness
-	Lighting.Ambient = lc.Ambient
-	Lighting.OutdoorAmbient = lc.OutdoorAmbient
-	Lighting.ExposureCompensation = lc.Exposure
-	Lighting.FogEnd = lc.FogEnd
-	Lighting.FogColor = lc.FogColor
+	ReplicatedStorage:SetAttribute("Look", "lobby")
 	-- вечернее небо: ночное небо матча убираем в ServerStorage.Skies
 	local skies = ServerStorage:FindFirstChild("Skies")
 	if skies then
@@ -138,13 +123,7 @@ local function applyLobbyLighting()
 end
 
 local function restoreLighting()
-	local snap = savedLighting
-	if snap then
-		for k, v in snap do
-			(Lighting :: any)[k] = v
-		end
-		savedLighting = nil
-	end
+	ReplicatedStorage:SetAttribute("Look", "day")
 	local skies = ServerStorage:FindFirstChild("Skies")
 	local night = skies and skies:FindFirstChild("NightSky")
 	if night and not Lighting:FindFirstChild("NightSky") then

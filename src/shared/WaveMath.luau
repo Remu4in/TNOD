@@ -20,6 +20,7 @@ export type WaveTuning = {
 	SpeedCeil: number,
 	BossEvery: number,
 	CountScale: number?, -- множитель числа зомби (на время тестов 0,1; в релизе не задаём)
+	CountMul: number?, -- постоянный множитель всего числа зомби за ночь (баланс)
 }
 
 -- Уровень угрозы команды (вооружённость): считается один раз в начале ночи (makeThreat)
@@ -127,7 +128,7 @@ end
 function WaveMath.curveCount(t: WaveTuning, wave: number, players: number): number
 	local start, cap = startCount(t, players), capFor(t, players)
 	local k = math.clamp((wave - 1) / (t.CurveWaves - 1), 0, 1) ^ t.CurveExp
-	return (start + (cap - start) * k) * (t.CountScale or 1)
+	return (start + (cap - start) * k) * (t.CountScale or 1) * (t.CountMul or 1)
 end
 
 -- Сколько зомби в волне: кривая ±отклонение + добавка за классы оружия команды (в пределах потолка)
@@ -145,7 +146,7 @@ function WaveMath.zombieCount(t: WaveTuning, wave: number, players: number, thre
 		end
 	end
 	local scale = t.CountScale or 1
-	total = math.min(total, capFor(t, players) * scale) * (planAt(wave).countMul or 1)
+	total = math.min(total, capFor(t, players) * scale * (t.CountMul or 1)) * (planAt(wave).countMul or 1)
 	return math.max(if scale < 1 then 3 else 1, math.floor(total + 0.5))
 end
 
@@ -172,6 +173,7 @@ end
 export type RoundTuning = {
 	AliveBase: { number }, -- одновременно живых в начале ночи по размеру команды (индекс — число игроков 1…6)
 	AliveStep: { number }, -- прибавка к живым за каждую следующую минуту ночи, по размеру команды
+	AliveStepFrom: number?, -- с какой минуты ночи начинается прибавка (нет — со 2-й)
 	AliveCaps: { number }, -- потолок живых по размеру команды (минутный рост выше него не идёт)
 	ConvoyAliveMul: number?, -- множитель живых на конвойных ночах
 	AliveNightGrowth: number, -- рост базы к 20-й ночи: база × (1 + AliveNightGrowth · (ночь − 1) / (AliveWaves − 1))
@@ -196,9 +198,9 @@ function WaveMath.aliveCap(r: RoundTuning, wave: number, players: number, threat
 	local p = math.max(1, players)
 	local k = math.clamp((wave - 1) / math.max(1, r.AliveWaves - 1), 0, 1)
 	local base = bySize(r.AliveBase, p) * (1 + r.AliveNightGrowth * k) + (if threat then threat.tier.alive else 0) * p
-	local grown = base + bySize(r.AliveStep, p) * (math.max(1, minute or 1) - 1)
+	local grown = base + bySize(r.AliveStep, p) * math.max(0, (minute or 1) - (r.AliveStepFrom or 2) + 1)
 	local m = mul or 1 -- множитель ночи (конвой): больше зомби под колонну, но не выше AliveHardCap
-	return math.clamp(math.floor(math.min(grown * m, bySize(r.AliveCaps, p) * m) + 0.5), r.AliveMin, r.AliveHardCap)
+	return math.clamp(math.floor(math.min(grown * m, bySize(r.AliveCaps, p)) + 0.5), r.AliveMin, r.AliveHardCap)
 end
 
 -- Предел длины ночи, секунд: своя для каждой ночи (зависит от миссии), иначе NightDefaultTime

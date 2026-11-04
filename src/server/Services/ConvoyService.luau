@@ -18,6 +18,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local SoldierService = require(script.Parent:WaitForChild("SoldierService"))
 local RoadRoute = require(script.Parent:WaitForChild("RoadRoute"))
+local LightKit = require(script.Parent:WaitForChild("LightKit"))
 
 local ConvoyService = {}
 
@@ -295,6 +296,7 @@ local function buildTruck(modelName: string, vehicleName: string, spawn: Vector3
 	engine.RollOffMaxDistance = 90
 	engine.Parent = biggest
 	engine:Play()
+	LightKit.headlights(truck, biggest, heading) -- фары ночью (включает клиент)
 	return truck, biggest, bottom, yaw
 end
 

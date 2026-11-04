@@ -421,7 +421,7 @@ local function stepTurret(p: Placed, now: number)
 	tracer.CanQuery = false
 	tracer.Material = Enum.Material.Neon
 	tracer.Color = Color3.fromRGB(255, 220, 120)
-	tracer.Size = Vector3.new(0.12, 0.12, dir.Magnitude)
+	tracer.Size = Vector3.new(0.18, 0.18, dir.Magnitude)
 	tracer.CFrame = CFrame.lookAt(muzzle + dir / 2, muzzle + dir)
 	tracer.Parent = container()
 	Debris:AddItem(tracer, 0.05)
@@ -434,6 +434,15 @@ local function stepTurret(p: Placed, now: number)
 	flash.Shape = Enum.PartType.Ball
 	flash.Size = Vector3.one * 0.9
 	flash.CFrame = CFrame.new(muzzle + dir.Unit * 0.4)
+	do -- короткий свет вспышки (Config.Visual.GunFlashLight), без теней
+		local g = Config.Visual.GunFlashLight
+		local fl = Instance.new("PointLight")
+		fl.Color = g.Color
+		fl.Range = g.Range
+		fl.Brightness = g.Brightness
+		fl.Shadows = false
+		fl.Parent = flash
+	end
 	flash.Parent = container()
 	Debris:AddItem(flash, 0.04)
 	if p.sound then
