@@ -418,6 +418,42 @@ local RIG_HIT_PARTS: { [string]: boolean } = {
 
 -- Риг R6 из библиотеки ServerStorage.Assets.Zombies (Config.ZombieRigs): случайная модель из пула типа, живой Humanoid, суставы Motor6D.
 -- Попадания принимают сами части тела (Head, Torso, руки, ноги); корень-невидимка попаданий не принимает.
+-- Светящиеся зелёные глаза (Config.Visual.ZombieEyes): две неоновые детали, приваренные к голове, без PointLight (зомби до 130).
+-- Лежат внутри Head (не в модели), чтобы setEyes их не путал с глазами блочных зомби; пули их не видят.
+local function addGlowEyes(model: Model, assetName: string)
+	local e = Config.Visual.ZombieEyes
+	if e.Skip[assetName] then
+		return
+	end
+	local head = model:FindFirstChild("Head")
+	if not head or not head:IsA("BasePart") or head.Transparency >= 1 then
+		return
+	end
+	local u = head.Size.Y -- у рига голова 2 × 1 × 1, у боссов крупнее
+	local offset = e.Offsets[assetName] or e.Offset
+	for _, side in { -1, 1 } do
+		local eye = Instance.new("Part")
+		eye.Name = "GlowEye"
+		eye.Size = e.Size * u
+		eye.Color = e.Color
+		eye.Material = Enum.Material.Neon
+		eye.CanCollide = false
+		eye.CanQuery = false
+		eye.CanTouch = false
+		eye.Massless = true
+		eye.CastShadow = false
+		eye.CollisionGroup = COLLISION_GROUP
+		eye.CFrame = head.CFrame * CFrame.new(offset.X * side * u, offset.Y * u, offset.Z * u)
+		eye:SetAttribute("BaseColor", e.Color)
+		eye:SetAttribute("BaseTransparency", 0)
+		local w = Instance.new("WeldConstraint")
+		w.Part0 = head
+		w.Part1 = eye
+		w.Parent = eye
+		eye.Parent = head
+	end
+end
+
 local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): Model?
 	local lib = ServerStorage:FindFirstChild("Assets")
 	local folder = lib and lib:FindFirstChild("Zombies")
@@ -476,6 +512,7 @@ local function buildRigModel(def: Config.ZombieDef, rigDef: Config.ZombieRig): M
 			end
 		end
 	end
+	addGlowEyes(model, src.Name)
 	if rigDef.noAlertTint then
 		-- setEyes не красит тело в розовое при замахе и во второй фазе; эффекты модели (красные глаза, чёрная аура — ParticleEmitter) не трогаем
 		model:SetAttribute("NoTint", true)
@@ -2288,6 +2325,11 @@ local function spawnCorpse(z: Zombie, dir: Vector3, kind: string, heavy: boolean
 	end
 	local c = z.model:Clone()
 	c.Name = "Corpse"
+	for _, d in c:GetDescendants() do
+		if d.Name == "GlowEye" then
+			d:Destroy() -- у трупа глаза гаснут
+		end
+	end
 	local joints: { [BasePart]: Instance } = {}
 	local hum = c:FindFirstChildOfClass("Humanoid")
 	if hum then

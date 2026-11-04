@@ -206,30 +206,43 @@ end
 
 -- Выстрел --------------------------------------------------------------
 
+-- живых PointLight вспышек: при 6 стрелках с автоматами не больше Config.Visual.Muzzle.MaxLights, остальные вспышки — только неон
+local flashLights = 0
+
 local function muzzleFlash(tool: Tool, size: number)
 	local pos = muzzleWorld(tool)
 	local handle = handleOf(tool)
 	if not pos or not handle then
 		return
 	end
+	local m = Config.Visual.Muzzle
+	local s = size * m.SizeMul
 	local flash = Instance.new("Part")
 	flash.Shape = Enum.PartType.Ball
 	flash.Material = Enum.Material.Neon
 	flash.Color = Color3.fromRGB(255, 205, 100)
-	flash.Size = Vector3.one * size * 0.5
+	flash.Size = Vector3.one * s * 0.5
 	flash.Anchored = true
 	flash.CanCollide = false
 	flash.CanQuery = false
 	flash.CanTouch = false
+	flash.CastShadow = false
 	flash.CFrame = CFrame.new(pos)
-	local light = Instance.new("PointLight")
-	light.Range = 12 + size * 6
-	light.Brightness = 4
-	light.Color = Color3.fromRGB(255, 180, 90)
-	light.Parent = flash
+	if flashLights < m.MaxLights then
+		flashLights += 1
+		local light = Instance.new("PointLight")
+		light.Range = m.RangeBase + size * m.RangePerSize
+		light.Brightness = m.Brightness
+		light.Color = m.Color
+		light.Shadows = false
+		light.Parent = flash
+		TweenService:Create(light, TweenInfo.new(0.08), { Brightness = 0 }):Play()
+		task.delay(0.09, function()
+			flashLights -= 1
+		end)
+	end
 	flash.Parent = folder()
-	TweenService:Create(flash, TweenInfo.new(0.07), { Size = Vector3.one * size * 1.3, Transparency = 1 }):Play()
-	TweenService:Create(light, TweenInfo.new(0.07), { Brightness = 0 }):Play()
+	TweenService:Create(flash, TweenInfo.new(0.07), { Size = Vector3.one * s * 1.3, Transparency = 1 }):Play()
 	Debris:AddItem(flash, 0.09)
 	burst(pos, Color3.fromRGB(255, 200, 100), 4, 8, 20, 0.16, 0.18, true)
 end
@@ -270,11 +283,13 @@ function FxController.tracer(shooter: Player, origin: Vector3, hit: Vector3)
 		return
 	end
 	local dir = delta.Unit
-	local len = math.min(9, dist)
+	local tr = Config.Visual.Tracer
+	local len = math.min(tr.Length, dist)
 	local streak = Instance.new("Part")
 	streak.Material = Enum.Material.Neon
-	streak.Color = if shooter == player then Color3.fromRGB(255, 230, 150) else Color3.fromRGB(235, 235, 235)
-	streak.Size = Vector3.new(0.1, 0.1, len)
+	streak.Color = if shooter == player then tr.OwnColor else tr.OtherColor
+	streak.CastShadow = false
+	streak.Size = Vector3.new(tr.Width, tr.Width, len)
 	streak.Anchored = true
 	streak.CanCollide = false
 	streak.CanQuery = false

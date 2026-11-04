@@ -83,9 +83,6 @@ local function notifyAll(text: string, seconds: number)
 	Remotes.get("Notify"):FireAllClients(text, seconds)
 end
 
--- Свет дня берётся таким, каким Руслан настроил его в Studio (снимок при старте); ночью — свой, с другим небом
-local dayLook: { clock: number, brightness: number, ambient: Color3, fogEnd: number, fogColor: Color3 }? = nil
-
 -- Оставляем в Lighting одно небо с именем name; остальные лежат в ServerStorage.Skies (Sky — день, NightSky — ночь, RedNight — ночь с боссом)
 local function setSky(name: string)
 	local storage = ServerStorage:FindFirstChild("Skies")
@@ -105,61 +102,11 @@ local function setSky(name: string)
 	end
 end
 
--- Ночной город: света почти нет, видно только то, что освещают фонари, окна магазинов и (позже) фонарики оружия.
--- Эффекты (туман, цветокоррекция, свечение) плавно меняются между днём и ночью; дневные значения берём из того, что настроено в Studio.
-local TweenService = game:GetService("TweenService")
-local NIGHT = {
-	lighting = { Brightness = 0.3, Ambient = Color3.fromRGB(58, 66, 100), OutdoorAmbient = Color3.fromRGB(70, 82, 120), ExposureCompensation = 0.1, EnvironmentDiffuseScale = 0.5, EnvironmentSpecularScale = 0.3 },
-	atmosphere = { Density = 0.3, Offset = 0.2, Color = Color3.fromRGB(44, 54, 88), Decay = Color3.fromRGB(30, 36, 60), Haze = 1.2, Glare = 0 },
-	bloom = { Intensity = 0.9, Size = 30, Threshold = 0.85 },
-	sunRays = { Intensity = 0, Spread = 0.2 },
-	grade = { Brightness = 0.04, Contrast = 0.08, Saturation = -0.3, TintColor = Color3.fromRGB(205, 218, 255) },
-}
-local dayEffects: { [string]: { [string]: any } } = {}
-
-local function lerpGrade(night: boolean)
-	local info = TweenInfo.new(night and 4 or 3, Enum.EasingStyle.Sine)
-	local grade = Lighting:FindFirstChild("NightGrade") :: ColorCorrectionEffect?
-	if not grade then
-		local g = Instance.new("ColorCorrectionEffect")
-		g.Name = "NightGrade"
-		g.Parent = Lighting
-		grade = g
-	end
-	local function go(inst: Instance?, key: string, target: { [string]: any })
-		if not inst then
-			return
-		end
-		if not dayEffects[key] then
-			local snap: { [string]: any } = {}
-			for prop in target do
-				snap[prop] = (inst :: any)[prop]
-			end
-			dayEffects[key] = snap
-		end
-		TweenService:Create(inst, info, if night then target else dayEffects[key]):Play()
-	end
-	if not dayEffects.grade then
-		dayEffects.grade = { Brightness = 0, Contrast = 0, Saturation = 0, TintColor = Color3.new(1, 1, 1) }
-	end
-	go(grade, "grade", NIGHT.grade)
-	go(Lighting:FindFirstChildOfClass("Atmosphere"), "atmosphere", NIGHT.atmosphere)
-	go(Lighting:FindFirstChildOfClass("BloomEffect"), "bloom", NIGHT.bloom)
-	go(Lighting:FindFirstChildOfClass("SunRaysEffect"), "sunRays", NIGHT.sunRays)
-	go(Lighting, "lighting", NIGHT.lighting)
-end
-
+-- Свет, туман, цветокоррекцию и свечение ставит клиент (LookController) по пресетам Config.Visual.Presets: сервер говорит только,
+-- какой вид нужен (атрибут Look: day | night | boss), и меняет небо.
 local function setNight(night: boolean, bossNight: boolean?)
-	if not dayLook then
-		dayLook = {
-			clock = Lighting.ClockTime, brightness = Lighting.Brightness, ambient = Lighting.OutdoorAmbient,
-			fogEnd = Lighting.FogEnd, fogColor = Lighting.FogColor,
-		}
-	end
-	local d = dayLook :: { clock: number, brightness: number, ambient: Color3, fogEnd: number, fogColor: Color3 }
-	Lighting.ClockTime = if night then 0 else d.clock
 	setSky(if not night then "Sky" elseif bossNight then "RedNight" else "NightSky")
-	lerpGrade(night)
+	ReplicatedStorage:SetAttribute("Look", if not night then "day" elseif bossNight then "boss" else "night")
 end
 
 -- Какая локация нужна для ночи N: смена каждые LocationNights ночей; ещё не построенные пропускаем.

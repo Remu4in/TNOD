@@ -19,6 +19,7 @@ local RateLimit = require(game:GetService("ReplicatedStorage"):WaitForChild("Sha
 local Validate = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Validate"))
 local EconomyService = require(script.Parent:WaitForChild("EconomyService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
+local LightKit = require(script.Parent:WaitForChild("LightKit"))
 
 local VehicleService = {}
 
@@ -339,6 +340,7 @@ function VehicleService.spawn(modelName: string, cf: CFrame): Model?
 	if tune.seats <= 0 then
 		return model -- не ездовая (декор): ни сидений, ни кнопки «Сесть»
 	end
+	LightKit.headlights(model, root, root.CFrame.LookVector) -- фары ночью (включает клиент)
 
 	-- места: 1 — водитель (ввод читает VehicleController на клиенте водителя), 2 — переднее пассажирское, 3–4 — задние,
 	-- 0 — стрелок (если у типа есть турель). Сиденья невидимы и не садят по касанию, только по кнопке E или панели мест.
@@ -580,7 +582,7 @@ local function onTurretFire(player: Player)
 	tracer.CanQuery = false
 	tracer.Material = Enum.Material.Neon
 	tracer.Color = Color3.fromRGB(255, 215, 120)
-	tracer.Size = Vector3.new(0.12, 0.12, math.max(length, 0.1))
+	tracer.Size = Vector3.new(0.18, 0.18, math.max(length, 0.1))
 	tracer.CFrame = CFrame.lookAt(muzzle + dir * length / 2, endPos)
 	tracer.Parent = workspace
 	Debris:AddItem(tracer, 0.05)
@@ -593,6 +595,15 @@ local function onTurretFire(player: Player)
 	flash.Shape = Enum.PartType.Ball
 	flash.Size = Vector3.one * 1.6
 	flash.CFrame = CFrame.new(muzzle + dir * 0.6)
+	do -- короткий свет вспышки (Config.Visual.GunFlashLight), без теней
+		local g = Config.Visual.GunFlashLight
+		local fl = Instance.new("PointLight")
+		fl.Color = g.Color
+		fl.Range = g.Range
+		fl.Brightness = g.Brightness
+		fl.Shadows = false
+		fl.Parent = flash
+	end
 	flash.Parent = workspace
 	Debris:AddItem(flash, 0.04)
 	g.sound.TimePosition = 0

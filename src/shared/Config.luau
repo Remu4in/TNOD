@@ -1400,10 +1400,7 @@ Config.Metro = {
 	},
 	InsideMaxY = -200,
 	Cave = { minX = 640, minZ = 22 },
-	Dark = {
-		station = { Brightness = 0, Ambient = Color3.fromRGB(34, 36, 48), OutdoorAmbient = Color3.fromRGB(34, 36, 48), ExposureCompensation = -0.35, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
-		cave = { Brightness = 0, Ambient = Color3.fromRGB(7, 7, 11), OutdoorAmbient = Color3.fromRGB(7, 7, 11), ExposureCompensation = -0.6, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
-	},
+	-- свет станции и пещеры — пресеты Config.Visual.Presets.metro / .cave (ставит клиент, LookController)
 	Flashlight = { Range = 70, Angle = 75, Brightness = 3.2, Color = Color3.fromRGB(255, 244, 220) },
 	Sounds = {
 		{ name = "tunnel ambience", id = "rbxassetid://9118773471", volume = 0.18 },
@@ -1600,8 +1597,7 @@ Config.Lobby = {
 	ReturnSeconds = 30, -- с: экран итогов, потом всех возвращает в лобби
 	BoardSize = 10, -- строк в таблице лидеров
 	BoardRefresh = 120, -- с: как часто обновляем таблицу
-	-- Освещение лобби: тёплый вечер (ClockTime — «часы суток»), чтобы были видны цвета ассетов
-	Lighting = { ClockTime = 17.4, Brightness = 2.2, Ambient = Color3.fromRGB(96, 100, 118), OutdoorAmbient = Color3.fromRGB(118, 112, 120), FogEnd = 1600, FogColor = Color3.fromRGB(170, 150, 140), Exposure = 0.1 },
+	-- освещение лобби — пресет Config.Visual.Presets.lobby (тёплый вечер)
 	-- Военные НПС лобби (Locations/Lobby расставляет точки, Services/LobbyNpcService ведёт)
 	NpcWalkSpeed = 7, -- студов/с у патрульных
 	-- Магазин и автоматы: покупок пока нет (монетизация не подключена) — окна показывают список с пометкой «Coming soon».
@@ -1618,6 +1614,100 @@ Config.Lobby = {
 		{ id = "don_large", name = "Commander box", desc = "Big bundle: coins, ammo and a supporter badge", price = "Coming soon" },
 		{ id = "don_vip", name = "VIP pass", desc = "Supporter title and priority in the lobby", price = "Coming soon" },
 	},
+}
+
+-- ===== Визуальный проход (2026-11-04): свет, туман, цветокоррекция и эффекты, ориентир — промо-арты =====
+-- Lighting целиком ставит клиент (LookController): сервер пишет только атрибут ReplicatedStorage.Look (day | night | boss | lobby) и меняет небо.
+-- Под картой (метро, пещера) клиент берёт пресеты metro / cave. Поля пресета: lighting — свойства Lighting, atmosphere, bloom, sunRays,
+-- grade (ColorCorrectionEffect «LookGrade»). Поле, которого нет в пресете, не меняется (у метро нет ClockTime — время суток остаётся наверху).
+local rgb = Color3.fromRGB
+Config.Visual = {
+	TweenTime = 4, -- с: смена дня и ночи
+	MetroTweenTime = 1.2, -- с: спуск в метро и подъём
+	MoonSize = 20, -- угловой размер луны (у неба по умолчанию 11): крупная луна, как на артах; клиент включает небу CelestialBodiesShown
+	StarCount = 4000,
+	Presets = {
+		day = {
+			lighting = { ClockTime = 14.5, GeographicLatitude = 0, Brightness = 3, Ambient = rgb(72, 74, 82), OutdoorAmbient = rgb(92, 94, 104), ExposureCompensation = 0, EnvironmentDiffuseScale = 1, EnvironmentSpecularScale = 1 },
+			atmosphere = { Density = 0.3, Offset = 0.25, Color = rgb(206, 202, 192), Decay = rgb(106, 112, 126), Haze = 0.6, Glare = 0.2 },
+			bloom = { Intensity = 0.6, Size = 24, Threshold = 1.4 },
+			sunRays = { Intensity = 0.05, Spread = 0.25 },
+			grade = { Brightness = 0, Contrast = 0.12, Saturation = 0.12, TintColor = rgb(255, 250, 242) },
+		},
+		-- глубокая синяя ночь: лунный свет и синий туман, сильное свечение неона (вспышки, трассеры, глаза зомби), контраст
+		-- ClockTime = 24 — полночь (переход из дня идёт через закат, см. LookController); GeographicLatitude = -48: луна стоит низко (≈18° над горизонтом, со стороны −Z), её видно в кадре, а не только в зените
+		night = {
+			lighting = { ClockTime = 24, GeographicLatitude = -48, Brightness = 2.6, Ambient = rgb(50, 60, 108), OutdoorAmbient = rgb(90, 110, 185), ExposureCompensation = 0.3, EnvironmentDiffuseScale = 0.6, EnvironmentSpecularScale = 0.6 },
+			atmosphere = { Density = 0.4, Offset = 0.3, Color = rgb(96, 116, 196), Decay = rgb(60, 74, 150), Haze = 2.4, Glare = 0.8 },
+			bloom = { Intensity = 1.3, Size = 40, Threshold = 0.85 },
+			sunRays = { Intensity = 0, Spread = 0.3 },
+			grade = { Brightness = 0.04, Contrast = 0.12, Saturation = 0.2, TintColor = rgb(180, 200, 255) },
+		},
+		-- ночь с боссом (небо RedNight): та же ночь, но туман и оттенок уходят в багровый
+		boss = {
+			lighting = { ClockTime = 24, GeographicLatitude = -48, Brightness = 2.4, Ambient = rgb(78, 46, 60), OutdoorAmbient = rgb(150, 82, 100), ExposureCompensation = 0.3, EnvironmentDiffuseScale = 0.6, EnvironmentSpecularScale = 0.6 },
+			atmosphere = { Density = 0.42, Offset = 0.3, Color = rgb(160, 66, 80), Decay = rgb(96, 30, 46), Haze = 2.4, Glare = 0.8 },
+			bloom = { Intensity = 1.4, Size = 40, Threshold = 0.85 },
+			sunRays = { Intensity = 0, Spread = 0.3 },
+			grade = { Brightness = 0.03, Contrast = 0.14, Saturation = 0.2, TintColor = rgb(255, 200, 200) },
+		},
+		-- лобби: тёплый вечер, видны цвета ассетов
+		lobby = {
+			lighting = { ClockTime = 17.4, GeographicLatitude = 0, Brightness = 2.2, Ambient = rgb(96, 100, 118), OutdoorAmbient = rgb(118, 112, 120), ExposureCompensation = 0.1, EnvironmentDiffuseScale = 1, EnvironmentSpecularScale = 1 },
+			atmosphere = { Density = 0.3, Offset = 0.2, Color = rgb(200, 162, 142), Decay = rgb(120, 90, 104), Haze = 1.5, Glare = 0.5 },
+			bloom = { Intensity = 0.8, Size = 32, Threshold = 1.1 },
+			sunRays = { Intensity = 0.12, Spread = 0.3 },
+			grade = { Brightness = 0, Contrast = 0.15, Saturation = 0.15, TintColor = rgb(255, 238, 225) },
+		},
+		-- станция метро: холодный синий полумрак, туман в тоннелях; красные и белые лампы светятся через bloom; основной свет — фонарик
+		metro = {
+			lighting = { Brightness = 0, Ambient = rgb(30, 34, 54), OutdoorAmbient = rgb(30, 34, 54), ExposureCompensation = -0.1, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
+			atmosphere = { Density = 0.42, Offset = 0, Color = rgb(36, 44, 76), Decay = rgb(26, 26, 48), Haze = 2, Glare = 0 },
+			bloom = { Intensity = 1.6, Size = 30, Threshold = 0.7 },
+			sunRays = { Intensity = 0, Spread = 0.3 },
+			grade = { Brightness = 0.03, Contrast = 0.3, Saturation = 0.15, TintColor = rgb(202, 214, 255) },
+		},
+		-- пещера: почти полная темнота, только фонарик
+		cave = {
+			lighting = { Brightness = 0, Ambient = rgb(7, 7, 11), OutdoorAmbient = rgb(7, 7, 11), ExposureCompensation = -0.6, EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0 },
+			atmosphere = { Density = 0.5, Offset = 0, Color = rgb(14, 16, 26), Decay = rgb(8, 8, 14), Haze = 2, Glare = 0 },
+			bloom = { Intensity = 1.4, Size = 30, Threshold = 0.75 },
+			sunRays = { Intensity = 0, Spread = 0.3 },
+			grade = { Brightness = 0, Contrast = 0.22, Saturation = -0.05, TintColor = rgb(212, 218, 240) },
+		},
+	},
+	-- Прожекторы на дозорных вышках (Workspace.Base.WatchTower), только ночью; строит клиент (NightLightsController), луч — Beam
+	Searchlights = {
+		Color = rgb(215, 228, 255),
+		Range = 60, -- студов: максимум SpotLight
+		Angle = 26,
+		Brightness = 7,
+		Pitch = 26, -- градусов вниз от горизонта
+		SwayDeg = 32, -- размах качания по сторонам
+		SwayPeriod = 11, -- с: полный цикл
+		BeamLength = 75,
+		BeamWidth0 = 1.2,
+		BeamWidth1 = 18,
+		BeamTransparency = 0.8, -- у прожектора; к концу луч растворяется полностью
+	},
+	-- Мигающие красные огни: на крыше каждой вышки и над воротами базы (Workspace.Base.BaseGate)
+	Beacons = { Color = rgb(255, 36, 24), Size = 0.8, Range = 16, Brightness = 3, Period = 1.3, OnFraction = 0.45 },
+	-- Вспышка у ствола и трассеры (FxController); MaxLights — сколько PointLight вспышек живут одновременно, остальные вспышки без света
+	Muzzle = { Brightness = 9, RangeBase = 14, RangePerSize = 7, Color = rgb(255, 176, 80), MaxLights = 6, SizeMul = 1.3 },
+	Tracer = { Width = 0.14, Length = 12, OwnColor = rgb(255, 214, 120), OtherColor = rgb(255, 196, 110) },
+	-- Турель и пулемёт машины (сервер): короткий свет вспышки
+	GunFlashLight = { Brightness = 7, Range = 16, Color = rgb(255, 176, 80) },
+	-- Светящиеся глаза зомби: две неоновые детали на голове (без PointLight — зомби до 130). Смещение — в долях высоты Head (у рига 1 студ),
+	-- от центра головы; Offsets — свои смещения для голов-мешей; Skip — модели без глаз (у B_Garg голова невидима, у B_Final свои красные глаза)
+	ZombieEyes = {
+		Color = rgb(150, 255, 70),
+		Size = Vector3.new(0.24, 0.13, 0.06),
+		Offset = Vector3.new(0.21, 0.12, -0.6),
+		Offsets = {} :: { [string]: Vector3 },
+		Skip = { B_Garg = true, B_Final = true } :: { [string]: boolean },
+	},
+	-- Фары: машины игроков (VehicleService, кроме декора) и колонна (ConvoyService); горят ночью (клиент включает по тегу NightLight)
+	Headlights = { Range = 60, Angle = 60, Brightness = 6, Color = rgb(255, 240, 214), LensSize = Vector3.new(0.9, 0.5, 0.12) },
 }
 
 return Config
