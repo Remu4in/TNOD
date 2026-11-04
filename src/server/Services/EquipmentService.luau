@@ -26,6 +26,9 @@ type Placed = {
 	nextAt: number,
 	lastHit: { [Model]: number },
 	muzzleOffset: Vector3,
+	inside: { [Model]: number }, -- проволока: кто сейчас в ней и с какого момента (по порядку входа — кого держит)
+	sound: Sound?, -- турель: звук выстрела
+	target: Model?, -- турель: текущая цель (держит её, пока видна и в радиусе)
 }
 
 local placed: { Placed } = {}
@@ -336,9 +339,22 @@ local function onPlace(player: Player, position: unknown, yawArg: unknown)
 	end
 	model.Parent = container()
 	tool:Destroy()
+	local sound: Sound? = nil
+	if kind == "Turret" then
+		local s = Instance.new("Sound")
+		s.Name = "Fire"
+		s.SoundId = Config.Sounds.fire
+		s.Volume = def.volume or 0.7
+		s.PlaybackSpeed = 1.15
+		s.RollOffMode = Enum.RollOffMode.InverseTapered
+		s.RollOffMinDistance = 10
+		s.RollOffMaxDistance = 220
+		s.Parent = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+		sound = s
+	end
 	table.insert(placed, {
 		kind = kind, model = model, owner = player, center = hit.Position, hits = def.hits or 0,
-		ammo = def.ammo or 0, nextAt = 0, lastHit = {}, muzzleOffset = muzzle,
+		ammo = def.ammo or 0, nextAt = 0, lastHit = {}, muzzleOffset = muzzle, inside = {}, sound = sound,
 	})
 end
 
@@ -366,41 +382,66 @@ local function stepTurret(p: Placed, now: number)
 	end
 	local pivot = p.model:GetPivot()
 	local muzzle = pivot:PointToWorldSpace(p.muzzleOffset)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { p.model }
+	local function visible(z: { model: Model, root: BasePart }): boolean
+		local r = workspace:Raycast(muzzle, z.root.Position + Vector3.new(0, 1, 0) - muzzle, params)
+		return not r or r.Instance:IsDescendantOf(z.model)
+	end
+	-- держим прежнюю цель, пока она жива, в радиусе и видна; иначе — ближайшая видимая
 	local best: { model: Model, root: BasePart }? = nil
 	local bestDist = math.huge
 	for _, z in ZombieService.queryNear(p.center, def.range) do
+		if z.model == p.target and visible(z) then
+			best = z
+			break
+		end
 		local d = (z.root.Position - p.center).Magnitude
-		if d < bestDist then
-			local params = RaycastParams.new()
-			params.FilterType = Enum.RaycastFilterType.Exclude
-			params.FilterDescendantsInstances = { p.model }
-			local r = workspace:Raycast(muzzle, z.root.Position + Vector3.new(0, 1, 0) - muzzle, params)
-			if not r or r.Instance:IsDescendantOf(z.model) then
-				best, bestDist = z, d
-			end
+		if d < bestDist and visible(z) then
+			best, bestDist = z, d
 		end
 	end
 	if not best then
-		p.nextAt = now + 0.3
+		p.target = nil
+		p.nextAt = now + 0.25
 		return
 	end
-	local target = best.root.Position
+	p.target = best.model
+	local target = best.root.Position + Vector3.new(0, 1, 0)
 	p.model:PivotTo(CFrame.lookAt(pivot.Position, Vector3.new(target.X, pivot.Position.Y, target.Z)))
-	local dir = target - muzzle
-	ZombieService.damage(best.model, def.damage, p.owner, { dir = dir, push = 6, stagger = 0.2 })
-	-- трассер
+	muzzle = p.model:GetPivot():PointToWorldSpace(p.muzzleOffset)
+	local spread = math.rad(def.spreadDeg or 2)
+	local dir = (CFrame.lookAt(muzzle, target) * CFrame.Angles(rng:NextNumber(-spread, spread), rng:NextNumber(-spread, spread), 0)).LookVector * (target - muzzle).Magnitude
+	ZombieService.damage(best.model, def.damage, p.owner, { dir = dir, push = 1.5, stagger = 0.05 })
+	-- трассер, вспышка у ствола, звук очереди
 	local tracer = Instance.new("Part")
 	tracer.Anchored = true
 	tracer.CanCollide = false
 	tracer.CanQuery = false
 	tracer.Material = Enum.Material.Neon
 	tracer.Color = Color3.fromRGB(255, 220, 120)
-	tracer.Size = Vector3.new(0.15, 0.15, dir.Magnitude)
+	tracer.Size = Vector3.new(0.12, 0.12, dir.Magnitude)
 	tracer.CFrame = CFrame.lookAt(muzzle + dir / 2, muzzle + dir)
 	tracer.Parent = container()
-	Debris:AddItem(tracer, 0.08)
+	Debris:AddItem(tracer, 0.05)
+	local flash = Instance.new("Part")
+	flash.Anchored = true
+	flash.CanCollide = false
+	flash.CanQuery = false
+	flash.Material = Enum.Material.Neon
+	flash.Color = Color3.fromRGB(255, 190, 80)
+	flash.Shape = Enum.PartType.Ball
+	flash.Size = Vector3.one * 0.9
+	flash.CFrame = CFrame.new(muzzle + dir.Unit * 0.4)
+	flash.Parent = container()
+	Debris:AddItem(flash, 0.04)
+	if p.sound then
+		p.sound.TimePosition = 0
+		p.sound:Play()
+	end
 	p.ammo -= 1
-	p.nextAt = now + rng:NextNumber(def.minCooldown, def.maxCooldown)
+	p.nextAt = now + def.fireInterval
 	if p.ammo <= 0 then
 		p.nextAt = math.huge
 		task.delay(1, function()
@@ -409,31 +450,95 @@ local function stepTurret(p: Placed, now: number)
 	end
 end
 
-local function step(now: number)
+-- Огонь на обожжённом электро-проволокой зомби (короткий, обновляется, пока он горит)
+local function burnFx(root: BasePart)
+	local fire = root:FindFirstChild("WireFire") :: Fire?
+	if not fire then
+		local f = Instance.new("Fire")
+		f.Name = "WireFire"
+		f.Size = 5
+		f.Heat = 9
+		f.Color = Color3.fromRGB(120, 180, 255)
+		f.SecondaryColor = Color3.fromRGB(255, 160, 60)
+		f.Parent = root
+		fire = f
+	end
+	Debris:AddItem(fire :: Fire, 0.6)
+end
+
+-- Проволока: кто в ней — по порядку входа. Колючая держит первых holdFull намертво, следующих до holdMax — замедляет; электро жжёт первых maxTargets
+local function stepWire(p: Placed, now: number): boolean
+	local def = (Config.Equipment :: any)[p.kind]
+	local present: { [Model]: BasePart } = {}
+	for _, z in ZombieService.queryNear(p.center, def.size.X) do
+		if insideWire(p, z, def.size) then
+			present[z.model] = z.root
+			if not p.inside[z.model] then
+				p.inside[z.model] = now
+			end
+		end
+	end
+	local order: { Model } = {}
+	for m, since in p.inside do
+		if not present[m] then
+			p.inside[m] = nil
+			p.lastHit[m] = nil
+		else
+			table.insert(order, m)
+		end
+	end
+	table.sort(order, function(a, b)
+		return p.inside[a] < p.inside[b]
+	end)
+	for rank, m in order do
+		if p.kind == "ElectricWire" then
+			if rank > def.maxTargets then
+				break
+			end
+			ZombieService.hold(m, def.tick + 0.1)
+			burnFx(present[m])
+			ZombieService.damage(m, def.dps * def.tick, p.owner, { push = 0 })
+			local last = p.lastHit[m]
+			if not last or now - last >= 1 then
+				p.lastHit[m] = now
+				ZombieService.suffer(m, "Electric", 1)
+			end
+		else
+			if rank > def.holdMax then
+				break
+			end
+			if rank <= def.holdFull then
+				ZombieService.hold(m, def.tick + 0.3)
+			else
+				ZombieService.hold(m, def.tick + 0.3, def.slow)
+			end
+			local last = p.lastHit[m]
+			if not last or now - last >= def.tick then
+				p.lastHit[m] = now
+				ZombieService.damage(m, def.damage, p.owner, { push = 0 })
+				ZombieService.suffer(m, "Barbed")
+				p.hits -= 1
+				if p.hits <= 0 then
+					remove(p)
+					return false
+				end
+			end
+		end
+	end
+	return true
+end
+
+local function step(now: number, turrets: boolean, wires: boolean)
 	for i = #placed, 1, -1 do
 		local p = placed[i]
 		if not p.model.Parent then
 			table.remove(placed, i)
 		elseif p.kind == "Turret" then
-			stepTurret(p, now)
-		else
-			local def = (Config.Equipment :: any)[p.kind]
-			for _, z in ZombieService.queryNear(p.center, def.size.X) do
-				local last = p.lastHit[z.model]
-				if (not last or now - last >= def.tick) and insideWire(p, z, def.size) then
-					p.lastHit[z.model] = now
-					local impact = if p.kind == "ElectricWire" then { stagger = def.stun, push = 0 } else { stagger = 0.35, push = 0 }
-					ZombieService.damage(z.model, def.damage, p.owner, impact)
-					ZombieService.suffer(z.model, if p.kind == "ElectricWire" then "Electric" else "Barbed", def.stun)
-					if p.kind == "BarbedWire" then
-						p.hits -= 1
-						if p.hits <= 0 then
-							remove(p)
-							break
-						end
-					end
-				end
+			if turrets then
+				stepTurret(p, now)
 			end
+		elseif wires then
+			stepWire(p, now)
 		end
 	end
 end
@@ -458,12 +563,20 @@ end
 
 function EquipmentService.init()
 	Remotes.get("PlaceEquipment").OnServerEvent:Connect(onPlace)
-	local acc = 0
+	-- турели — часто (очереди), проволока — 4 раза в секунду
+	local turretAcc, wireAcc = 0, 0
 	RunService.Heartbeat:Connect(function(dt: number)
-		acc += dt
-		if acc >= 0.25 then
-			acc = 0
-			step(os.clock())
+		turretAcc += dt
+		wireAcc += dt
+		local turrets, wires = turretAcc >= 0.04, wireAcc >= 0.25
+		if turrets then
+			turretAcc = 0
+		end
+		if wires then
+			wireAcc = 0
+		end
+		if turrets or wires then
+			step(os.clock(), turrets, wires)
 		end
 	end)
 end

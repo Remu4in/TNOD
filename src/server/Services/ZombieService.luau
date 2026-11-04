@@ -2473,6 +2473,22 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 end
 
 -- Живые зомби в радиусе от точки (для ближнего боя и ловушек): модель и корневая часть
+-- Задержать зомби (колючая и электро-проволока, EquipmentService): hold — стоит на месте seconds секунд (как от попадания),
+-- иначе — идёт со скоростью factor от своей seconds секунд (как с подстреленной ногой). Боссов проволока не держит.
+function ZombieService.hold(model: Model, seconds: number, factor: number?)
+	local z = active[model]
+	if not z or not z.alive or WaveMath.isBossType(z.def.id) then
+		return
+	end
+	local now = os.clock()
+	if factor then
+		z.slowUntil = math.max(z.slowUntil, now + seconds)
+		z.humanoid.WalkSpeed = z.speed * factor
+	else
+		z.staggerUntil = math.max(z.staggerUntil, now + seconds)
+	end
+end
+
 function ZombieService.queryNear(pos: Vector3, radius: number): { { model: Model, root: BasePart } }
 	local result: { { model: Model, root: BasePart } } = {}
 	for model, z in active do

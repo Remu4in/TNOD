@@ -282,9 +282,12 @@ function VehicleService.spawn(modelName: string, cf: CFrame): Model?
 	model:ScaleTo(k)
 	model.Parent = container
 
-	-- в шаблонах из Creator Store бывают свои сиденья (Seat/VehicleSeat) — убираем, водитель сядет на наше
+	-- в шаблонах из Creator Store бывают свои сиденья (Seat/VehicleSeat) — убираем, водитель сядет на наше.
+	-- Детали далеко от корпуса — забытые копии (у Coupe диски колёс в 840 студах): они раздувают сборку, и камера машины уезжает
 	for _, d in model:GetDescendants() do
 		if d:IsA("Seat") or d:IsA("VehicleSeat") then
+			d:Destroy()
+		elseif d:IsA("BasePart") and d ~= root and root.CFrame:PointToObjectSpace(d.Position).Magnitude > length * 1.5 then
 			d:Destroy()
 		end
 	end
@@ -389,6 +392,13 @@ function VehicleService.spawn(modelName: string, cf: CFrame): Model?
 			local occ = seat.Occupant
 			if occ then
 				occ:UnequipTools()
+				-- сел водитель: физику корпуса — его клиенту (её мог забрать сервер, пока машина тормозила без водителя)
+				local driver = if seat.Name == "DriverSeat" then Players:GetPlayerFromCharacter(occ.Parent) else nil
+				if driver then
+					pcall(function()
+						root:SetNetworkOwner(driver)
+					end)
+				end
 			end
 			refreshTarget(state)
 		end)
@@ -739,6 +749,28 @@ function VehicleService.init()
 				g.recoil *= math.exp(-18 * dt)
 				if math.abs(dy) > 1e-4 or math.abs(dp) > 1e-4 or g.recoil > 1e-3 then
 					g.joint.C0 = CFrame.new(g.pivotLocal) * CFrame.Angles(0, g.yaw, 0) * CFrame.Angles(g.pitch, 0, 0) * CFrame.new(0, 0, g.recoil)
+				end
+			end
+		end
+	end)
+
+	-- Водитель вышел: машину ведёт сервер и сам тормозит (Config.Vehicle.parkBrake студов/с²), а не катится по инерции как по льду
+	RunService.Heartbeat:Connect(function(dt: number)
+		for _, st in vehicles do
+			local seat = st.seats[1]
+			if seat and not seat.Occupant and not st.wrecked and st.root.Parent then
+				local v = st.root.AssemblyLinearVelocity
+				local planar = Vector3.new(v.X, 0, v.Z)
+				if planar.Magnitude > 0.2 or st.root.AssemblyAngularVelocity.Magnitude > 0.05 then
+					if st.root:GetNetworkOwner() ~= nil then
+						pcall(function()
+							st.root:SetNetworkOwner(nil)
+						end)
+					end
+					local slow = math.max(0, planar.Magnitude - Config.Vehicle.parkBrake * dt)
+					local kept = if planar.Magnitude > 0 then planar.Unit * slow else Vector3.zero
+					st.root.AssemblyLinearVelocity = Vector3.new(kept.X, v.Y, kept.Z)
+					st.root.AssemblyAngularVelocity = st.root.AssemblyAngularVelocity * math.max(0, 1 - 6 * dt)
 				end
 			end
 		end

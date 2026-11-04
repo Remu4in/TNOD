@@ -173,6 +173,8 @@ Config.Vehicle = {
 	length = 13, -- итоговая длина кузова в студах
 	curbSlow = 0.5, -- множитель максимальной скорости на бордюре/тротуаре
 	offroadSlow = 0.8, -- и на траве/земле
+	speedCap = 55, -- студов/с: потолок скорости всех ездовых машин (спидометр сиденья показывает студы/с; Руслан: 50–60)
+	parkBrake = 45, -- студов/с²: как быстро тормозит машина, из которой вышел водитель
 }
 
 -- Типы машин (2026-10-19). Шаблон модели — ServerStorage.CarModels.<template> (VehicleBaker); перёд -Z.
@@ -292,7 +294,7 @@ local Buildings: { BuildingDef } = {
 	-- Открытие здания за монеты (вывеска) даёт доступ к НПС-продавцу внутри: он торгует только днём (Config.Vendors)
 	{ id = "Pharmacy", name = "Medical post", cost = 500, info = "Vendor: medkits and energy drinks", desc = "Heal up between nights. Medkits restore 60 health, energy drinks give unlimited sprint for a wave." },
 	{ id = "Armory", name = "Armory", cost = 1000, info = "Vendor: melee weapons", desc = "Melee weapons never run out of ammo: bat, crowbar, machete, fire axe, sledgehammer and katana." },
-	{ id = "Garage", name = "Garage", cost = 2000, info = "Vendor: barbed and electric wire", desc = "Wire slows and hurts mutants at the barricades. Electric wire stuns, but works only until dawn." },
+	{ id = "Garage", name = "Garage", cost = 2000, info = "Vendor: barbed and electric wire", desc = "Wire slows and hurts mutants at the barricades. Electric wire burns up to 5 mutants at once, but works only until dawn." },
 	{ id = "GunShop", name = "Turret shop", cost = 3000, info = "Vendor: turrets", desc = "Automatic turrets hold a chokepoint while you reload or rescue a teammate." },
 	{ id = "Shelter", name = "Shelter", cost = 4000, bonus = "teamLife", info = "Team extra life and vendor", desc = "Buy an extra team life: if everyone goes down, the squad gets back up once." },
 	{ id = "Factory", name = "Factory", cost = 4000, info = "Inside: a military vehicle with a roof-mounted machine gun", desc = "A military jeep with a roof-mounted machine gun waits inside. Drive it and let a teammate man the gun." },
@@ -1475,9 +1477,9 @@ Config.Vendors = {
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite energy for 1 wave", price = 100, kind = "item", robux = 20 },
 			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo", robux = 15 },
 			-- оборудование: как аптечка — купить можно только после открытия своего здания (Garage — проволока, Turret shop — турель)
-			{ id = "BarbedWire", name = "Barbed wire", desc = "Wounds and holds mutants until it breaks", price = 250, kind = "equip", requires = "Garage" },
-			{ id = "ElectricWire", name = "Electric wire", desc = "Shocks and stuns; lasts until dawn", price = 600, kind = "equip", requires = "Garage" },
-			{ id = "Turret", name = "Turret", desc = "Stationary: 50 damage every 2–4 s, 300 shots", price = 1500, kind = "equip", requires = "GunShop" },
+			{ id = "BarbedWire", name = "Barbed wire", desc = "Traps the first 2 mutants, slows the next 2", price = 250, kind = "equip", requires = "Garage" },
+			{ id = "ElectricWire", name = "Electric wire", desc = "Burns up to 5 mutants at 50 damage/s; lasts until dawn", price = 600, kind = "equip", requires = "Garage" },
+			{ id = "Turret", name = "Turret", desc = "Stationary machine gun: fast bursts, 700 rounds", price = 1500, kind = "equip", requires = "GunShop" },
 		},
 	},
 	Pharmacy = {
@@ -1494,14 +1496,14 @@ Config.Vendors = {
 	Garage = {
 		name = "Mechanic", greeting = "Wire holds them at the wall. Place it wisely.",
 		items = {
-			{ id = "BarbedWire", name = "Barbed wire", desc = "Wounds and holds mutants until it breaks", price = 250, kind = "equip" },
-			{ id = "ElectricWire", name = "Electric wire", desc = "Shocks and stuns; lasts until dawn", price = 600, kind = "equip" },
+			{ id = "BarbedWire", name = "Barbed wire", desc = "Traps the first 2 mutants, slows the next 2", price = 250, kind = "equip" },
+			{ id = "ElectricWire", name = "Electric wire", desc = "Burns up to 5 mutants at 50 damage/s; lasts until dawn", price = 600, kind = "equip" },
 		},
 	},
 	GunShop = {
 		name = "Turret dealer", greeting = "A machine gun doesn't get tired. As long as there's ammo.",
 		items = {
-			{ id = "Turret", name = "Turret", desc = "50 damage every 2–4 s, 300 shots", price = 1500, kind = "equip" },
+			{ id = "Turret", name = "Turret", desc = "Stationary machine gun: fast bursts, 700 rounds", price = 1500, kind = "equip" },
 		},
 	},
 	Shelter = {
@@ -1529,9 +1531,13 @@ Config.TurretGun = {
 
 -- Оборудование (EquipmentService): покупается у продавцов, ставится кликом на землю
 Config.Equipment = {
-	BarbedWire = { name = "Barbed wire", damage = 8, tick = 0.5, hits = 60, max = 6, size = Vector3.new(10, 1.4, 2.5), reach = 22 },
-	ElectricWire = { name = "Electric wire", damage = 25, tick = 2, stun = 2.5, max = 4, size = Vector3.new(10, 0.6, 2.5), reach = 22 },
-	Turret = { name = "Turret", damage = 50, minCooldown = 2, maxCooldown = 4, range = 90, ammo = 300, max = 2, length = 3.4, reach = 22 },
+	-- Колючая: первые holdFull зомби (по порядку входа) застревают намертво, следующие до holdMax — замедлены до slow от скорости,
+	-- остальные лезут через них без помех. Урон damage каждые tick секунд тем, кого держит; hits — сколько таких уколов выдержит.
+	BarbedWire = { name = "Barbed wire", damage = 8, tick = 0.5, hits = 60, holdFull = 2, holdMax = 4, slow = 0.35, max = 6, size = Vector3.new(10, 1.4, 2.5), reach = 22 },
+	-- Электро: жжёт до maxTargets зомби одновременно по dps урона в секунду (каждые tick секунд), обожжённые дёргаются и стоят
+	ElectricWire = { name = "Electric wire", dps = 50, tick = 0.25, maxTargets = 5, max = 4, size = Vector3.new(10, 0.6, 2.5), reach = 22 },
+	-- Турель: очереди по fireInterval, урон за пулю damage, разброс spreadDeg, звук выстрела у ствола. length — длина модели (масштаб ×1,3 к прежней)
+	Turret = { name = "Turret", damage = 14, fireInterval = 0.12, spreadDeg = 2, range = 90, ammo = 700, max = 2, length = 4.4, reach = 22, volume = 0.7 },
 }
 
 -- Лобби (LobbyService, Locations/Lobby): публичный сервер места — лобби, резервный сервер того же места — матч

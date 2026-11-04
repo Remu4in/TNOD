@@ -240,10 +240,10 @@ function VehicleController.start()
 		local target = 0
 		local rate = T.drag
 		if throttle > 0.05 then
-			target = T.maxSpeed * speedMul * throttle
+			target = math.min(T.maxSpeed, Config.Vehicle.speedCap) * speedMul * throttle
 			rate = if speed < -1 then T.brake else T.accel
 		elseif throttle < -0.05 then
-			target = -T.reverseSpeed
+			target = -math.min(T.reverseSpeed, Config.Vehicle.speedCap)
 			rate = if speed > 1 then T.brake else T.accel
 		end
 		speed = approach(speed, target, rate * dt)
