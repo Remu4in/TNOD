@@ -121,6 +121,15 @@ function EconomyService.penalize(fraction: number): number
 	return total
 end
 
+-- VIP: стартовые монеты больше (только если игрок ещё ничего не заработал и не потратил на этом счёте)
+function EconomyService.applyStartCoins(player: Player, coins: number)
+	local w = walletOf(player)
+	if w.coins == Config.Player.StartCoins then
+		w.coins = coins
+		publish(player)
+	end
+end
+
 function EconomyService.resetRound(players: { Player })
 	EconomyService.newDay()
 	table.clear(parked)

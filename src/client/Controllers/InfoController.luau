@@ -35,6 +35,7 @@ local KEYS: { { key: string, text: string } } = {
 	{ key = "Z/X/T", text = "Emote: wave/cheer/dance" },
 	{ key = "V", text = "End the day" },
 	{ key = "MMB", text = "Ping" },
+	{ key = "K", text = "Cutscenes on / off (host)" },
 	{ key = "M", text = "Map marks on / off" },
 	{ key = "H", text = "Buildings guide" },
 }

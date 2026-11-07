@@ -23,6 +23,7 @@ local DataService = require(script.Parent:WaitForChild("DataService"))
 local RatingService = require(script.Parent:WaitForChild("RatingService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
 local LobbyNpcService = require(script.Parent:WaitForChild("LobbyNpcService"))
+local DonateService = require(script.Parent:WaitForChild("DonateService"))
 local LobbyBuilder = require(script.Parent.Parent:WaitForChild("Locations"):WaitForChild("Lobby"))
 
 local L = Config.Lobby
@@ -289,6 +290,8 @@ local function alive(list: { Player }): { Player }
 	return out
 end
 
+local zoneCutscenes: { [number]: boolean } = {} -- настройка хоста: катсцены в матче
+
 local function teleportData(kind: string, list: { Player }, leader: number?): { [string]: any }
 	local ids = {}
 	for _, p in list do
@@ -367,6 +370,17 @@ local function launch(list: { Player }, kind: string, leader: number?, zoneIdx: 
 	end
 	dirty = true
 	local data = teleportData(kind, group, leader)
+	if zoneIdx and zoneCutscenes[zoneIdx] == false then
+		data.cutscenes = false
+	end
+	if zoneIdx then
+		zoneCutscenes[zoneIdx] = nil
+	end
+	if studio and L.StudioSkipTeleport then
+		-- заглушка без телепорта: настройка та же, что у резервного сервера
+		ReplicatedStorage:SetAttribute("CutscenesOff", data.cutscenes == false)
+		ReplicatedStorage:SetAttribute("HostUserId", data.leader)
+	end
 	task.spawn(function()
 		local done = false
 		if studio and L.StudioSkipTeleport then
@@ -468,9 +482,7 @@ local function onCmd(player: Player, cmd: unknown, arg: unknown)
 		end
 		return
 	elseif cmd == "buy" then
-		if typeof(arg) == "string" then
-			notify(player, "This item is coming soon")
-		end
+		DonateService.buy(player, arg)
 		return
 	end
 
@@ -487,6 +499,9 @@ local function onCmd(player: Player, cmd: unknown, arg: unknown)
 	end
 
 	if cmd == "open" or cmd == "config" then
+		if typeof(arg) == "table" and typeof((arg :: any).cutscenes) == "boolean" then
+			zoneCutscenes[idx] = (arg :: any).cutscenes
+		end
 		local size, access = readSettings(arg)
 		local res = LobbyRules.configure(zone, uid, size, access, L.ZoneMaxSize, t)
 		if not res.ok then
@@ -569,7 +584,7 @@ local function bannerFor(i: number, zone: Zone, view: LobbyBuilder.ZoneView, t: 
 	local status, detail, color, progress
 	local fill: Color3
 	if zone.state == "free" then
-		status, detail, color, progress = "OPEN", "Step in to host", COLORS.free, nil
+		status, detail, color, progress = "OPEN", if i == L.VipZone then "VIP zone: step in to host" else "Step in to host", COLORS.free, nil
 		fill = COLORS.free
 	elseif zone.state == "setup" then
 		status = nameOf(zone.host :: number) .. " is setting up…"
@@ -643,7 +658,11 @@ local function zoneTick()
 				LobbyRules.expireInvites(zone, t)
 				local friend = if zone.host then isFriends(uid, zone.host) else false
 				local res = LobbyRules.canEnter(zone, uid, friend, t)
-				if res.ok then
+				-- VIP-зона: свободную занять может только VIP (в уже открытую зону хост пускает кого хочет)
+				if res.ok and i == L.VipZone and zone.state == "free" and p:GetAttribute("Has_vip") ~= true then
+					hint(p, "VIP zone: a VIP pass is needed to host here")
+					eject(p, pi.zones[i])
+				elseif res.ok then
 					-- стоял в другой зоне — место там освобождается (его уже снял блок выше, если вышел)
 					local kind = LobbyRules.enter(zone, uid, t)
 					zoneOfUid[uid] = i
@@ -767,6 +786,28 @@ local function refreshBoard()
 	else
 		board.setNote("Global top by total rating · refreshed every " .. math.floor(L.BoardRefresh / 60) .. " min")
 	end
+	-- лучшие команды
+	local squads = RatingService.topTeams(L.SquadBoardSize)
+	for r = 1, L.SquadBoardSize do
+		local e = squads[r]
+		if e then
+			local names: { string } = {}
+			for _, id in e.ids do
+				if not nameCache[id] then
+					local ok, nm = pcall(function()
+						return Players:GetNameFromUserIdAsync(id)
+					end)
+					nameCache[id] = if ok then nm else tostring(id)
+				end
+				table.insert(names, nameCache[id])
+			end
+			board.setSquad(r, table.concat(names, ", "), e.wave, e.rating)
+		elseif sample and r == 1 then
+			board.setSquad(r, "Sample squad", 12, 3400)
+		else
+			board.setSquad(r, nil, 0, 0)
+		end
+	end
 	-- фигура «первого места» одевается в лидера (в Studio без данных — тестовый аккаунт, только для вида)
 	local me = Players:GetPlayers()[1]
 	local leader = if top[1] then top[1].userId else (if sample and me then me.UserId else 0)
@@ -809,7 +850,7 @@ local function refreshBoard()
 				end
 			end
 			pcall(function()
-				rig:PivotTo(rigHome :: CFrame)
+				rig:PivotTo((rigHome :: CFrame) + Vector3.new(0, L.BoardRigLift, 0)) -- ступни не должны уходить в пьедестал
 			end)
 			for _, d in rig:GetDescendants() do
 				if d:IsA("BasePart") then
@@ -994,6 +1035,12 @@ function LobbyService.initMatch()
 			return player:GetJoinData().TeleportData
 		end)
 		if ok and typeof(data) == "table" and (data :: any).v == 1 then
+			if (data :: any).cutscenes == false then
+				ReplicatedStorage:SetAttribute("CutscenesOff", true)
+			end
+			if typeof((data :: any).leader) == "number" then
+				ReplicatedStorage:SetAttribute("HostUserId", (data :: any).leader)
+			end
 			print(string.format("[LobbyService] %s joined the match (%s)", player.Name, tostring((data :: any).kind)))
 		elseif not studio then
 			warn("[LobbyService] " .. player.Name .. " joined the match without TeleportData")

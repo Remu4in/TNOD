@@ -765,6 +765,32 @@ function VehicleService.init()
 		end
 	end)
 
+	-- Машины-декор: у многих твёрдые только мелкие детали, сквозь кузов можно пройти. Невидимая коробка по габариту (не ловит пули и лучи дорог)
+	for _, name in Config.VehicleColliders do
+		for _, folderName in { "MilitaryVehicles", "Base", "Roads", "Decor" } do
+			local folder = workspace:FindFirstChild(folderName)
+			if folder then
+				for _, m in folder:GetDescendants() do
+					if m:IsA("Model") and m.Name == name and not m:FindFirstChild("CarCollider") then
+						local cf, size = m:GetBoundingBox()
+						if math.max(size.X, size.Z) <= 60 then
+							local box = Instance.new("Part")
+							box.Name = "CarCollider"
+							box.Anchored = true
+							box.CanCollide = true
+							box.CanQuery = false
+							box.CanTouch = false
+							box.Transparency = 1
+							box.Size = Vector3.new(size.X * 0.92, size.Y * 0.9, size.Z * 0.92)
+							box.CFrame = cf
+							box.Parent = m
+						end
+					end
+				end
+			end
+		end
+	end
+
 	-- Водитель вышел: машину ведёт сервер и сам тормозит (Config.Vehicle.parkBrake студов/с²), а не катится по инерции как по льду
 	RunService.Heartbeat:Connect(function(dt: number)
 		for _, st in vehicles do

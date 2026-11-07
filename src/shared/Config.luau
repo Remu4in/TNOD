@@ -1618,18 +1618,88 @@ Config.Lobby = {
 	NpcWalkSpeed = 7, -- студов/с у патрульных
 	-- Магазин и автоматы: покупок пока нет (монетизация не подключена) — окна показывают список с пометкой «Coming soon».
 	-- Когда появятся Developer Products, у позиции указывается productId, а покупку проведёт сервер (MarketplaceService.ProcessReceipt).
-	Shop = {
-		{ id = "skin_camo", name = "Camo uniform", desc = "Desert camouflage for your survivor", price = "Coming soon" },
-		{ id = "skin_night", name = "Night ops outfit", desc = "Dark tactical gear", price = "Coming soon" },
-		{ id = "trail_tracer", name = "Golden tracers", desc = "Bullet trails of your colour", price = "Coming soon" },
-		{ id = "emote_salute", name = "Salute emote", desc = "Show respect to your squad", price = "Coming soon" },
+	VipZone = 4, -- зона сбора только для VIP-хоста (остальные входят, если хост пустит)
+	BoardRigLift = 1.2, -- на сколько поднять фигуру лидера над пьедесталом
+	SquadBoardSize = 5, -- строк в табло лучших команд
+	Shop = {} :: { any }, -- заполняется из Config.Donate ниже
+	Vending = {} :: { any },
+}
+
+-- Инвентарь (Services/InventoryService): всего предметов и расходников одного вида (Field kit — больше)
+Config.Inventory = { MaxItems = 7, ItemMax = 1, FieldKitMax = 3 }
+
+-- Машины-декор, у которых столкновения только на мелких деталях: при старте получают невидимую коробку (VehicleService), чтобы сквозь них нельзя было пройти
+Config.VehicleColliders = { "CrashFire", "HumveeArmored", "HumveeMedic", "Sprinter", "X6M", "APC", "Abrams", "MilitaryCar", "MiningDasa", "Cargo", "Fish and Game Truck." }
+
+-- Донат (Services/DonateService). perk — право в профиле (атрибут Has_<perk>), days — срок (нет — навсегда), robux — цена, productId — id Developer Product
+-- из Creator Dashboard (0 — ещё не создан: в Studio выдаётся сразу, в игре «Coming soon»).
+Config.Donate = {
+	Vip = { Mag = 1.2, Damage = 1.2, Stamina = 3, StartCoins = 2000 },
+	WeeklyRewardDays = 3, -- VIP топ-3 игрокам и лучшей команде прошлой недели
+	Items = {
+		{ id = "vip", perk = "vip", name = "VIP pass (7 days)", desc = "+20% magazine and damage, x3 stamina, 2000 start coins, VIP lobby zone", robux = 500, days = 7, productId = 0 },
+		{ id = "karambit", perk = "karambit", name = "Karambit", desc = "Forever: yours in every round", robux = 200, productId = 0 },
+		{ id = "balisong", perk = "balisong", name = "Butterfly knife", desc = "Forever: yours in every round", robux = 200, productId = 0 },
+		{ id = "fieldkit", perk = "fieldkit", name = "Field kit (7 days)", desc = "Carry up to 3 medkits and 3 energy drinks", robux = 150, days = 7, productId = 0 },
+		{ id = "driver", perk = "driver", name = "Driver box (7 days)", desc = "The Garage is open for your team from the start", robux = 300, days = 7, productId = 0 },
+		{ id = "commander", perk = "commander", name = "Commander box (7 days)", desc = "Armory and Turret shop open from the start, 1 free turret", robux = 500, days = 7, productId = 0 },
+		{ id = "stamina", perk = "stamina", name = "Infinite stamina", desc = "Forever: sprint without limits", robux = 1000, productId = 0 },
+	} :: { any },
+}
+for _, item in Config.Donate.Items do
+	item.price = string.format("%d R$", item.robux)
+end
+Config.Lobby.Shop = Config.Donate.Items
+Config.Lobby.Vending = Config.Donate.Items
+
+-- Катсцены (Services/CutsceneService, Controllers/CutsceneController): реплики короткие, остальное показывает камера
+Config.Cutscene = {
+	Speaker = "General Nursultan",
+	StorySeconds = 4.5,
+	GeneralSeconds = 3.5,
+	AreaSeconds = 3.5,
+	BossSeconds = 3,
+	Story = {
+		"It started underground. Nobody came back from the metro.",
+		"Now the city is theirs. They burn in the sun, but every night they return.",
+		"This base is all we have left. We take the city back, district by district.",
 	},
-	Vending = {
-		{ id = "don_small", name = "Support pack", desc = "Thank the developers: a small bundle of coins", price = "Coming soon" },
-		{ id = "don_medium", name = "Field kit", desc = "Extra medkits and energy drinks for the next round", price = "Coming soon" },
-		{ id = "don_large", name = "Commander box", desc = "Big bundle: coins, ammo and a supporter badge", price = "Coming soon" },
-		{ id = "don_vip", name = "VIP pass", desc = "Supporter title and priority in the lobby", price = "Coming soon" },
-	},
+	ByType = {
+		scout = "Scout the area: reach every marker.",
+		build = "Clear the zone, then set up the tent.",
+		escort = "Escort the convoy. Stay close or it stops.",
+		classic = "Hold the line. Kill them all.",
+		defend = "Hold this position until the time runs out.",
+		clear = "Clear the area. Leave nothing alive.",
+		metro = "Go down into the metro.",
+		bossfight = "This is it. Kill it, and it's over.",
+	} :: { [string]: string },
+	Say = {
+		[3] = "Supplies are coming. Get the convoy to the tent site.",
+		[5] = "Kill thirty of them and the big one will show up.",
+		[10] = "Same again: thirty mutants, then the boss.",
+		[16] = "Something is wrong near the ruins. Scout the approaches.",
+		[17] = "Go inside the ruins. Find the way down.",
+		[18] = "Start four generators, plant ten charges. Then blow it.",
+		[19] = "The base has fallen. Take it back.",
+		[20] = "It ends today, in broad daylight.",
+	} :: { [number]: string },
+	Where = {
+		scout = "The markers are around here",
+		build = "The tent goes here",
+		escort = "The convoy stops here",
+		classic = "They will come here",
+		defend = "Hold this spot",
+		clear = "Clear this area",
+		metro = "The metro entrance",
+		bossfight = "The final fight is here",
+	} :: { [string]: string },
+	Boss = {
+		BossBuff = "He charges. Watch the red line and roll.",
+		BossGarg = "Keep moving. He throws everything he finds.",
+		BossStrong = "Stay out of the dark waves.",
+		BossFinal = "The Guardian. Everything ends here.",
+	} :: { [string]: string },
 }
 
 -- ===== Визуальный проход (2026-11-04): свет, туман, цветокоррекция и эффекты, ориентир — промо-арты =====

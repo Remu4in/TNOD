@@ -202,14 +202,18 @@ function ShopController.start()
 			head.TextSize = 15
 			head.TextColor3 = Color3.fromRGB(214, 190, 96)
 			head.TextXAlignment = Enum.TextXAlignment.Left
-			head.Text = "  DONATE SHOP"
+			head.Text = "  ROBUX SHOP"
 			head.Parent = list
 			for k, item in v.donate do
-				local row = Instance.new("Frame")
+				local row = Instance.new("TextButton")
+				row.Text = ""
 				row.Size = UDim2.new(1, 0, 0, 50)
 				row.LayoutOrder = base + k
 				row.BackgroundColor3 = Color3.fromRGB(38, 40, 48)
 				row.Parent = list
+				row.Activated:Connect(function()
+					Remotes.get("DonateBuy"):FireServer(item.id)
+				end)
 				local rc = Instance.new("UICorner")
 				rc.CornerRadius = UDim.new(0, 5)
 				rc.Parent = row

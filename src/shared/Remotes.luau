@@ -37,6 +37,9 @@ local NAMES = {
 	"LobbyInvite", -- сервер → клиенту (лобби): (zoneIndex: number, fromName: string, seconds: number) — хост зоны пригласил игрока
 	"LobbyMenu", -- сервер → клиенту (лобби): (kind: "shop" | "vending", payload: { title: string, items: { { id, name, desc, price } } }) — окно торговца или автомата
 	"BackToLobby", -- клиент → сервер (матч): () — вернуться в лобби (после конца раунда или по кнопке)
+	"DonateBuy", -- клиент → сервер: (id: string) — купить товар Config.Donate (цену и выдачу решает сервер и Marketplace)
+	"Cutscene", -- сервер → клиенту/всем: ({ { from, fromEnd, look, lookEnd, seconds, speaker, text } }) — катсцена
+	"CutsceneToggle", -- клиент → сервер: () — хост включает/выключает катсцены (атрибут CutscenesOff)
 	"Ping", -- клиент → сервер: (position: Vector3) — поставить метку; сервер → всем: (player: Player, position: Vector3)
 	"MinimapData", -- клиент → сервер: () — запрос плана карты (один раз); сервер → клиенту: ({ x, z, ширина, глубина, вид, … })
 	"Notify", -- сервер → клиенту/всем: (text: string, seconds: number)

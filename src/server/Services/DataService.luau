@@ -24,6 +24,9 @@ export type Profile = {
 	revives: number,
 	rating: number, -- сумма рейтинговых очков за все раунды (RatingService)
 	bestRoundRating: number,
+	perks: { [string]: number }, -- донат: право → до какого времени (os.time)
+	receipts: { string }, -- последние обработанные покупки (ProcessReceipt не выдаёт дважды)
+	weekClaim: number, -- за какую неделю уже выдана награда топа
 	lock: Lock?,
 }
 
@@ -61,7 +64,7 @@ local inFlight = 0 -- сколько очередей сейчас работа�
 -- ===== Чистые функции (без Roblox API) =====
 
 local function default(): Profile
-	return { version = VERSION, bestWave = 0, kills = 0, rounds = 0, revives = 0, rating = 0, bestRoundRating = 0, lock = nil }
+	return { version = VERSION, bestWave = 0, kills = 0, rounds = 0, revives = 0, rating = 0, bestRoundRating = 0, perks = {}, receipts = {}, weekClaim = 0, lock = nil }
 end
 
 -- Приводим сохранённое к актуальной схеме (миграции по version)
@@ -82,6 +85,23 @@ local function sanitize(raw: any): Profile
 			(p :: any)[k] = math.floor(v)
 		end
 	end
+	if typeof(raw.perks) == "table" then
+		for k, v in raw.perks do
+			if typeof(k) == "string" and typeof(v) == "number" then
+				p.perks[k] = v
+			end
+		end
+	end
+	if typeof(raw.receipts) == "table" then
+		for _, v in raw.receipts do
+			if typeof(v) == "string" then
+				table.insert(p.receipts, v)
+			end
+		end
+	end
+	if typeof(raw.weekClaim) == "number" then
+		p.weekClaim = raw.weekClaim
+	end
 	local lock = raw.lock
 	if typeof(lock) == "table" and typeof(lock.jobId) == "string" and typeof(lock.at) == "number" then
 		p.lock = { jobId = lock.jobId, at = lock.at, sid = if typeof(lock.sid) == "string" then lock.sid else nil }
@@ -98,7 +118,26 @@ local function clone(p: Profile): Profile
 	for _, k in RECORDS do
 		(out :: any)[k] = (p :: any)[k]
 	end
+	out.perks = table.clone(p.perks)
+	out.receipts = table.clone(p.receipts)
+	out.weekClaim = p.weekClaim
 	return out
+end
+
+-- Донат при слиянии не теряется: срок — больший, покупки — объединение (последние 100)
+local function mergeDonate(out: Profile, other: Profile)
+	for k, v in other.perks do
+		out.perks[k] = math.max(out.perks[k] or 0, v)
+	end
+	for _, id in other.receipts do
+		if not table.find(out.receipts, id) then
+			table.insert(out.receipts, id)
+		end
+	end
+	while #out.receipts > 100 do
+		table.remove(out.receipts, 1)
+	end
+	out.weekClaim = math.max(out.weekClaim, other.weekClaim)
 end
 
 -- Профиль держит другая живая сессия (другой сервер или прошлая сессия игрока на этом же сервере)
@@ -122,6 +161,7 @@ local function mergeSession(fresh: Profile, live: Profile, base: Profile): Profi
 	for _, k in RECORDS do
 		(out :: any)[k] = math.max((fresh :: any)[k], (live :: any)[k])
 	end
+	mergeDonate(out, live)
 	return out
 end
 
@@ -132,6 +172,7 @@ local function saveValue(cur: Profile, live: Profile): Profile
 		(out :: any)[k] = math.max((cur :: any)[k], (live :: any)[k])
 	end
 	out.rating = math.max(cur.rating, live.rating)
+	mergeDonate(out, cur)
 	return out
 end
 
@@ -163,8 +204,14 @@ local function publish(s: Session)
 	if s.player.Parent then
 		s.player:SetAttribute("BestWave", s.profile.bestWave)
 		s.player:SetAttribute("RatingTotal", s.profile.rating)
+		local h = loadedHandler
+		if h then
+			task.spawn(h, s.player)
+		end
 	end
 end
+
+local loadedHandler: ((Player) -> ())? = nil -- профиль загружен (донат: атрибуты прав)
 
 local kick: (s: Session) -> ()
 
@@ -366,6 +413,46 @@ function DataService.flush(players: { Player }, timeout: number)
 		while s and (s.busy or s.wantSave or s.wantAcquire) and os.clock() < deadline do
 			task.wait(0.1)
 		end
+	end
+end
+
+function DataService.setLoadedHandler(handler: (Player) -> ())
+	loadedHandler = handler
+end
+
+-- Донат: права игрока (таблица живая: менять и звать touch), покупки и награда недели
+function DataService.perks(player: Player): { [string]: number }?
+	local s = sessions[player]
+	return if s and not s.closing then s.profile.perks else nil
+end
+
+function DataService.touch(player: Player)
+	requestSave(player)
+end
+
+function DataService.hasReceipt(player: Player, id: string): boolean
+	local s = sessions[player]
+	return s ~= nil and table.find(s.profile.receipts, id) ~= nil
+end
+
+function DataService.addReceipt(player: Player, id: string)
+	local s = sessions[player]
+	if s then
+		table.insert(s.profile.receipts, id)
+		requestSave(player)
+	end
+end
+
+function DataService.weekClaim(player: Player): number
+	local s = sessions[player]
+	return if s then s.profile.weekClaim else 0
+end
+
+function DataService.setWeekClaim(player: Player, week: number)
+	local s = sessions[player]
+	if s then
+		s.profile.weekClaim = week
+		requestSave(player)
 	end
 end
 

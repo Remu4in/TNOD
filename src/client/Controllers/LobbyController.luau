@@ -231,7 +231,7 @@ function LobbyController.start()
 	-- ===== Окно хоста: настройки зоны =====
 	local setupWin, setupScale, setupBody = window(gui, "SquadSetup", 540, 600, Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.5))
 	table.insert(rescale, setupScale)
-	local setupChoice = { size = 4, access = "Public" }
+	local setupChoice = { size = 4, access = "Public", cutscenes = true }
 	local setupKey = ""
 	local editing = false
 
@@ -284,6 +284,14 @@ function LobbyController.start()
 		end
 		local d = label(setupBody, desc, 15, C.dim)
 		d.Size, d.Position = UDim2.new(1, 0, 0, 20), UDim2.fromOffset(0, 252)
+		-- катсцены: переключатель хоста рядом с описанием доступа
+		local cut = button(setupBody, if setupChoice.cutscenes then "Cutscenes: ON" else "Cutscenes: OFF", if setupChoice.cutscenes then C.gold else C.button, function()
+			setupChoice.cutscenes = not setupChoice.cutscenes
+			renderSetup(zone)
+		end)
+		cut.TextColor3 = if setupChoice.cutscenes then C.dark else C.text
+		cut.TextSize = 15
+		cut.Size, cut.Position = UDim2.fromOffset(150, 26), UDim2.new(1, -150, 0, 250)
 
 		-- приглашения
 		local h3 = label(setupBody, "INVITE PLAYERS", 16, C.dim, HEAD)
@@ -330,7 +338,7 @@ function LobbyController.start()
 
 		-- кнопки
 		local primary = button(setupBody, if isSetup then "OPEN SQUAD" else "APPLY", C.good, function()
-			cmd:FireServer(if isSetup then "open" else "config", { size = setupChoice.size, access = setupChoice.access })
+			cmd:FireServer(if isSetup then "open" else "config", { size = setupChoice.size, access = setupChoice.access, cutscenes = setupChoice.cutscenes })
 			editing = false
 			if not isSetup then
 				setupWin.Visible = false

@@ -125,3 +125,8 @@
 | W# | Дата | Что создано или изменено | Откат |
 |---|---|---|---|
 | W043 | 2026-11-05 | Новые ModuleScript: `Client.Controllers.CursorController`, `MinimapController`, `SpectateController`, `SquadController`, `Server.Services.SquadService`; залиты изменённые скрипты. Лежат только в файле места — сохранить | Удалить модули, залить прежние версии из git |
+
+## Донат, катсцены, инвентарь (2026-11-07)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W044 | 2026-11-07 | Новые ModuleScript: `Server.Services.InventoryService`, `DonateService`, `CutsceneService`, `Client.Controllers.CutsceneController`; изменённые скрипты перенесены. Лежат только в файле места — сохранить | Удалить модули, вернуть версии из git |

@@ -182,7 +182,7 @@ function StaminaService.init()
 						end
 						continue
 					end
-					local free = isInfinite(player)
+					local free = isInfinite(player) or player:GetAttribute("Has_stamina") == true
 					player:SetAttribute("InfiniteEnergy", free)
 					if free then
 						e = P.EnergyMax
@@ -190,7 +190,7 @@ function StaminaService.init()
 							lastSprintAt[player] = now
 						end
 					elseif active then
-						e = math.max(0, e - DRAIN_PER_SEC / Perks.mult("stamina") * TICK)
+						e = math.max(0, e - DRAIN_PER_SEC / (Perks.mult("stamina") * (if player:GetAttribute("Has_vip") == true then Config.Donate.Vip.Stamina else 1)) * TICK)
 						lastSprintAt[player] = now
 						if e <= 0 then
 							wanted[player] = false -- выдохлись: чтобы снова бежать, нужно отпустить и нажать заново

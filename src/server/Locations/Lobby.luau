@@ -40,6 +40,7 @@ export type BoardEntry = { name: string, wave: number, rating: number, image: st
 export type BoardView = {
 	setRow: (rank: number, entry: BoardEntry?) -> (),
 	setNote: (text: string) -> (),
+	setSquad: (rank: number, names: string?, wave: number, rating: number) -> (),
 	rig: Model?, -- «аватар первого места» ассета: сервер одевает его в лидера
 }
 
@@ -719,8 +720,57 @@ function Lobby.build(): LobbyInfo
 		put("Base.Fort", -52, 112, 90, { y = 0.2 })
 		put("Base.Fort", 52, 112, 90, { y = 0.2 })
 		local palette = { Color3.fromRGB(255, 208, 70), Color3.fromRGB(205, 210, 220), Color3.fromRGB(214, 140, 80) }
+		-- табло лучших команд: рядом с Top survivors, лицом на север
+		local squadRows: { TextLabel } = {}
+		do
+			local part = Instance.new("Part")
+			part.Name = "SquadBoard"
+			part.Anchored = true
+			part.CanCollide = true
+			part.Material = Enum.Material.SmoothPlastic
+			part.Color = Color3.fromRGB(12, 16, 14)
+			part.Size = Vector3.new(24, 12, 1)
+			part.CFrame = CFrame.new(O + Vector3.new(-42, 7, 108)) -- лицевая сторона (Front) смотрит на -Z, к спавну
+			part.Parent = root
+			local gui = Instance.new("SurfaceGui")
+			gui.Name = "SquadBoardGui"
+			gui.Face = Enum.NormalId.Front
+			gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+			gui.CanvasSize = Vector2.new(900, 450)
+			gui.LightInfluence = 0
+			gui.Brightness = 1.3
+			gui.Parent = part
+			local head = Instance.new("TextLabel")
+			head.Size = UDim2.new(1, 0, 0, 80)
+			head.BackgroundTransparency = 1
+			head.Font = Enum.Font.Oswald
+			head.TextSize = 58
+			head.TextColor3 = Color3.fromRGB(255, 208, 70)
+			head.Text = "TOP SQUADS"
+			head.Parent = gui
+			for r = 1, Config.Lobby.SquadBoardSize do
+				local row = Instance.new("TextLabel")
+				row.Position = UDim2.fromOffset(24, 80 + (r - 1) * 72)
+				row.Size = UDim2.new(1, -48, 0, 66)
+				row.BackgroundTransparency = 1
+				row.Font = Enum.Font.GothamBold
+				row.TextSize = 28
+				row.TextWrapped = true
+				row.TextXAlignment = Enum.TextXAlignment.Left
+				row.TextColor3 = palette[r] or Color3.fromRGB(232, 236, 228)
+				row.Text = ""
+				row.Parent = gui
+				squadRows[r] = row
+			end
+		end
 		boardView = {
 			rig = rig,
+			setSquad = function(rank: number, names: string?, wave: number, rating: number)
+				local row = squadRows[rank]
+				if row then
+					row.Text = if names then string.format("%d. %s  ·  Night %d  ·  %d", rank, names, wave, rating) else ""
+				end
+			end,
 			setRow = function(rank: number, entry: BoardEntry?)
 				local row = rows[rank]
 				if not row then
