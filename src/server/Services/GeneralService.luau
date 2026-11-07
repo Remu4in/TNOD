@@ -65,6 +65,11 @@ local function nextNight(): number
 end
 
 local function send(player: Player)
+	-- короткая сцена: реплика и камера над местом; катсцены выключены — текстом
+	if ReplicatedStorage:GetAttribute("CutscenesOff") ~= true then
+		require(script.Parent:WaitForChild("CutsceneService")).playFor(player, nextNight())
+		return
+	end
 	local title, lines = GeneralService.brief(nextNight())
 	Remotes.get("Briefing"):FireClient(player, NAME, title, lines)
 end
@@ -120,7 +125,7 @@ function GeneralService.announceDay()
 	local night = nextNight()
 	local def = missionFor(night)
 	GeneralService.publishBrief(night)
-	Remotes.get("Notify"):FireAllClients(string.format("%s is waiting at the base. Night %d: %s. Come over and press E to hear the orders.", NAME, night, def.title), 7)
+	Remotes.get("Notify"):FireAllClients(string.format("Night %d: %s. Talk to %s (E) to see the orders again.", night, def.title, NAME), 5)
 end
 
 local function build()

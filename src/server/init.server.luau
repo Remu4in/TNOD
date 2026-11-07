@@ -214,6 +214,7 @@ local function startMatch()
 		DataService.init()
 		ScoreService.init()
 		RatingService.init()
+		require(Services:WaitForChild("DonateService")).init()
 	end
 	PerkService.init()
 	GeneralService.init()
@@ -230,6 +231,10 @@ local function startMatch()
 	VendorService.init(map)
 	require(Services:WaitForChild("BaseShopService")).init() -- донатный магазин на базе
 	SoldierService.init()
+	require(Services:WaitForChild("ItemService")).init() -- лечение тиммейта
+	local CutsceneService = require(Services:WaitForChild("CutsceneService"))
+	CutsceneService.init()
+	ZombieService.setBossIntroHandler(CutsceneService.bossIntro)
 	require(Services:WaitForChild("SquadService")).init() -- позиции тиммейтов, метки, план мини-карты
 
 	-- ездовые машины: маркеры Workspace.Markers.VehicleSpawn_<Шаблон>
@@ -249,6 +254,7 @@ if mode == "lobby" then
 	DataService.init()
 	ScoreService.init()
 	RatingService.init()
+	require(Services:WaitForChild("DonateService")).init()
 	sharedReady = true
 	LobbyService.initLobby({
 		onStudioStart = function(_players, _data)

@@ -16,6 +16,7 @@ local WeaponService = require(script.Parent:WaitForChild("WeaponService"))
 local ItemService = require(script.Parent:WaitForChild("ItemService"))
 local BuildingService = require(script.Parent:WaitForChild("BuildingService"))
 local EquipmentService = require(script.Parent:WaitForChild("EquipmentService"))
+local InventoryService = require(script.Parent:WaitForChild("InventoryService"))
 
 local VendorService = {}
 
@@ -197,6 +198,17 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 			notify:FireClient(player, why or "Not allowed", 2)
 			return
 		end
+	end
+	-- лимит инвентаря до списания монет
+	if item.kind == "item" then
+		local denied = InventoryService.itemDenied(player, item.id)
+		if denied then
+			notify:FireClient(player, denied, 2)
+			return
+		end
+	elseif (item.kind == "weapon" or item.kind == "equip") and InventoryService.isFull(player) then
+		notify:FireClient(player, string.format("Inventory full (%d items)", Config.Inventory.MaxItems), 2)
+		return
 	end
 	if not EconomyService.trySpend(player, item.price) then
 		notify:FireClient(player, "Not enough coins", 1.5)

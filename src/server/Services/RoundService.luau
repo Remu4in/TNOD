@@ -9,6 +9,8 @@ local ServerStorage = game:GetService("ServerStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local WaveMath = require(Shared:WaitForChild("WaveMath"))
+local DonateService = require(script.Parent:WaitForChild("DonateService"))
+local CutsceneService = require(script.Parent:WaitForChild("CutsceneService"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
@@ -41,6 +43,40 @@ local fellAtNight = false
 local finalePending = false -- убит финальный босс: следующий день — финал акта 1 (бункер)
 local finaleDone = false -- акт 1 пройден: раунд кончается поздравлением, а не «все пали»
 local rng = Random.new()
+-- Донат в матче: каждый день (и сразу после покупки днём); разовое за раунд — один раз
+local donateGiven: { [Player]: { [string]: boolean } } = {}
+local function applyDonate(p: Player)
+	if ReplicatedStorage:GetAttribute("Phase") ~= "Day" or not p.Parent then
+		return
+	end
+	local given = donateGiven[p] or {}
+	donateGiven[p] = given
+	local function once(key: string, fn: () -> ())
+		if p:GetAttribute("Has_" .. key) == true and not given[key] then
+			given[key] = true
+			fn()
+		end
+	end
+	once("vip", function()
+		EconomyService.applyStartCoins(p, Config.Donate.Vip.StartCoins)
+	end)
+	once("karambit", function()
+		WeaponService.give(p, "Karambit")
+	end)
+	once("balisong", function()
+		WeaponService.give(p, "Balisong")
+	end)
+	once("driver", function()
+		BuildingService.unlockFree("Garage")
+	end)
+	once("commander", function()
+		BuildingService.unlockFree("Armory")
+		BuildingService.unlockFree("GunShop")
+		EquipmentService.give(p, "Turret")
+	end)
+end
+DonateService.setApplyHandler(applyDonate)
+
 local roundSeed = 1 -- семя бросков прогрессии (WaveMath.roll): одно на раунд, чтобы рост по волнам был воспроизводим
 local dayVotes: { [Player]: boolean } = {} -- голоса «завершить день»
 local skipRequested = false -- тестовый стенд «Пропустить волну»: сейчас идёт ночь — завершить её как выполненную; днём — сразу начать ночь
@@ -191,6 +227,7 @@ local function startRound()
 	RatingService.resetRound(players)
 	roundSeed = rng:NextInteger(1, 1000000)
 	WeaponService.resetRound(players)
+	table.clear(donateGiven)
 	for _, p in players do
 		p:SetAttribute("Revives", 0)
 		p:SetAttribute("Headshots", 0)
@@ -257,6 +294,10 @@ local function day(first: boolean, finale: boolean?)
 	end
 	setPhase("Day", t)
 	GeneralService.announceDay()
+	for _, p in Players:GetPlayers() do
+		applyDonate(p)
+	end
+	CutsceneService.playDay(wave + 1, first)
 	notifyAll(if first then "Stock up at the shop and open buildings — invest coins at the signs" else "Dawn. The mutants burn in the sun — run to the shops!", 4)
 	local warn = Config.Round.DayWarnSeconds
 	local early = false
@@ -458,7 +499,7 @@ local function finishRound()
 			)
 		end)
 	end
-	RatingService.finishRound(Players:GetPlayers())
+	-- сначала рекорд ночи в профиль: табло берёт лучшую ночь из него (иначе записывалась ночь прошлого раунда)
 	for _, p in Players:GetPlayers() do
 		DataService.recordRound(
 			p,
@@ -467,6 +508,7 @@ local function finishRound()
 			(p:GetAttribute("Revives") :: number?) or 0
 		)
 	end
+	RatingService.finishRound(Players:GetPlayers(), reached)
 	task.wait(Config.Round.GameOverTime)
 end
 

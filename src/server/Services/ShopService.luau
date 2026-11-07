@@ -56,7 +56,7 @@ function ShopService.removePointAt(center: Vector3)
 	end
 	if folder then
 		for _, part in folder:GetChildren() do
-			if part:IsA("BasePart") and (part.Position - (center + Vector3.new(0, 2, 0))).Magnitude < 1 then
+			if part:IsA("BasePart") and (part.Position - (center + Vector3.new(0, 4.5, 0))).Magnitude < 1 then
 				part:Destroy()
 			end
 		end
@@ -82,13 +82,13 @@ function ShopService.addPoint(name: string, center: Vector3, radius: number, fre
 	part.CanTouch = false
 	part.Transparency = 1
 	part.Size = Vector3.new(2, 2, 2)
-	part.Position = center + Vector3.new(0, 2, 0)
+	part.Position = center + Vector3.new(0, 4.5, 0) -- подсказка на уровне глаз: центр шатра — у земли
 	part.Parent = folder
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Open the shop"
 	prompt.ObjectText = name
 	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = math.min(radius, 24)
+	prompt.MaxActivationDistance = math.min(radius, 14)
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = part
 	prompt.Triggered:Connect(function(player: Player)

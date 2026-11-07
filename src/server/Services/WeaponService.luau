@@ -18,6 +18,7 @@ local Types = require(script.Parent.Parent:WaitForChild("Types"))
 local ZombieService = require(script.Parent:WaitForChild("ZombieService"))
 local EconomyService = require(script.Parent:WaitForChild("EconomyService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
+local InventoryService = require(script.Parent:WaitForChild("InventoryService"))
 local ShopService = require(script.Parent:WaitForChild("ShopService"))
 
 local WeaponService = {}
@@ -265,8 +266,13 @@ local function giveTool(player: Player, weaponId: string)
 end
 
 -- Перки команды: магазин, запас патронов, перезарядка и урон
-local function magCap(def: Config.WeaponDef): number
-	return math.floor(def.magSize * Perks.mult("mag") + 0.5)
+local function magCap(def: Config.WeaponDef, player: Player?): number
+	local vip = if player and player:GetAttribute("Has_vip") == true then Config.Donate.Vip.Mag else 1
+	return math.floor(def.magSize * Perks.mult("mag") * vip + 0.5)
+end
+
+local function vipDamage(player: Player): number
+	return if player:GetAttribute("Has_vip") == true then Config.Donate.Vip.Damage else 1
 end
 
 local function reserveCap(def: Config.WeaponDef): number
@@ -284,7 +290,7 @@ local function grant(player: Player, weaponId: string)
 		inv = {}
 		owned[player] = inv
 	end
-	inv[weaponId] = { mag = magCap(def), reserve = reserveCap(def), lastShot = 0, reloadingUntil = 0, burst = 0 }
+	inv[weaponId] = { mag = magCap(def, player), reserve = reserveCap(def), lastShot = 0, reloadingUntil = 0, burst = 0 }
 	giveTool(player, weaponId)
 end
 
@@ -304,7 +310,7 @@ end
 local function startReload(player: Player, weaponId: string)
 	local def = Config.Weapons[weaponId]
 	local st = owned[player][weaponId]
-	if st.mag >= magCap(def) or st.reserve == 0 or os.clock() < st.reloadingUntil then
+	if st.mag >= magCap(def, player) or st.reserve == 0 or os.clock() < st.reloadingUntil then
 		return
 	end
 	local seconds = reloadSeconds(def)
@@ -315,9 +321,9 @@ local function startReload(player: Player, weaponId: string)
 		if not inv or inv[weaponId] ~= st then
 			return
 		end
-		local need = magCap(def) - st.mag
+		local need = magCap(def, player) - st.mag
 		if st.reserve < 0 then
-			st.mag = magCap(def)
+			st.mag = magCap(def, player)
 		else
 			local take = math.min(need, st.reserve)
 			st.mag += take
@@ -418,7 +424,7 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 			if model then
 				local kind = ZombieService.partKind(hitPart)
 				local mult = if isHead then Config.Economy.HeadshotMultiplier elseif kind == "Arm" or kind == "Leg" then Config.Economy.LimbMultiplier else 1
-				local dmg = def.damage * mult * Perks.mult("power")
+				local dmg = def.damage * mult * Perks.mult("power") * vipDamage(player)
 				local applied, killed = ZombieService.damage(model, dmg, player, {
 					dir = dir,
 					push = if aim then aim.push * 1.2 / def.pellets else 5, -- дробь: суммарный толчок по всем дробинкам ≈ aim.push
@@ -539,7 +545,7 @@ local function onMelee(player: Player, direction: unknown)
 		for i = 1, math.min(#candidates, def.maxTargets or 1) do
 			local c = candidates[i]
 			local away = Vector3.new(c.root.Position.X - origin.X, 0, c.root.Position.Z - origin.Z)
-			local applied, killed = ZombieService.damage(c.model, def.damage * Perks.mult("power"), player, {
+			local applied, killed = ZombieService.damage(c.model, def.damage * Perks.mult("power") * vipDamage(player), player, {
 				dir = away,
 				push = def.knockback,
 				stagger = 0.35,
@@ -590,6 +596,10 @@ local function onWallBuy(player: Player, weaponId: string)
 		end
 		return
 	end
+	if InventoryService.isFull(player) then
+		Remotes.get("Notify"):FireClient(player, string.format("Inventory full (%d items): drop something first", Config.Inventory.MaxItems), 2)
+		return
+	end
 	if EconomyService.trySpend(player, def.price) then
 		grant(player, weaponId)
 		Remotes.get("Notify"):FireClient(player, "Purchased: " .. def.name, 1.5)
@@ -625,7 +635,7 @@ local function giveWithAmmo(player: Player, weaponId: string, mag: number, reser
 		inv = {}
 		owned[player] = inv
 	end
-	inv[weaponId] = { mag = math.min(mag, magCap(def)), reserve = reserve, lastShot = 0, reloadingUntil = 0, burst = 0 }
+	inv[weaponId] = { mag = math.min(mag, magCap(def, player)), reserve = reserve, lastShot = 0, reloadingUntil = 0, burst = 0 }
 	giveTool(player, weaponId)
 end
 
@@ -674,6 +684,10 @@ local function onPickup(player: Player, drop: Model)
 		syncAmmo(player, weaponId)
 		Remotes.get("Notify"):FireClient(player, "Ammo: " .. def.name, 1.5)
 	else
+		if InventoryService.isFull(player) then
+			Remotes.get("Notify"):FireClient(player, string.format("Inventory full (%d items)", Config.Inventory.MaxItems), 1.5)
+			return
+		end
 		-- дроп гасим до выдачи: giveTool может уступить управление (загрузка меша), и второй игрок подобрал бы тот же ствол
 		drop:SetAttribute("Taken", true)
 		drop:Destroy()
@@ -795,7 +809,7 @@ function WeaponService.canRefillHeld(player: Player): (boolean, string?)
 		return false, "This weapon doesn't need ammo"
 	end
 	local st = owned[player] and owned[player][def.id]
-	if st and st.reserve >= reserveCap(def) and st.mag >= magCap(def) then
+	if st and st.reserve >= reserveCap(def) and st.mag >= magCap(def, player) then
 		return false, "Ammo is full"
 	end
 	return true, nil
@@ -821,8 +835,8 @@ function WeaponService.refillAll(player: Player): boolean
 	for id, st in inv do
 		local def = Config.Weapons[id]
 		if def and not def.melee and def.reserve >= 0 then
-			if st.mag < magCap(def) or st.reserve < reserveCap(def) then
-				st.mag = magCap(def)
+			if st.mag < magCap(def, player) or st.reserve < reserveCap(def) then
+				st.mag = magCap(def, player)
 				st.reserve = reserveCap(def)
 				changed = true
 				syncAmmo(player, id)

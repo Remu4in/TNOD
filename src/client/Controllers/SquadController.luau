@@ -149,6 +149,27 @@ function SquadController.start()
 		end)
 	end)
 
+	-- лечение тиммейта: подсказка видна только с аптечкой в руках и если он ранен (проверяет сервер, ItemService)
+	local healAcc = 0
+	RunService.Heartbeat:Connect(function(dt: number)
+		healAcc += dt
+		if healAcc < 0.15 then
+			return
+		end
+		healAcc = 0
+		local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
+		local holding = tool ~= nil and tool:GetAttribute("ItemId") == "Medkit"
+		for _, p in Players:GetPlayers() do
+			local char = p.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			local prompt = root and root:FindFirstChild("HealPrompt") :: ProximityPrompt?
+			if prompt then
+				local hum = (char :: Model):FindFirstChildOfClass("Humanoid")
+				prompt.Enabled = p ~= player and holding and hum ~= nil and hum.Health > 0 and hum.Health < hum.MaxHealth and p:GetAttribute("Downed") ~= true
+			end
+		end
+	end)
+
 	RunService.RenderStepped:Connect(function()
 		local cam = workspace.CurrentCamera
 		if not cam then

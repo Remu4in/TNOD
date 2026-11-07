@@ -42,6 +42,7 @@ local function startGame()
 	require(Controllers:WaitForChild("SquadController")).start()
 	require(Controllers:WaitForChild("MinimapController")).start()
 	require(Controllers:WaitForChild("SpectateController")).start()
+	require(Controllers:WaitForChild("CutsceneController")).start()
 end
 
 -- режим выставляется сервером в первые секунды; нет атрибута (старый сервер, режим осмотра) — играем как раньше

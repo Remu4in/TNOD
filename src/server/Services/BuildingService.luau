@@ -208,6 +208,13 @@ function BuildingService.setMap(newMap: Types.MapInfo)
 	BuildingService.reset()
 end
 
+-- Открыть здание без взносов (донат: Driver box, Commander box); уже открытое не трогаем
+function BuildingService.unlockFree(id: string)
+	if defs[id] and not unlocked[id] then
+		unlock(id)
+	end
+end
+
 function BuildingService.isUnlocked(id: string): boolean
 	return unlocked[id] == true
 end

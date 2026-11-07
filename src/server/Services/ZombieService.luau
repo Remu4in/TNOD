@@ -1637,6 +1637,12 @@ local function pickSpawnPosition(): Vector3
 	return result
 end
 
+local bossIntroHandler: ((string, Vector3, Vector3) -> ())? = nil
+
+function ZombieService.setBossIntroHandler(handler: (string, Vector3, Vector3) -> ())
+	bossIntroHandler = handler
+end
+
 local function spawnOne(typeId: string, atPos: Vector3?): Zombie
 	local z = acquire(typeId)
 	z.model:SetAttribute("Thrown", nil) -- метка брошенного ползуна (BossAI) не переходит в следующую жизнь модели из пула
@@ -1690,6 +1696,12 @@ local function spawnOne(typeId: string, atPos: Vector3?): Zombie
 	active[z.model] = z
 	if WaveMath.isBossType(z.def.id) then
 		refreshBossBar()
+		local intro = bossIntroHandler
+		if intro then
+			-- катсцена выхода босса: на это время он стоит
+			z.staggerUntil = os.clock() + Config.Cutscene.BossSeconds
+			task.spawn(intro, z.def.id, z.root.Position, z.root.CFrame.LookVector)
+		end
 	end
 	return z
 end

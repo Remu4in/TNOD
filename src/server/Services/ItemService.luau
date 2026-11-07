@@ -6,6 +6,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local StaminaService = require(script.Parent:WaitForChild("StaminaService"))
+local InventoryService = require(script.Parent:WaitForChild("InventoryService"))
 
 local ItemService = {}
 
@@ -97,15 +98,75 @@ local function buildTool(itemId: string, def: Config.ItemDef): Tool
 	return tool
 end
 
--- Выдать предмет игроку (в рюкзак)
-function ItemService.give(player: Player, itemId: string)
+-- Выдать предмет игроку (в рюкзак); false — лимит (игрок получает сообщение)
+function ItemService.give(player: Player, itemId: string): boolean
 	local def = Config.Items[itemId]
 	if not def then
-		return
+		return false
+	end
+	local denied = InventoryService.itemDenied(player, itemId)
+	if denied then
+		notify(player, denied)
+		return false
 	end
 	local backpack = player:FindFirstChildOfClass("Backpack") or player:WaitForChild("Backpack", 5)
 	if backpack then
 		buildTool(itemId, def).Parent = backpack
+		return true
+	end
+	return false
+end
+
+-- Лечение тиммейта: подсказка на каждом персонаже, клиент показывает её только с аптечкой в руках (SquadController); проверяет сервер
+local function setupHealPrompt(target: Player, char: Model)
+	local root = char:WaitForChild("HumanoidRootPart", 5)
+	if not root then
+		return
+	end
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "HealPrompt"
+	prompt.ActionText = "Heal"
+	prompt.ObjectText = target.DisplayName
+	prompt.HoldDuration = 0.4
+	prompt.MaxActivationDistance = 10
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = root
+	prompt.Triggered:Connect(function(helper: Player)
+		local hChar = helper.Character
+		local tool = hChar and hChar:FindFirstChildOfClass("Tool")
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local helperHum = hChar and hChar:FindFirstChildOfClass("Humanoid")
+		local def = Config.Items.Medkit
+		if helper == target or not tool or tool:GetAttribute("ItemId") ~= "Medkit" or tool:GetAttribute("Used") then
+			return
+		end
+		if not hum or hum.Health <= 0 or target:GetAttribute("Downed") or not helperHum or helperHum.Health <= 0 or helper:GetAttribute("Downed") then
+			return
+		end
+		if hum.Health >= hum.MaxHealth then
+			notify(helper, target.DisplayName .. ": health is full")
+			return
+		end
+		tool:SetAttribute("Used", true)
+		tool:Destroy()
+		hum.Health = math.min(hum.MaxHealth, hum.Health + (def.heal or 0))
+		notify(helper, "Healed " .. target.DisplayName)
+		notify(target, helper.DisplayName .. " healed you")
+	end)
+end
+
+function ItemService.init()
+	local function watch(p: Player)
+		p.CharacterAdded:Connect(function(char: Model)
+			setupHealPrompt(p, char)
+		end)
+		if p.Character then
+			task.spawn(setupHealPrompt, p, p.Character)
+		end
+	end
+	Players.PlayerAdded:Connect(watch)
+	for _, p in Players:GetPlayers() do
+		watch(p)
 	end
 end
 
