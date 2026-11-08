@@ -115,7 +115,7 @@ end
 
 function ShopService.init(map: Types.MapInfo)
 	for _, s in map.shops or {} do
-		ShopService.addPoint(s.name, s.center, s.radius, false, true, true)
+		ShopService.addPoint(s.name, s.center, s.radius, false, true, false) -- шатёр открывается только клавишей B (ShopController)
 	end
 	-- атрибуты игрока: рядом ли магазин (для клавиши B) и бесплатный ли он
 	task.spawn(function()
