@@ -135,3 +135,4 @@
 | W# | Дата | Что создано или изменено | Откат |
 |---|---|---|---|
 | W045 | 2026-11-08 | Новый ModuleScript `Client.Controllers.NightMusicController`; обновлены Source: `Config`, `BuildKit`, `Lobby`, `VehicleService`, `GeneralService`, `MissionService`, `CutsceneService`, `CutsceneController`, `SfxController`, `Client` | `git revert` коммита и заливка Source; удалить `NightMusicController` |
+| W046 | 2026-11-08 | Удалён ModuleScript `Client.Controllers.MinimapController`; обновлены Source: `Config`, `Remotes`, `SquadService`, `Server`, `Client` | `git revert` коммита и заливка Source |
