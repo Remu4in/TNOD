@@ -758,6 +758,31 @@ local function onDrop(player: Player)
 	spawnDrop(weaponId, st.mag, st.reserve, CFrame.new(head.Position + look * 2.5), look * 24 + Vector3.new(0, 10, 0))
 end
 
+local CaseRules = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("CaseRules"))
+
+-- Оружие, полученное за донат: взять бесплатно, с полным магазином и без запаса (патроны платные, у стартового пистолета бесконечные)
+local function ownsDonated(player: Player, weaponId: string): boolean
+	return player:GetAttribute("Has_" .. CaseRules.perkFor(weaponId)) == true
+end
+
+local function onFreeTake(player: Player, weaponId: string)
+	if hasWeapon(player, weaponId) then
+		onWallBuy(player, weaponId) -- нож второй раз не выдаём, патроны к оружию — за монеты
+		return
+	end
+	if game:GetService("ReplicatedStorage"):GetAttribute("Phase") == "Night" then
+		Remotes.get("Notify"):FireClient(player, "The shop is closed at night", 1.5)
+		return
+	end
+	if InventoryService.isFull(player) then
+		Remotes.get("Notify"):FireClient(player, string.format("Inventory full (%d items): drop something first", Config.Inventory.MaxItems), 2)
+		return
+	end
+	local def = Config.Weapons[weaponId]
+	giveWithAmmo(player, weaponId, magCap(def, player), if def.reserve < 0 then def.reserve else 0)
+	Remotes.get("Notify"):FireClient(player, "Taken: " .. def.name, 1.5)
+end
+
 -- Покупка из меню (ShopController). В режиме осмотра всё бесплатно; иначе — как со стены (цена, ночью закрыто).
 local shopIds: { [string]: boolean } = {}
 for _, item in Config.ShopList do
@@ -777,8 +802,14 @@ local function onShopBuy(player: Player, weaponId: unknown)
 		Remotes.get("Notify"):FireClient(player, "Weapons are sold in military tents", 2)
 		return
 	end
+	local donated = ownsDonated(player, weaponId)
+	if Config.DonateOnly[weaponId] and not donated and not Config.Explore and not point.free then
+		return -- донатное оружие выдаётся только получившим его
+	end
 	if Config.Explore or point.free then
 		grant(player, weaponId)
+	elseif donated then
+		onFreeTake(player, weaponId)
 	else
 		onWallBuy(player, weaponId)
 	end

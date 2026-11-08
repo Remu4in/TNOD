@@ -1,7 +1,7 @@
 --!strict
 -- Донатный магазин на военной базе (баланс v4): как магазины лобби v2 — стена, вывеска, два прилавка, два ящика с припасами и двое военных у прилавков.
 -- Ассеты те же, что у лобби (ServerStorage.Assets.Lobby: Wall, ShopSign, Stall; Props.MilitaryCrates; NPC.Lobby: LobbySoldier_*), все без скриптов.
--- Товаров за робуксы пока нет: прилавок открывает окно продавца с разделом доната «Coming soon» (тот же список, что в лобби: Config.Lobby.Shop).
+-- Прилавок открывает робуксовый магазин (StoreController).
 -- Место — Config.BaseShop (на базе между «Military Carport Garage Building House» и APC). Магазин стоит в месте статично (Workspace.BaseDonateShop,
 -- построен один раз через BaseShopService.build() в Edit); при запуске сервис только вешает подсказки на прилавки (а если модели в месте нет — строит её).
 -- Магазин открыт днём и ночью: это донат, не оружие.
@@ -89,13 +89,7 @@ local function openDonate(player: Player)
 	if not PlayerService.isUp(player) then
 		return
 	end
-	Remotes.get("ShopOpen"):FireClient(player, {
-		vendorId = "BaseDonate",
-		title = "DONATE SHOP",
-		greeting = "Support the game — the shelves are being stocked",
-		items = {},
-		donate = Config.Lobby.Shop,
-	})
+	Remotes.get("StoreOpen"):FireClient(player)
 end
 
 -- Построить магазин по Config.BaseShop (заменяет старый Workspace.BaseDonateShop); без подсказок — их вешает init

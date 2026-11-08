@@ -6,6 +6,7 @@ local Controllers = script:WaitForChild("Controllers")
 require(Controllers:WaitForChild("LookController")).start() -- свет и цветокоррекция по фазам (и в лобби, и в матче)
 require(Controllers:WaitForChild("CursorController")).start() -- убирает значок мыши из центра экрана (и в лобби, и в матче)
 require(Controllers:WaitForChild("LobbyController")).start() -- лобби и экран итогов
+require(Controllers:WaitForChild("StoreController")).start() -- донатный магазин: и в лобби, и в матче
 
 local started = false
 local function startGame()

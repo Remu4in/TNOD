@@ -611,6 +611,12 @@ Config.WeaponDraft = {
 	{ id = "Sledge", name = "Sledgehammer", ref = "Melee/Sledgehammer", tier = "late", price = 1500, damage = 160, fireRate = 0.7, note = "strong knockback" },
 	{ id = "Karambit", name = "Karambit", ref = "Melee/Karambit", tier = "donate", price = 0, damage = 30, fireRate = 3.0, note = "cosmetic, slightly faster than the knife" },
 	{ id = "Balisong", name = "Butterfly knife", ref = "Melee/Balisong", tier = "donate", price = 0, damage = 25, fireRate = 2.5, note = "cosmetic" },
+	{ id = "BowieKnife", name = "Bowie knife", ref = "Melee/BowieKnife", tier = "donate", price = 0, damage = 28, fireRate = 2.4, note = "knife case" },
+	{ id = "KABAR", name = "KA-BAR", ref = "Melee/KABAR", tier = "donate", price = 0, damage = 26, fireRate = 2.6, note = "knife case" },
+	{ id = "Tanto", name = "Tanto", ref = "Melee/Tanto", tier = "donate", price = 0, damage = 27, fireRate = 2.6, note = "knife case" },
+	{ id = "Stiletto", name = "Stiletto", ref = "Melee/Stiletto", tier = "donate", price = 0, damage = 24, fireRate = 3.0, note = "knife case" },
+	{ id = "M9Bayonet", name = "M9 bayonet", ref = "Melee/M9Bayonet", tier = "donate", price = 0, damage = 28, fireRate = 2.5, note = "knife case" },
+	{ id = "Kukri", name = "Kukri", ref = "Melee/Kukri", tier = "donate", price = 0, damage = 32, fireRate = 2.2, note = "knife case" },
 } :: { WeaponDraft }
 
 -- Обвесы (только описание и модели; логика обвесов — следующий этап). ref — ServerStorage.Assets.Weapons.Sights.<имя>
@@ -691,8 +697,8 @@ Config.MeleeFx = MeleeFx
 -- дробовики → Shotgun, винтовки и карабины → Rifle, холодное — Knife/Bat/Machete по размеру.
 local DRAFT_LENGTH = { Pistols = 1.4, Revolvers = 1.7, SMG = 2.2, Shotguns = 3.3, Rifles = 3.2, Carbines = 3.2 }
 local DRAFT_BASE = { Pistols = "Pistol", Revolvers = "Revolver", SMG = "SMG", Shotguns = "Shotgun", Rifles = "Rifle", Carbines = "Rifle" }
-local MELEE_LENGTH: { [string]: number } = { Crowbar = 2.8, FireAxe = 3.2, Sledge = 3.4, Katana = 3.8, Karambit = 1.4, Balisong = 1.7 } -- длина модели в руках, студов
-local MELEE_BASE: { [string]: string } = { Karambit = "Knife", Balisong = "Knife", Crowbar = "Bat", Sledge = "Bat", FireAxe = "Machete", Katana = "Machete" }
+local MELEE_LENGTH: { [string]: number } = { Crowbar = 2.8, FireAxe = 3.2, Sledge = 3.4, Katana = 3.8, Karambit = 1.4, Balisong = 1.7, BowieKnife = 1.7, KABAR = 1.6, Tanto = 1.6, Stiletto = 1.6, M9Bayonet = 1.7, Kukri = 1.8 } -- длина модели в руках, студов
+local MELEE_BASE: { [string]: string } = { Karambit = "Knife", Balisong = "Knife", BowieKnife = "Knife", KABAR = "Knife", Tanto = "Knife", Stiletto = "Knife", M9Bayonet = "Knife", Kukri = "Knife", Crowbar = "Bat", Sledge = "Bat", FireAxe = "Machete", Katana = "Machete" }
 local SHOP_CATEGORIES = { "Pistols", "SMGs", "Shotguns", "Rifles", "Heavy", "Melee" }
 local CATEGORY_OF = { Pistols = 1, Revolvers = 1, SMG = 2, Shotguns = 3, Rifles = 4, Carbines = 4, Melee = 6 }
 export type ShopItem = { id: string, category: number }
@@ -847,6 +853,13 @@ Config.MeleeHold = {
 	Karambit = { dir = Vector3.new(-0.15, 0.75, -0.6), up = Vector3.new(0, 0, 1) },
 } :: { [string]: MeleeHold }
 Config.ShopList = shopList
+-- Оружие только за донат: в магазине видно и выдаётся лишь тем, кто его получил
+Config.DonateOnly = {} :: { [string]: boolean }
+for _, d in Config.WeaponDraft do
+	if d.tier == "donate" then
+		Config.DonateOnly[d.id] = true
+	end
+end
 
 -- Порядок стен с оружием в магазине (8 мест, см. BuildKit.shop)
 Config.WallBuys = { "Bat", "Machete", "Revolver", "SMG", "Shotgun", "Rifle", "LMG", "Sniper" }
@@ -1629,8 +1642,6 @@ Config.Lobby = {
 	VipZone = 4, -- зона сбора только для VIP-хоста (остальные входят, если хост пустит)
 	BoardRigLift = 1.2, -- на сколько поднять фигуру лидера над пьедесталом
 	SquadBoardSize = 5, -- строк в табло лучших команд
-	Shop = {} :: { any }, -- заполняется из Config.Donate ниже
-	Vending = {} :: { any },
 }
 
 -- Инвентарь (Services/InventoryService): всего предметов и расходников одного вида (Field kit — больше)
@@ -1646,19 +1657,47 @@ Config.Donate = {
 	WeeklyRewardDays = 3, -- VIP топ-3 игрокам и лучшей команде прошлой недели
 	Items = {
 		{ id = "vip", perk = "vip", name = "VIP pass (7 days)", desc = "+20% magazine and damage, x3 stamina, 2000 start coins, VIP lobby zone", robux = 500, days = 7, productId = 0 },
-		{ id = "karambit", perk = "karambit", name = "Karambit", desc = "Forever: yours in every round", robux = 200, productId = 0 },
-		{ id = "balisong", perk = "balisong", name = "Butterfly knife", desc = "Forever: yours in every round", robux = 200, productId = 0 },
+		{ id = "karambit", perk = "karambit", name = "Karambit", desc = "Forever: yours in every round", robux = 1000, icon = "Karambit", productId = 0 },
+		{ id = "balisong", perk = "balisong", name = "Butterfly knife", desc = "Forever: yours in every round", robux = 1000, icon = "Balisong", productId = 0 },
 		{ id = "fieldkit", perk = "fieldkit", name = "Field kit (7 days)", desc = "Carry up to 3 medkits and 3 energy drinks", robux = 150, days = 7, productId = 0 },
 		{ id = "driver", perk = "driver", name = "Driver box (7 days)", desc = "The Garage is open for your team from the start", robux = 300, days = 7, productId = 0 },
 		{ id = "commander", perk = "commander", name = "Commander box (7 days)", desc = "Armory and Turret shop open from the start, 1 free turret", robux = 500, days = 7, productId = 0 },
 		{ id = "stamina", perk = "stamina", name = "Infinite stamina", desc = "Forever: sprint without limits", robux = 1000, productId = 0 },
 	} :: { any },
+	-- Кейсы (случайный предмет): w — вес выпадения, полученное исключается (Shared/CaseRules). Выпавшее навсегда и бесплатно в магазине, патроны платные.
+	Cases = {
+		{ id = "case_low", name = "Recruit case", desc = "A random weapon worth up to 1000", robux = 99, icon = "M4A1", productId = 0, pool = {
+			{ id = "M1911", w = 1 }, { id = "FiveSeven", w = 1 }, { id = "DesertEagle", w = 1 }, { id = "Revolver", w = 1 }, { id = "SMG", w = 1 },
+			{ id = "Uzi", w = 1 }, { id = "Thompson", w = 1 }, { id = "Shotgun", w = 1 }, { id = "Sawnoff", w = 1 }, { id = "M4A1", w = 1 },
+		} },
+		{ id = "case_mid", name = "Veteran case", desc = "A random weapon worth 1000 to 2000", robux = 249, icon = "Rifle", productId = 0, pool = {
+			{ id = "Rifle", w = 1 }, { id = "SKS", w = 1 }, { id = "SPAS12", w = 1 }, { id = "Sniper", w = 1 }, { id = "Vector", w = 1 }, { id = "LMG", w = 1 },
+		} },
+		{ id = "case_high", name = "Elite case", desc = "A random weapon worth over 2000", robux = 499, icon = "SCAR", productId = 0, pool = {
+			{ id = "SCAR", w = 1 }, { id = "AA12", w = 1 },
+		} },
+		{ id = "case_knife", name = "Knife case", desc = "A random knife, with a chance of Karambit or Butterfly", robux = 500, icon = "Karambit", productId = 0, pool = {
+			{ id = "Karambit", w = 5 }, { id = "Balisong", w = 5 }, { id = "BowieKnife", w = 15 }, { id = "KABAR", w = 15 },
+			{ id = "Tanto", w = 15 }, { id = "Stiletto", w = 15 }, { id = "M9Bayonet", w = 15 }, { id = "Kukri", w = 15 },
+		} },
+	} :: { any },
+	Featured = { "case_knife", "vip", "karambit", "fieldkit" }, -- витрина: первый товар крупно
+	Images = {} :: { [string]: string }, -- id товара → rbxassetid картинки карточки
+	RollSeconds = 4.5,
 }
 for _, item in Config.Donate.Items do
 	item.price = string.format("%d R$", item.robux)
 end
-Config.Lobby.Shop = Config.Donate.Items
-Config.Lobby.Vending = Config.Donate.Items
+for _, item in Config.Donate.Cases do
+	item.price = string.format("%d R$", item.robux)
+end
+
+-- Цвета магазинов (ShopController, StoreController): хаки
+Config.UiKhaki = {
+	Bg = Color3.fromRGB(35, 39, 28), Panel = Color3.fromRGB(45, 50, 35), Header = Color3.fromRGB(52, 58, 40), Card = Color3.fromRGB(48, 54, 42),
+	Dark = Color3.fromRGB(28, 32, 23), Line = Color3.fromRGB(90, 97, 66), Accent = Color3.fromRGB(107, 116, 70), Sand = Color3.fromRGB(184, 173, 122),
+	Gold = Color3.fromRGB(201, 162, 61), OnGold = Color3.fromRGB(43, 36, 8), Text = Color3.fromRGB(240, 234, 210), Dim = Color3.fromRGB(165, 162, 135),
+}
 
 -- Катсцены (Services/CutsceneService, Controllers/CutsceneController): реплики короткие, остальное показывает камера
 Config.Cutscene = {
