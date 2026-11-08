@@ -1192,7 +1192,10 @@ Config.Convoy = {
 	SoldierDps = 15, -- урон по зомби в секунду каждого солдата (было 50)
 	SoldierShotInterval = 0.5,
 	SoldierRange = 40,
-	InstallHold = 5, -- сколько секунд держать «Установить шатёр»; прогресс не сбрасывается, если отпустить (MissionService)
+	InstallStakes = 3, -- шатёр ставится по точкам: сделанные точки остаются (MissionService)
+	StakeHold = 2, -- сколько секунд держать E на одной точке
+	StakeRadius = 9, -- на каком расстоянии от центра места стоят точки
+	StakeReach = 16, -- сервер: дальше этого от точки установка не засчитывается
 	Model = "APC", -- машина конвоя из ServerStorage.Assets.Vehicles (бронетранспортёр Stryker); запасная — TransportTruck
 	Solid = false, -- true: машина твёрдая (толкает игроков, но на стыках дороги скорость неровная)
 	FollowGain = 6, -- 1/с: как сильно машина подтягивается к расчётной точке маршрута (скорость = курс × скорость + ошибка × FollowGain)
@@ -1268,7 +1271,7 @@ Config.Briefs = {
 	},
 	build = {
 		"Our tent will go up here. First clear the zone: kill {kills} mutants.",
-		"Then stand on the golden marker and hold E for {hold} seconds — the tent will be set up. It gives us a shop, a weapon rack and a foothold in the district.",
+		"Then go to the golden marker and drive in the stakes: hold E for {hold} seconds on each — the tent will be set up. It gives us a shop, a weapon rack and a foothold in the district.",
 	},
 	escort = {
 		"A supply convoy. The truck leaves the rally point, goes round the district's checkpoints and stops on the road by the tent site.",
@@ -1303,7 +1306,7 @@ Config.DayBrief = {
 	RemindSeconds = 6, -- сколько держится напоминание
 	Task = {
 		scout = "Recon: visit {points} checkpoints around the tent site",
-		build = "Clear the zone ({kills} kills) and set up the tent: hold E on the golden marker",
+		build = "Clear the zone ({kills} kills) and set up the tent: drive in the stakes at the golden marker (hold E)",
 		escort = "Convoy: bring the supply truck to the tent site",
 		defend = "Tent defense: hold out for {seconds} seconds near it",
 		clear = "Clear-out: kill all of the night's mutants",
@@ -1324,6 +1327,12 @@ Config.DayBrief = {
 	Boss = "A boss comes tonight: {name}.",
 	Here = "at the base",
 } :: { ShowSeconds: number, RemindBefore: number, RemindSeconds: number, Task: { [string]: string }, Tip: { [string]: string }, Boss: string, Here: string }
+Config.NightMusic = { -- фон ночи: одна дорожка на ночь по кругу, идёт через ту же группу громкости
+	Tracks = { "rbxassetid://9114244977", "rbxassetid://9114244841", "rbxassetid://9118069484" },
+	Volume = 0.55,
+	FadeIn = 4,
+	FadeOut = 3,
+}
 Config.AmbienceVolume = 0.7 -- общая громкость звуков окружения (зомби, машины); по слуху держим тихо
 Config.DebugStartNight = 1 -- для проверок: с какой ночи начинается раунд (в релизе всегда 1)
 Config.MissionMoveTeam = false -- true: в начале ночи команду переносит к точке миссии (по решению Руслана 2026-10-24 — выключено: идут сами)
@@ -1629,7 +1638,7 @@ Config.Lobby = {
 Config.Inventory = { MaxItems = 7, ItemMax = 1, FieldKitMax = 3 }
 
 -- Машины-декор, у которых столкновения только на мелких деталях: при старте получают невидимую коробку (VehicleService), чтобы сквозь них нельзя было пройти
-Config.VehicleColliders = { "CrashFire", "HumveeArmored", "HumveeMedic", "Sprinter", "X6M", "APC", "Abrams", "MilitaryCar", "MiningDasa", "Cargo", "Fish and Game Truck." }
+Config.VehicleColliders = { "CrashFire", "HumveeArmored", "HumveeMedic", "Sprinter", "X6M", "APC", "Abrams", "MilitaryCar", "MiningDasa", "Cargo", "Fish and Game Truck.", "Swat Van" }
 
 -- Донат (Services/DonateService). perk — право в профиле (атрибут Has_<perk>), days — срок (нет — навсегда), robux — цена, productId — id Developer Product
 -- из Creator Dashboard (0 — ещё не создан: в Studio выдаётся сразу, в игре «Coming soon»).

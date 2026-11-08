@@ -6,6 +6,7 @@ local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
@@ -95,6 +96,11 @@ function CutsceneController.start()
 		playing = true
 		skipped = false
 		player:SetAttribute("InCutscene", true)
+		-- панель оружия закрывает реплику
+		local backpackWasOn = StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Backpack)
+		pcall(function()
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+		end)
 		-- скрыть интерфейс и руки от первого лица
 		local hidden: { ScreenGui } = {}
 		for _, g in playerGui:GetChildren() do
@@ -123,43 +129,56 @@ function CutsceneController.start()
 		gui.Enabled = true
 		cam.CameraType = Enum.CameraType.Scriptable
 
-		for _, shot in shots do
-			if skipped then
-				break
-			end
-			speaker.Text = shot.speaker or ""
-			line.Text = shot.text
-			task.spawn(function()
-				pcall(function()
-					player:RequestStreamAroundAsync(shot.look)
-				end)
-			end)
-			local t0 = os.clock()
-			while not skipped do
-				local u = (os.clock() - t0) / shot.seconds
-				if u >= 1 then
+		local ok, err = pcall(function()
+			for _, shot in shots do
+				if skipped then
 					break
 				end
-				local e = u * u * (3 - 2 * u)
-				cam.CameraType = Enum.CameraType.Scriptable
-				cam.CFrame = CFrame.lookAt(shot.from:Lerp(shot.fromEnd, e), shot.look:Lerp(shot.lookEnd, e))
-				RunService.RenderStepped:Wait()
+				speaker.Text = shot.speaker or ""
+				line.Text = shot.text
+				task.spawn(function()
+					pcall(function()
+						player:RequestStreamAroundAsync(shot.look)
+					end)
+				end)
+				local t0 = os.clock()
+				while not skipped do
+					local u = (os.clock() - t0) / shot.seconds
+					if u >= 1 then
+						break
+					end
+					local e = u * u * (3 - 2 * u)
+					cam.CameraType = Enum.CameraType.Scriptable
+					cam.CFrame = CFrame.lookAt(shot.from:Lerp(shot.fromEnd, e), shot.look:Lerp(shot.lookEnd, e))
+					RunService.RenderStepped:Wait()
+				end
 			end
+		end)
+		if not ok then
+			warn("[Cutscene] " .. tostring(err))
 		end
 
+		-- Сначала камера и управление: откат не должен зависеть от остального
+		local now = workspace.CurrentCamera or cam
+		now.CameraType = Enum.CameraType.Custom
+		local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if h then
+			now.CameraSubject = h
+		end
 		ContextActionService:UnbindAction("CutsceneSkip")
+		ContextActionService:UnbindAction("CutsceneFreeze")
 		gui.Enabled = false
 		for _, g in hidden do
 			g.Enabled = true
 		end
+		pcall(function()
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, backpackWasOn)
+		end)
 		for _, c in stashed do
-			c.Parent = cam
-		end
-		ContextActionService:UnbindAction("CutsceneFreeze")
-		cam.CameraType = Enum.CameraType.Custom
-		local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if h then
-			cam.CameraSubject = h
+			-- модель рук могли заменить за время сцены (утром оружие выдаётся заново): такой родителя не поставить
+			pcall(function()
+				c.Parent = now
+			end)
 		end
 		player:SetAttribute("InCutscene", nil)
 		playing = false

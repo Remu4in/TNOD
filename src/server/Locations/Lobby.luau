@@ -208,6 +208,9 @@ function Lobby.build(): LobbyInfo
 		end
 		local y = (opts and opts.y) or 0.2
 		m:PivotTo(CFrame.new(at(x, y, z)) * CFrame.Angles(0, math.rad(yawDeg), 0))
+		if table.find(Config.VehicleColliders, src.Name) then
+			require(script.Parent:WaitForChild("BuildKit")).carCollider(m)
+		end
 		return m
 	end
 

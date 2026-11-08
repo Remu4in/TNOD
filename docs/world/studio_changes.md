@@ -130,3 +130,8 @@
 | W# | Дата | Что создано или изменено | Откат |
 |---|---|---|---|
 | W044 | 2026-11-07 | Новые ModuleScript: `Server.Services.InventoryService`, `DonateService`, `CutsceneService`, `Client.Controllers.CutsceneController`; изменённые скрипты перенесены. Лежат только в файле места — сохранить | Удалить модули, вернуть версии из git |
+
+## Правки катсцен и звука (2026-11-08)
+| W# | Дата | Что создано или изменено | Откат |
+|---|---|---|---|
+| W045 | 2026-11-08 | Новый ModuleScript `Client.Controllers.NightMusicController`; обновлены Source: `Config`, `BuildKit`, `Lobby`, `VehicleService`, `GeneralService`, `MissionService`, `CutsceneService`, `CutsceneController`, `SfxController`, `Client` | `git revert` коммита и заливка Source; удалить `NightMusicController` |
