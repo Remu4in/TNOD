@@ -91,3 +91,9 @@
 Проверка: вставка `insert_asset` (Edit, скрипты не запускались) → скан сигнатур → чистка кодом → повторный скан (0 `LuaSourceContainer`, 0 `Remote*`) → перенос из `AssetStaging`. Все копии нормализованы (поворот осей, `WorldPivot` в низ-центре).
 
 Копии из проекта (оригиналы не менялись): `Assets.Props.RoadLight` (из `Workspace.Decor.RoadLights`), `Assets.Props.MilitaryCrates` (из `AssetStaging`), `Assets.NPC.Lobby.LobbySoldier_*` (12 солдат из `Workspace.Soldiers`, скриптов не было).
+
+## 2026-11-08 — расходники
+| ID | Назначение | Результат проверки | Решение |
+|---|---|---|---|
+| 91717148582484 | аптечка, автор E144_Gamer | 1 `Part` со `SpecialMesh`, `Camera`; 0 скриптов, 0 Remote, 0 StringValue | Взята деталь, `Camera` убрана → `Assets.Items.Medkit` |
+| 12269531805 | энергетик, автор joaqui1803 | 1 `MeshPart`; 0 скриптов, 0 Remote, 0 StringValue. На банке марка реального напитка (Monster) | Взята → `Assets.Items.EnergyDrink`; перед релизом решить про марку |
