@@ -1584,16 +1584,15 @@ Config.MetroCamp = {
 	message = "Tomorrow night you go down into the metro. Stock up now: traders and a vending machine are waiting by the metro entrance!",
 }
 
--- Мини-карта, иконки тиммейтов и метки (SquadService, SquadController, MinimapController)
+-- Иконки тиммейтов и метки (SquadService, SquadController)
 Config.Squad = {
 	PosInterval = 0.5, -- с: как часто сервер публикует позиции игроков (персонажи вдали могут быть не загружены стримингом)
 	IconSize = 22, -- пикселей: иконка тиммейта
 	IconTransparency = 0.72, -- почти прозрачная
-	PingSeconds = 7, -- сколько живёт метка (колёсико мыши)
+	PingSeconds = 3, -- сколько живёт метка (колёсико мыши)
+	MaxActivePings = 3, -- сколько меток одного игрока может быть на карте одновременно
 	PingInterval = 0.8, -- с: не чаще одной метки от игрока
 	PingRange = 900, -- студов: дальность луча метки
-	MapSize = 170, -- пикселей: сторона мини-карты
-	MapRadius = 220, -- студов от игрока до края карты
 }
 
 -- Лобби (LobbyService, Locations/Lobby): публичный сервер места — лобби, резервный сервер того же места — матч

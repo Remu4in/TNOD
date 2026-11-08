@@ -41,7 +41,6 @@ local function startGame()
 	require(Controllers:WaitForChild("TestStandController")).start()
 	require(Controllers:WaitForChild("BossBarController")).start()
 	require(Controllers:WaitForChild("SquadController")).start()
-	require(Controllers:WaitForChild("MinimapController")).start()
 	require(Controllers:WaitForChild("SpectateController")).start()
 	require(Controllers:WaitForChild("CutsceneController")).start()
 end

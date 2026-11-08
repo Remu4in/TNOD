@@ -235,7 +235,7 @@ local function startMatch()
 	local CutsceneService = require(Services:WaitForChild("CutsceneService"))
 	CutsceneService.init()
 	ZombieService.setBossIntroHandler(CutsceneService.bossIntro)
-	require(Services:WaitForChild("SquadService")).init() -- позиции тиммейтов, метки, план мини-карты
+	require(Services:WaitForChild("SquadService")).init() -- позиции тиммейтов, метки
 
 	-- ездовые машины: маркеры Workspace.Markers.VehicleSpawn_<Шаблон>
 	local VehicleService = require(Services:WaitForChild("VehicleService"))
