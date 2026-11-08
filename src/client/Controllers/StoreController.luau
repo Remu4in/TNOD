@@ -217,7 +217,8 @@ function StoreController.start()
 			text(cell, names[c.id] or c.id, 13, U.Text, UDim2.fromOffset(8, 66), UDim2.new(1, -70, 0, 24)).ZIndex = 6
 			text(cell, string.format("%.1f%%", c.chance * 100), 14, U.Gold, UDim2.new(1, -66, 0, 66), UDim2.fromOffset(60, 24), Enum.TextXAlignment.Right).ZIndex = 6
 		end
-		text(overlay, "Drop rates shown are for your account: weapons you already own cannot drop.", 12, U.Dim, UDim2.new(0, 20, 1, -58), UDim2.new(1, -300, 0, 40)).ZIndex = 6
+		-- Правила Roblox о случайных платных предметах: если сумма округлённых шансов может не дать 100%, нужна эта оговорка
+		text(overlay, "Drop rates shown are for your account: weapons you already own cannot drop. Probabilities are rounded; total of displayed individual probabilities may not equal 100%.", 12, U.Dim, UDim2.new(0, 20, 1, -62), UDim2.new(1, -300, 0, 52)).ZIndex = 6
 		button(overlay, "OPEN  " .. item.price, U.Gold, U.OnGold, UDim2.new(1, -240, 1, -58), UDim2.fromOffset(220, 44), function()
 			if not rolling then
 				Remotes.get("DonateBuy"):FireServer(item.id)
