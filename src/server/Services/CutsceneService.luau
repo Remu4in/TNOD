@@ -198,9 +198,18 @@ end
 
 -- Утро: всем (выключено настройкой — ничего)
 function CutsceneService.playDay(night: number, first: boolean)
-	if enabled() then
-		Remotes.get("Cutscene"):FireAllClients(CutsceneService.dayShots(night, first))
+	if first then
+		if enabled() then
+			Remotes.get("Cutscene"):FireAllClients(CutsceneService.dayShots(night, first))
+		end
+		return
 	end
+	task.delay(C.DawnDelay, function()
+		-- за время ожидания день могли закончить голосованием
+		if enabled() and ReplicatedStorage:GetAttribute("Phase") == "Day" then
+			Remotes.get("Cutscene"):FireAllClients(CutsceneService.dayShots(night, first))
+		end
+	end)
 end
 
 -- Разговор с генералом (E): задание ночи одному игроку

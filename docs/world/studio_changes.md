@@ -136,3 +136,4 @@
 |---|---|---|---|
 | W045 | 2026-11-08 | Новый ModuleScript `Client.Controllers.NightMusicController`; обновлены Source: `Config`, `BuildKit`, `Lobby`, `VehicleService`, `GeneralService`, `MissionService`, `CutsceneService`, `CutsceneController`, `SfxController`, `Client` | `git revert` коммита и заливка Source; удалить `NightMusicController` |
 | W046 | 2026-11-08 | Удалён ModuleScript `Client.Controllers.MinimapController`; обновлены Source: `Config`, `Remotes`, `SquadService`, `Server`, `Client` | `git revert` коммита и заливка Source |
+| W047 | 2026-11-08 | `Workspace.Ground`: верх `Part` 882×1000 0,001 → −0,25; четырёх `Floor` 0,001 → −0,5; четырёх `Baseplate` 0,000 → −0,75. Обновлены Source: `Config`, `CutsceneService` | Сдвинуть плиты обратно на эти значения |

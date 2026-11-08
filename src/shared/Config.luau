@@ -1667,6 +1667,7 @@ Config.Cutscene = {
 	GeneralSeconds = 3.5,
 	AreaSeconds = 3.5,
 	BossSeconds = 3,
+	DawnDelay = 7, -- с: после конца ночи катсцена ждёт, пока догорят зомби, иначе они бьют стоящего игрока
 	Story = {
 		"It started underground. Nobody came back from the metro.",
 		"Now the city is theirs. They burn in the sun, but every night they return.",
