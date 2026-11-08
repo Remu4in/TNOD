@@ -279,7 +279,7 @@ local function buildVending(marker: BasePart)
 		if not PlayerService.isUp(player) then
 			return
 		end
-		Remotes.get("ShopOpen"):FireClient(player, { vendorId = marker.Name, title = "SUPPLIES & DONATE", greeting = def.greeting, items = def.items, donate = Config.Lobby.Vending })
+		Remotes.get("ShopOpen"):FireClient(player, { vendorId = marker.Name, title = "SUPPLIES & DONATE", greeting = def.greeting, items = def.items, store = true })
 	end)
 	model.Parent = live
 	vendors[marker.Name] = v

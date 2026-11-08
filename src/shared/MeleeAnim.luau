@@ -206,36 +206,54 @@ local function katana(u: number): InspectFrame
 	return { grip = CF(-0.15 * lift, 0.35 * lift, 0.15 * lift) * ANG(rad(25) * tip, rad(-35) * roll, rad(95) * roll) }
 end
 
--- Керамбит: два быстрых оборота на пальце (вокруг кольца) и остановка
-local function karambit(u: number): InspectFrame
-	local lift = bell(u * 1.1)
-	local spin = ease((u - 0.1) / 0.7) * math.pi * 4
-	local twist = ease((u - 0.2) / 0.3) - ease((u - 0.8) / 0.2)
-	local pos = CF(0.05 * lift, 0.3 * lift, -0.1 * lift)
-	-- вращается оружие на пальце, а кисть только поднимается (без оборотов)
-	return { grip = pos * ANG(spin, 0, 0) * ANG(0, rad(35) * twist, rad(-20) * twist), hand = pos }
+-- Плавное нарастание без рывков: скорость и ускорение на концах равны нулю
+local function silk(k: number): number
+	k = math.clamp(k, 0, 1)
+	return k * k * k * (k * (k * 6 - 15) + 10)
 end
 
--- Бабочка (балисонг) по образцу CS2. Нож развёрнут плоскостью к камере, чтобы ось шарнира (X модели) смотрела на игрока и всё было видно.
--- Три тела вокруг шарнира у основания клинка: рукоять Handle (в кисти, неподвижна), рукоять BiteHandle и клинок Blade. Угол — вокруг оси X шарнира
--- (0 у клинка — вперёд, у рукояти в открытом ноже — назад). Порядок: открытый нож → BiteHandle переходит вперёд через верх → клинок уходит через низ
--- в Handle (нож закрыт, клинок в рукояти) → флип: вся сборка делает оборот вокруг пальцев → BiteHandle уходит через низ назад (всё сложено) →
--- второй флип → клинок возвращается через верх вперёд (открыт) → хват. Каждая рукоять и клинок делают по полному обороту вокруг шарнира;
--- к концу все углы кратны 2π, нож в исходном положении. Кисть не крутится: двигается только вверх (hand), вращает нож сама сборка (model).
+-- Затухающий докат после остановки в момент t0: оружие «садится» в руку
+local function settle(u: number, t0: number, amount: number): number
+	local d = u - t0
+	if d <= 0 then
+		return 0
+	end
+	return amount * silk(d / 0.02) * (1 - silk((u - 0.96) / 0.04)) * math.exp(-d * 16) * math.sin(d * 48)
+end
+
+-- Керамбит: подъём кисти, замах назад, два оборота на пальце с разгоном и докатом, показ обеих граней клинка, обратный оборот и возврат.
+-- Вращается оружие вокруг кольца, кисть только подыгрывает.
+local function karambit(u: number): InspectFrame
+	local function seg(a: number, b: number): number
+		return silk((u - a) / (b - a))
+	end
+	local lift = seg(0, 0.14) - seg(0.86, 1)
+	local windup = -0.45 * (seg(0.06, 0.16) - seg(0.16, 0.26))
+	local spin = 4 * math.pi * seg(0.16, 0.5) + settle(u, 0.5, 0.22) - 2 * math.pi * seg(0.72, 0.92) + settle(u, 0.92, -0.16)
+	local show = rad(48) * seg(0.5, 0.58) - rad(92) * seg(0.58, 0.66) + rad(44) * seg(0.66, 0.73)
+	local pos = CF(0.05 * lift, 0.3 * lift, -0.1 * lift)
+	local wrist = 0.16 * math.sin(spin * 0.5) * math.clamp(lift, 0, 1)
+	return {
+		grip = pos * ANG(spin + windup, 0, 0) * ANG(0, show, rad(-14) * lift),
+		hand = pos * ANG(wrist, 0, rad(4) * wrist),
+	}
+end
+
+-- Бабочка по образцу CS2: движения перекрываются, поэтому нож не замирает между фазами.
+-- Три тела вокруг шарнира у основания клинка: рукоять Handle (в кисти), вторая рукоять BiteHandle и клинок Blade.
+-- К концу все углы кратны 2π: нож в исходном положении, кисть не крутится, а подыгрывает флипам.
 local function butterfly(u: number, _hinge: Vector3?): InspectFrame
 	local function seg(a: number, b: number): number
-		return ease((u - a) / (b - a))
+		return silk((u - a) / (b - a))
 	end
-	local present = seg(0, 0.1) - seg(0.94, 1) -- нож разворачивается боком к камере и возвращается
-	local lift = present
-	-- BiteHandle: 0 → −π (вперёд через верх) → −2π (назад через низ); Blade: 0 → −π (в рукоять через низ) → −2π (вперёд через верх)
-	local handle2 = -math.pi * seg(0.10, 0.24) - math.pi * seg(0.58, 0.72)
-	local blade = -math.pi * seg(0.24, 0.38) - math.pi * seg(0.86, 0.96)
-	-- два флипа: оборот всей сборки вокруг кисти (ось шарнира)
-	local spin = -2 * math.pi * seg(0.38, 0.58) - 2 * math.pi * seg(0.72, 0.86)
+	local present = seg(0, 0.1) - seg(0.92, 1)
+	local handle2 = -math.pi * seg(0.09, 0.27) - math.pi * seg(0.56, 0.74) + settle(u, 0.74, 0.1)
+	local blade = -math.pi * seg(0.2, 0.38) + settle(u, 0.38, 0.12) - math.pi * seg(0.84, 0.97) + settle(u, 0.97, 0.08)
+	local spin = -2 * math.pi * seg(0.33, 0.6) - 2 * math.pi * seg(0.68, 0.9)
+	local wrist = 0.14 * math.sin(spin * 0.5) * present
 	return {
-		grip = CF(0.04 * lift, 0.18 * lift, -0.1 * lift) * ANG(0, rad(80) * present, 0),
-		hand = CF(0.04 * lift, 0.08 * lift, 0),
+		grip = CF(0.04 * present, 0.18 * present, -0.1 * present) * ANG(wrist * 0.5, rad(80) * present, 0),
+		hand = CF(0.04 * present, 0.08 * present, 0) * ANG(wrist, 0, 0),
 		model = ANG(spin, 0, 0),
 		parts = { BiteHandle = ANG(handle2, 0, 0), Blade = ANG(blade, 0, 0) },
 	}
@@ -245,8 +263,8 @@ end
 MeleeAnim.INSPECT = {
 	Knife = { time = 3.0, frame = knife },
 	Katana = { time = 2.6, frame = katana },
-	Karambit = { time = 1.5, frame = karambit },
-	Balisong = { time = 3.6, frame = butterfly },
+	Karambit = { time = 3.4, frame = karambit },
+	Balisong = { time = 4.2, frame = butterfly },
 } :: { [string]: { time: number, frame: (number, Vector3?) -> InspectFrame } }
 
 return MeleeAnim

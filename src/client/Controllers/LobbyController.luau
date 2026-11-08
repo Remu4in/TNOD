@@ -511,66 +511,6 @@ function LobbyController.start()
 		end
 	end
 
-	-- ===== Окна торговца и автомата =====
-	local menuWin, menuScale, menuBody = window(gui, "LobbyMenu", 640, 470, Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.5))
-	table.insert(rescale, menuScale)
-	local function closeMenu()
-		menuWin.Visible = false
-	end
-	local function openMenu(kind: string, payload: { title: string, items: { { id: string, name: string, desc: string, price: string } } })
-		for _, c in menuBody:GetChildren() do
-			c:Destroy()
-		end
-		pad(menuBody, 18)
-		local accent = if kind == "vending" then C.amber else C.gold
-		local t = label(menuBody, string.upper(payload.title), 34, accent, HEAD)
-		t.Size = UDim2.new(1, -60, 0, 40)
-		local s = label(menuBody, if kind == "vending" then "Support the project: donation items" else "Cosmetics for your survivor", 16, C.dim)
-		s.Size, s.Position = UDim2.new(1, -60, 0, 20), UDim2.fromOffset(0, 40)
-		local x = button(menuBody, "X", C.warn, closeMenu)
-		x.Size, x.Position = UDim2.fromOffset(48, 40), UDim2.new(1, -48, 0, 0)
-		local grid = mk("ScrollingFrame", {
-			BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 5,
-			AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
-			Size = UDim2.new(1, 0, 1, -112), Position = UDim2.fromOffset(0, 72),
-		}, menuBody)
-		mk("UIGridLayout", { CellSize = UDim2.new(0.5, -6, 0, 116), CellPadding = UDim2.fromOffset(10, 10), SortOrder = Enum.SortOrder.LayoutOrder }, grid)
-		for _, item in payload.items do
-			local card = mk("Frame", { BackgroundColor3 = C.row, BorderSizePixel = 0 }, grid)
-			corner(card, 12)
-			stroke(card, accent, 1.5, 0.75)
-			local n = label(card, item.name, 22, C.text, HEAD)
-			n.Size, n.Position = UDim2.new(1, -20, 0, 26), UDim2.fromOffset(12, 8)
-			local d = label(card, item.desc, 14, C.dim)
-			d.Size, d.Position, d.TextWrapped, d.TextTruncate = UDim2.new(1, -20, 0, 34), UDim2.fromOffset(12, 36), true, Enum.TextTruncate.None
-			d.TextYAlignment = Enum.TextYAlignment.Top
-			local price = label(card, item.price, 16, accent, HEAD)
-			price.Size, price.Position = UDim2.new(0.5, -12, 0, 30), UDim2.new(0, 12, 1, -36)
-			local buy = button(card, "BUY", C.button, function()
-				cmd:FireServer("buy", item.id)
-			end)
-			buy.TextSize = 18
-			buy.Size, buy.Position = UDim2.fromOffset(84, 32), UDim2.new(1, -96, 1, -38)
-		end
-		local foot = label(menuBody, "Purchases are not available yet — they will appear in a coming update", 14, C.dim, BODY, Enum.TextXAlignment.Center)
-		foot.Size, foot.Position = UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 1, -26)
-		if not menuWin.Visible then
-			menuWin.Visible = true
-			popIn(menuWin, menuScale, uiScale())
-			setSelected(x)
-		end
-	end
-	Remotes.get("LobbyMenu").OnClientEvent:Connect(function(kind: string, payload: any)
-		if inLobby and typeof(kind) == "string" and typeof(payload) == "table" then
-			openMenu(kind, payload)
-		end
-	end)
-	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
-		if input.KeyCode == Enum.KeyCode.ButtonB and menuWin.Visible then
-			closeMenu()
-		end
-	end)
-
 	Remotes.get("LobbyState").OnClientEvent:Connect(function(s: { [string]: any })
 		state = s
 		onState()
@@ -600,7 +540,7 @@ function LobbyController.start()
 	local modalBtn = mk("TextButton", { Name = "ModalCursor", Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1, Text = "", Modal = false }, gui)
 	task.spawn(function()
 		while true do
-			local want = gui.Enabled and (setupWin.Visible or teamWin.Visible or menuWin.Visible or results.Visible)
+			local want = gui.Enabled and (setupWin.Visible or teamWin.Visible or results.Visible)
 			if modalBtn.Modal ~= want then
 				modalBtn.Modal = want
 			end
@@ -636,7 +576,6 @@ function LobbyController.start()
 		toasts.Visible = on
 		if not on then
 			hideZoneWindows()
-			menuWin.Visible = false
 		end
 		if on then
 			for _, g in player.PlayerGui:GetChildren() do

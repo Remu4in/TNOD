@@ -2,6 +2,7 @@
 -- Расходники: аптечка и энергетик. Выдаются складами (позже — донатом); применяет и проверяет сервер.
 
 local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
@@ -60,6 +61,19 @@ local function buildTool(itemId: string, def: Config.ItemDef): Tool
 	tool.CanBeDropped = false
 	tool.RequiresHandle = true
 	tool:SetAttribute("ItemId", itemId)
+	tool.Activated:Connect(function()
+		use(tool)
+	end)
+	-- готовая модель из Assets.Items (деталь с именем предмета); нет её — простая заготовка ниже
+	local assets = ServerStorage:FindFirstChild("Assets")
+	local items = assets and assets:FindFirstChild("Items")
+	local template = items and items:FindFirstChild(itemId)
+	if template and template:IsA("BasePart") then
+		local model = template:Clone()
+		model.Name = "Handle"
+		model.Parent = tool
+		return tool
+	end
 	local handle = Instance.new("Part")
 	handle.Name = "Handle"
 	handle.Color = def.color
@@ -92,9 +106,6 @@ local function buildTool(itemId: string, def: Config.ItemDef): Tool
 		handle.Material = Enum.Material.Metal
 		handle.Parent = tool
 	end
-	tool.Activated:Connect(function()
-		use(tool)
-	end)
 	return tool
 end
 

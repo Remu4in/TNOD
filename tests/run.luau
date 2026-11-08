@@ -7,6 +7,7 @@ local Ballistics = require("../src/shared/Ballistics")
 local RateLimit = require("../src/shared/RateLimit")
 local Rewind = require("../src/shared/Rewind")
 local LobbyRules = require("../src/shared/LobbyRules")
+local CaseRules = require("../src/shared/CaseRules")
 
 -- Копии релизных чисел из Config (Config.Waves, Config.Round, Config.Economy, Config.ThreatClasses, Config.Threat) — без CountScale
 local Tuning = {
@@ -771,6 +772,24 @@ test("LobbyRules: данные клиента", function()
 	check(not LobbyRules.isUserId(0 / 0) and not LobbyRules.isUserId("5") and not LobbyRules.isUserId(math.huge), "bad userId")
 	check(LobbyRules.isMode("Public") and not LobbyRules.isMode("public") and not LobbyRules.isMode(5), "mode")
 	check(LobbyRules.isZoneSize(1, 6) and LobbyRules.isZoneSize(6, 6) and not LobbyRules.isZoneSize(7, 6) and not LobbyRules.isZoneSize(nil, 6), "zone size")
+end)
+
+test("CaseRules: шансы и повторы", function()
+	local entries = { { id = "Karambit", w = 5 }, { id = "Balisong", w = 5 }, { id = "A", w = 45 }, { id = "B", w = 45 } }
+	local none = CaseRules.pool(entries, function()
+		return false
+	end)
+	check(#none == 4 and math.abs(none[1].chance - 0.05) < 1e-9, "5% karambit")
+	local some = CaseRules.pool(entries, function(id: string)
+		return id == "A"
+	end)
+	check(#some == 3 and math.abs(some[3].chance - 45 / 55) < 1e-9, "owned item is excluded, odds recalculated")
+	local all = CaseRules.pool(entries, function()
+		return true
+	end)
+	check(#all == 0 and CaseRules.roll(all, 0.5) == nil, "nothing left")
+	check(CaseRules.roll(none, 0) == "Karambit" and CaseRules.roll(none, 0.07) == "Balisong" and CaseRules.roll(none, 0.999) == "B", "roll boundaries")
+	check(CaseRules.perkFor("Karambit") == "karambit" and CaseRules.perkFor("M4A1") == "gun_M4A1", "perk names")
 end)
 
 print(string.format("\nTOTAL: %d tests, %d failed", total, failed))

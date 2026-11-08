@@ -294,3 +294,5 @@
 - город и ночь: `city ambience night`, `distant sirens`, `wind horror`, `fire crackle`, `explosion`;
 - музыка: `horror ambient`, `boss battle`, `tense drone`, `survival theme`.
 Когда определимся с ассетами по каждой строке, добавим сюда таблицу «ассет → звук → ID».
+
+- Расходники (2026-11-08): аптечка `91717148582484` ✅, энергетик `12269531805` ✅ (скриптов нет), лежат в `Assets.Items`.

@@ -23,7 +23,6 @@ local DataService = require(script.Parent:WaitForChild("DataService"))
 local RatingService = require(script.Parent:WaitForChild("RatingService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
 local LobbyNpcService = require(script.Parent:WaitForChild("LobbyNpcService"))
-local DonateService = require(script.Parent:WaitForChild("DonateService"))
 local LobbyBuilder = require(script.Parent.Parent:WaitForChild("Locations"):WaitForChild("Lobby"))
 
 local L = Config.Lobby
@@ -481,9 +480,6 @@ local function onCmd(player: Player, cmd: unknown, arg: unknown)
 			startSolo(player)
 		end
 		return
-	elseif cmd == "buy" then
-		DonateService.buy(player, arg)
-		return
 	end
 
 	-- остальные команды — только хост своей зоны, пока он стоит в ней
@@ -864,15 +860,14 @@ end
 
 -- ===== Меню торговцев и автоматов =====
 
-local function openMenu(player: Player, kind: string, title: string, pos: Vector3)
+local function openMenu(player: Player, pos: Vector3)
 	if mode ~= "lobby" or launching[player] or not RateLimit.allow(player, "LobbyMenu", 0.5) then
 		return
 	end
 	if not nearPoint(player, pos, L.MenuDistance) then
 		return
 	end
-	local items = if kind == "shop" then L.Shop else L.Vending
-	Remotes.get("LobbyMenu"):FireClient(player, kind, { title = title, items = items })
+	Remotes.get("StoreOpen"):FireClient(player)
 end
 
 -- ===== Вход / выход из лобби =====
@@ -957,14 +952,14 @@ function LobbyService.initLobby(h: Handlers)
 	for _, m in built.menus do
 		local host = m.prompt.Parent :: BasePart
 		m.prompt.Triggered:Connect(function(player)
-			openMenu(player, m.kind, if m.kind == "vending" then "Supply machine" else "Trader", host.Position)
+			openMenu(player, host.Position)
 		end)
 	end
 	LobbyNpcService.start(built.npcSpots, built.npcFolder, function(player: Player, traderIndex: number)
 		-- игрок должен стоять у прилавка: позицию берём из точки торговца
 		for _, spot in built.npcSpots do
 			if spot.trader == traderIndex then
-				openMenu(player, "shop", "Trader", spot.pos)
+				openMenu(player, spot.pos)
 				return
 			end
 		end

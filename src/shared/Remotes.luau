@@ -35,7 +35,8 @@ local NAMES = {
 	"LobbyCmd", -- клиент → сервер (лобби): (cmd: string, arg: any) — open/config/start/cancel/kick/invite/solo/buy (хост зоны и покупки; сервер проверяет всё)
 	"LobbyState", -- сервер → клиенту (лобби): снимок { mode, zone = { id, role, state, host, members, size, max, access, endsAt } } — что показать в меню зоны
 	"LobbyInvite", -- сервер → клиенту (лобби): (zoneIndex: number, fromName: string, seconds: number) — хост зоны пригласил игрока
-	"LobbyMenu", -- сервер → клиенту (лобби): (kind: "shop" | "vending", payload: { title: string, items: { { id, name, desc, price } } }) — окно торговца или автомата
+	"StoreOpen", -- сервер → клиенту: () — открыть донатный магазин (StoreController)
+	"CaseResult", -- сервер → клиенту: (caseId: string, weaponId: string) — что выпало из кейса
 	"BackToLobby", -- клиент → сервер (матч): () — вернуться в лобби (после конца раунда или по кнопке)
 	"DonateBuy", -- клиент → сервер: (id: string) — купить товар Config.Donate (цену и выдачу решает сервер и Marketplace)
 	"Cutscene", -- сервер → клиенту/всем: ({ { from, fromEnd, look, lookEnd, seconds, speaker, text } }) — катсцена
