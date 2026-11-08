@@ -30,6 +30,34 @@ local NORMAL: { [Side]: Vector3 } = {
 }
 local nextId = 1
 
+-- Невидимая твёрдая коробка по габаритам машины-декора: у многих моделей твёрдые только мелкие детали
+function BuildKit.carCollider(target: Instance)
+	if target:FindFirstChild("CarCollider") then
+		return
+	end
+	local cf: CFrame, size: Vector3
+	if target:IsA("Model") then
+		cf, size = target:GetBoundingBox()
+	elseif target:IsA("BasePart") then
+		cf, size = target.CFrame, target.Size
+	else
+		return
+	end
+	if math.max(size.X, size.Z) > 60 then
+		return
+	end
+	local box = Instance.new("Part")
+	box.Name = "CarCollider"
+	box.Anchored = true
+	box.CanCollide = true
+	box.CanQuery = false
+	box.CanTouch = false
+	box.Transparency = 1
+	box.Size = Vector3.new(size.X * 0.97, size.Y * 0.98, size.Z * 0.97)
+	box.CFrame = cf
+	box.Parent = target
+end
+
 -- Вызывать в начале сборки локации: нумерация входов начинается с 1.
 function BuildKit.reset()
 	nextId = 1

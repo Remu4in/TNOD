@@ -43,7 +43,7 @@ function GeneralService.brief(night: number): (string, { string })
 			elseif key == "seconds" then
 				return tostring(def.seconds or 150)
 			elseif key == "hold" then
-				return tostring(Config.Convoy.InstallHold)
+				return tostring(Config.Convoy.StakeHold)
 			elseif key == "follow" then
 				return tostring(Config.Convoy.FollowRadius)
 			end
@@ -52,7 +52,7 @@ function GeneralService.brief(night: number): (string, { string })
 		table.insert(lines, text)
 	end
 	if def.install and def.type == "escort" then
-		table.insert(lines, string.format("When the truck stops, set up the tent on the golden marker: hold E for %d seconds.", Config.Convoy.InstallHold))
+		table.insert(lines, string.format("When the truck stops, drive in %d stakes around the golden marker: hold E for %d seconds on each.", Config.Convoy.InstallStakes, Config.Convoy.StakeHold))
 	end
 	if def.hint and def.hint ~= "" then
 		table.insert(lines, "Objective: " .. def.hint .. ".")

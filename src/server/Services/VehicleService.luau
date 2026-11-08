@@ -20,6 +20,7 @@ local Validate = require(game:GetService("ReplicatedStorage"):WaitForChild("Shar
 local EconomyService = require(script.Parent:WaitForChild("EconomyService"))
 local PlayerService = require(script.Parent:WaitForChild("PlayerService"))
 local LightKit = require(script.Parent:WaitForChild("LightKit"))
+local BuildKit = require(script.Parent.Parent:WaitForChild("Locations"):WaitForChild("BuildKit"))
 
 local VehicleService = {}
 
@@ -771,20 +772,9 @@ function VehicleService.init()
 			local folder = workspace:FindFirstChild(folderName)
 			if folder then
 				for _, m in folder:GetDescendants() do
-					if m:IsA("Model") and m.Name == name and not m:FindFirstChild("CarCollider") then
-						local cf, size = m:GetBoundingBox()
-						if math.max(size.X, size.Z) <= 60 then
-							local box = Instance.new("Part")
-							box.Name = "CarCollider"
-							box.Anchored = true
-							box.CanCollide = true
-							box.CanQuery = false
-							box.CanTouch = false
-							box.Transparency = 1
-							box.Size = Vector3.new(size.X * 0.92, size.Y * 0.9, size.Z * 0.92)
-							box.CFrame = cf
-							box.Parent = m
-						end
+					-- Swat Van и подобные лежат одной деталью, а не моделью
+					if m.Name == name and (m:IsA("Model") or (m:IsA("BasePart") and (m.Parent :: Instance).Name ~= name)) then
+						BuildKit.carCollider(m)
 					end
 				end
 			end

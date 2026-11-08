@@ -55,9 +55,9 @@ type State = {
 	phase: string, -- escort: "drive" → "install"; build: "kill" → "install"; metro: "approach" → "inside"
 	metroKills: number,
 	sitePart: BasePart?,
-	prompt: ProximityPrompt?,
+	stakes: { ProximityPrompt }, -- точки установки шатра, ещё не сделанные
 	installed: boolean,
-	installLeft: number, -- установка шатра: сколько секунд осталось держать E (прогресс не сбрасывается)
+	stakesDone: number, -- сколько точек шатра уже сделано
 	bossIndex: number, -- bossfight: номер вышедшего босса из def.bosses
 	nestsBurned: number, -- metro: сожжено гнёзд
 	bossOut: boolean, -- metro: босс станции уже вызван; classic с bossAfterKills: босс ночи уже выпущен
@@ -624,39 +624,67 @@ local function makeSiteMarker(state: State, enabled: boolean)
 	label.Parent = gui
 	part:SetAttribute("BaseText", "◆ Tent site")
 	CollectionService:AddTag(part, "MissionZone")
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Set up the tent"
-	prompt.ObjectText = "Tent"
-	prompt.HoldDuration = Config.Convoy.InstallHold
-	prompt.MaxActivationDistance = 18
-	prompt.RequiresLineOfSight = false
-	prompt.Enabled = enabled
-	prompt.Parent = part
-	-- прогресс сохраняется: отпустил E (ударили, отбежал) — в следующий раз держать только остаток; держат двое — быстрее
-	state.installLeft = Config.Convoy.InstallHold
-	local holding: { [Player]: number } = {}
-	prompt.PromptButtonHoldBegan:Connect(function(player: Player)
-		holding[player] = os.clock()
-	end)
-	prompt.PromptButtonHoldEnded:Connect(function(player: Player)
-		local since = holding[player]
-		holding[player] = nil
-		if since and current == state and state.phase == "install" then
-			state.installLeft = math.max(0.2, state.installLeft - (os.clock() - since))
-			prompt.HoldDuration = state.installLeft
-		end
-	end)
-	prompt.Triggered:Connect(function(player: Player)
-		local s = current
-		if s and s == state and s.phase == "install" and PlayerService.isUp(player) then
-			installTent(s.site, s.def.supplies == false) -- supplies = false: шатёр пустой, припасы привезёт конвой
-			s.installed = true
-			notify("Tent set up!", 4)
-		end
-	end)
+	local C = Config.Convoy
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = { objects :: Instance }
+	state.stakesDone = 0
+	table.clear(state.stakes)
+	for i = 1, C.InstallStakes do
+		local a = math.rad(i * 360 / C.InstallStakes)
+		local base = state.anchor + Vector3.new(math.cos(a) * C.StakeRadius, 0, math.sin(a) * C.StakeRadius)
+		local hit = workspace:Raycast(base + Vector3.new(0, 8, 0), Vector3.new(0, -30, 0), rayParams)
+		local stake = Instance.new("Part")
+		stake.Name = "TentStake"
+		stake.Anchored = true
+		stake.CanCollide = false
+		stake.CanQuery = false
+		stake.Material = Enum.Material.Neon
+		stake.Color = Color3.fromRGB(255, 200, 60)
+		stake.Size = Vector3.new(1, 6, 1)
+		stake.Position = Vector3.new(base.X, (if hit then hit.Position.Y else base.Y) + 3, base.Z)
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Drive in the stake"
+		prompt.ObjectText = string.format("Tent stake %d", i)
+		prompt.HoldDuration = C.StakeHold
+		prompt.MaxActivationDistance = 10
+		prompt.RequiresLineOfSight = false
+		prompt.Enabled = enabled
+		prompt.Parent = stake
+		table.insert(state.stakes, prompt)
+		prompt.Triggered:Connect(function(player: Player)
+			local s = current
+			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if not s or s ~= state or s.phase ~= "install" or not PlayerService.isUp(player) or not prompt.Parent then
+				return
+			end
+			if not root or (root.Position - stake.Position).Magnitude > C.StakeReach then
+				return
+			end
+			-- сделанная точка остаётся сделанной
+			prompt:Destroy()
+			stake.Color = Color3.fromRGB(90, 230, 120)
+			s.stakesDone += 1
+			if s.stakesDone >= C.InstallStakes then
+				installTent(s.site, s.def.supplies == false) -- supplies = false: шатёр пустой, припасы привезёт конвой
+				s.installed = true
+				notify("Tent set up!", 4)
+			else
+				notify(string.format("Stake %d of %d is in", s.stakesDone, C.InstallStakes), 2)
+			end
+		end)
+		stake.Parent = part
+	end
 	part.Parent = objects
 	state.sitePart = part
-	state.prompt = prompt
+end
+
+local function enableStakes(state: State)
+	for _, prompt in state.stakes do
+		if prompt.Parent then
+			prompt.Enabled = true
+		end
+	end
 end
 
 -- Ночь 19, «бойня на базе»: вместо состава волны — Config.BaseBattle.Total зомби потоком со стороны базы (точки появления внутри Config.BaseZone, одновременно
@@ -739,7 +767,7 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	local state: State = {
 		def = def, kind = kind, night = night, anchor = anchor, site = def.anchor, points = {}, secondsLeft = def.seconds or 0,
 		infinite = kind == "scout" or kind == "defend" or kind == "build" or kind == "escort" or kind == "metro", comp = comp, hpMult = hpMult, lastText = "",
-		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, prompt = nil, installed = false, installLeft = Config.Convoy.InstallHold, bossIndex = 0, nestsBurned = 0, bossOut = false, bossKills = 0, bossSeen = false, gensOn = 0, tnt = 0, detStage = 0, defendLeft = 0, detPos = Vector3.zero, hasKey = false, keyOut = false, tntModels = {}, actions = {},
+		kills = 0, playerKills = 0, minKills = minKillsFor(players), metroKills = 0, phase = if kind == "build" then "kill" elseif kind == "metro" then "approach" else "drive", sitePart = nil, stakes = {}, installed = false, stakesDone = 0, bossIndex = 0, nestsBurned = 0, bossOut = false, bossKills = 0, bossSeen = false, gensOn = 0, tnt = 0, detStage = 0, defendLeft = 0, detPos = Vector3.zero, hasKey = false, keyOut = false, tntModels = {}, actions = {},
 	}
 	current = state
 	if def.bossAfterKills then
@@ -1656,13 +1684,11 @@ function MissionService.update(dt: number): string?
 			text = string.format("Clear the zone: killed %d of %d", math.min(state.kills, need), need)
 			if state.kills >= need then
 				state.phase = "install"
-				if state.prompt then
-					state.prompt.Enabled = true
-				end
-				notify("Zone cleared — set up the tent at the marked spot (hold E)", 5)
+				enableStakes(state)
+				notify(string.format("Zone cleared — drive in %d stakes at the marked spot (hold E)", Config.Convoy.InstallStakes), 5)
 			end
 		else
-			text = if state.installed then "Tent set up" else string.format("Set up the tent at the marked spot: hold E (%d%% done)", math.floor((1 - state.installLeft / Config.Convoy.InstallHold) * 100 + 0.5))
+			text = if state.installed then "Tent set up" else string.format("Set up the tent: drive in the stakes, hold E (%d of %d)", state.stakesDone, Config.Convoy.InstallStakes)
 			if state.installed then
 				result = "done"
 			end
@@ -1708,9 +1734,7 @@ function MissionService.update(dt: number): string?
 				end
 				if state.def.install then
 					state.phase = "install"
-					if state.prompt then
-						state.prompt.Enabled = true
-					end
+					enableStakes(state)
 				else
 					state.phase = "hold" -- без установки: ждём, пока команда добьёт минимум убийств
 				end
@@ -1725,7 +1749,7 @@ function MissionService.update(dt: number): string?
 			ZombieService.moveAnchor(state.anchor)
 			local hp = math.floor(ConvoyService.hpFraction() * 100 + 0.5)
 			if state.phase == "install" then
-				text = string.format("Set up the tent: hold E (%d%% done). Lead vehicle durability: %d%%", math.floor((1 - state.installLeft / Config.Convoy.InstallHold) * 100 + 0.5), hp)
+				text = string.format("Set up the tent: drive in the stakes, hold E (%d of %d). Lead vehicle durability: %d%%", state.stakesDone, Config.Convoy.InstallStakes, hp)
 				if state.installed and not result then
 					result = "done"
 				end

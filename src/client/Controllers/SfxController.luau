@@ -13,15 +13,15 @@ local Config = require(Shared:WaitForChild("Config"))
 local SfxController = {}
 
 local ID = {
-	growl = { "rbxassetid://131060194", "rbxassetid://131060145" }, -- «преследует» (3–5 с)
+	growl = { "rbxassetid://131060194", "rbxassetid://131060145", "rbxassetid://106129958887908", "rbxassetid://124269425115386", "rbxassetid://117918376608216" }, -- «преследует» (2–5 с)
 	walk = { "rbxassetid://131060210", "rbxassetid://131060226" },
 	attack = { "rbxassetid://131138828", "rbxassetid://131138835", "rbxassetid://131138832" },
-	dying = { "rbxassetid://131138845", "rbxassetid://131138854" },
+	dying = { "rbxassetid://84892469442735", "rbxassetid://118138153239742", "rbxassetid://99859807184160", "rbxassetid://117469845897495", "rbxassetid://78426102578024", "rbxassetid://133918674" },
 	engine = "rbxassetid://520998094", -- мотор на холостых (зацикленный)
 	mission = "rbxassetid://4612373756", -- миссия выполнена
 	unlock = "rbxassetid://2846734837", -- шатёр установлен / открыто
 }
-local MAX_VOICES = 6
+local MAX_VOICES = 9
 local VOICE_RANGE = 70
 
 local group: SoundGroup
@@ -106,8 +106,8 @@ function SfxController.start()
 		for i = 1, math.min(MAX_VOICES, #near) do
 			local z = near[i]
 			if (nextVoice[z.model] or 0) <= now then
-				nextVoice[z.model] = now + 5 + math.random() * 8
-				playAt(z.root, pick(if math.random() < 0.3 then ID.walk else ID.growl), 0.14, VOICE_RANGE)
+				nextVoice[z.model] = now + 3 + math.random() * 5
+				playAt(z.root, pick(if math.random() < 0.3 then ID.walk else ID.growl), 0.2, VOICE_RANGE)
 			end
 		end
 	end)
@@ -118,7 +118,7 @@ function SfxController.start()
 			task.defer(function()
 				local root = c:FindFirstChild("HumanoidRootPart") :: BasePart? or (c :: any).PrimaryPart
 				if root and camera and (root.Position - camera.CFrame.Position).Magnitude < 80 then
-					playAt(root, pick(ID.dying), 0.2, 60)
+					playAt(root, pick(ID.dying), 0.4, 70)
 				end
 			end)
 		end)
