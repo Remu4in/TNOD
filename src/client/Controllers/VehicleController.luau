@@ -166,6 +166,30 @@ end
 local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
 
+local stepParams = RaycastParams.new()
+stepParams.FilterType = Enum.RaycastFilterType.Exclude
+stepParams.RespectCanCollide = true
+
+-- Заезд на низкую ступеньку: лучи вниз у переднего края корпуса (посередине и по углам), плоский верх чуть выше дна — приподнимаем машину
+local function climbStep(root: BasePart, model: Instance, character: Instance, dir: Vector3, speed: number, dt: number)
+	local maxStep = Config.Vehicle.stepUp
+	local bottom = root.Position.Y - root.Size.Y / 2
+	local front = root.Position + dir * (root.Size.Z / 2 + math.max(0.8, math.abs(speed) * dt * 3))
+	local side = root.CFrame.RightVector * (root.Size.X * 0.42)
+	stepParams.FilterDescendantsInstances = { model, character }
+	local step = 0
+	for _, offset in { Vector3.zero, side, -side } do
+		local from = Vector3.new(front.X + offset.X, bottom + maxStep + 0.1, front.Z + offset.Z)
+		local hit = workspace:Raycast(from, Vector3.new(0, -(maxStep + 0.3), 0), stepParams)
+		if hit and hit.Instance ~= workspace.Terrain and hit.Instance.Anchored and hit.Instance.CollisionGroup ~= "Curb" and hit.Normal.Y > 0.99 then
+			step = math.max(step, hit.Position.Y - bottom)
+		end
+	end
+	if step > 0.03 and step <= maxStep then
+		root.CFrame += Vector3.new(0, step + 0.02, 0)
+	end
+end
+
 function VehicleController.start()
 	local player = Players.LocalPlayer
 	startSeatPanel(player)
@@ -249,6 +273,9 @@ function VehicleController.start()
 		speed = approach(speed, target, rate * dt)
 		local planar = fwd * speed
 		root.AssemblyLinearVelocity = Vector3.new(planar.X, v.Y, planar.Z)
+		if math.abs(throttle) > 0.05 then
+			climbStep(root, model, character :: Model, if throttle > 0 then fwd else -fwd, speed, dt)
+		end
 		-- руль: чем быстрее, тем тяжелее; на месте не поворачивает
 		local steerRate = T.turn * math.clamp(speed / 22, -1, 1) / (1 + math.abs(speed) / 90)
 		root.AssemblyAngularVelocity = Vector3.new(0, -steer * steerRate, 0)

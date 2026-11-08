@@ -3,6 +3,7 @@
 -- Картинка товара — Config.Donate.Images[id]; нет её — 3D-модель оружия (icon) или название на подложке.
 
 local ContextActionService = game:GetService("ContextActionService")
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
@@ -315,6 +316,13 @@ function StoreController.start()
 			return Enum.ContextActionResult.Sink
 		end, false, Enum.ContextActionPriority.High.Value + 5, Enum.KeyCode.Escape, Enum.KeyCode.ButtonB)
 	end
+
+	-- Esc перехватывает сам Roblox (клавишу нельзя привязать): закрываем магазин, когда открылось его меню
+	GuiService.MenuOpened:Connect(function()
+		if gui.Enabled then
+			close()
+		end
+	end)
 
 	Remotes.get("StoreOpen").OnClientEvent:Connect(openStore)
 	Remotes.get("CaseResult").OnClientEvent:Connect(function(caseId: string, weaponId: string)

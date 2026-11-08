@@ -36,6 +36,57 @@ function TurretController.start()
 	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = label
 
+	-- прицел по центру экрана: точка и четыре черты
+	local reticle = Instance.new("ScreenGui")
+	reticle.Name = "TurretReticle"
+	reticle.ResetOnSpawn = false
+	reticle.IgnoreGuiInset = true
+	reticle.DisplayOrder = 8
+	reticle.Enabled = false
+	reticle.Parent = player:WaitForChild("PlayerGui")
+	local function tick(x: number, y: number, w: number, h: number)
+		local f = Instance.new("Frame")
+		f.AnchorPoint = Vector2.new(0.5, 0.5)
+		f.Position = UDim2.new(0.5, x, 0.5, y)
+		f.Size = UDim2.fromOffset(w, h)
+		f.BackgroundColor3 = Color3.fromRGB(255, 225, 120)
+		f.BorderSizePixel = 0
+		f.Parent = reticle
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.new(0, 0, 0)
+		stroke.Transparency = 0.35
+		stroke.Parent = f
+	end
+	tick(0, 0, 4, 4)
+	tick(-20, 0, 18, 2)
+	tick(20, 0, 18, 2)
+	tick(0, -20, 2, 18)
+	tick(0, 20, 2, 18)
+
+	local aimParams = RaycastParams.new()
+	aimParams.FilterType = Enum.RaycastFilterType.Exclude
+
+	-- Направление от оси пулемёта на точку под прицелом: ствол стоит в стороне от камеры, без этого очередь уходит мимо центра
+	local function aimDirection(cam: Camera, model: Model): Vector3
+		local look = cam.CFrame.LookVector
+		local pivot = model:FindFirstChild("GunPivot") :: BasePart?
+		if not pivot then
+			return look
+		end
+		local exclude: { Instance } = { model }
+		for _, p in Players:GetPlayers() do
+			if p.Character then
+				table.insert(exclude, p.Character)
+			end
+		end
+		aimParams.FilterDescendantsInstances = exclude
+		local range = Config.TurretGun.range
+		local hit = workspace:Raycast(cam.CFrame.Position, look * range, aimParams)
+		local point = if hit then hit.Position else cam.CFrame.Position + look * range
+		local away = point - pivot.Position
+		return if away.Magnitude > 1 then away.Unit else look
+	end
+
 	local firing = false
 	local current: Model? = nil
 
@@ -111,6 +162,7 @@ function TurretController.start()
 	RunService.Heartbeat:Connect(function()
 		current = gunnerModel()
 		gui.Enabled = current ~= nil
+		reticle.Enabled = current ~= nil
 		setBound(current ~= nil)
 		if not current then
 			firing = false
@@ -127,7 +179,7 @@ function TurretController.start()
 		local now = os.clock()
 		if cam and now - lastAim >= 0.05 then
 			lastAim = now
-			Remotes.get("TurretAim"):FireServer(cam.CFrame.LookVector)
+			Remotes.get("TurretAim"):FireServer(aimDirection(cam, current))
 		end
 		if firing and now - lastFire >= 1 / Config.TurretGun.rate then
 			lastFire = now

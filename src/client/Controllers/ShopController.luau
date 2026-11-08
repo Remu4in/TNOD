@@ -4,6 +4,7 @@
 -- в режиме осмотра (Config.Explore) всё бесплатно — для тестов оружия.
 
 local ContextActionService = game:GetService("ContextActionService")
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
@@ -481,6 +482,41 @@ function ShopController.start()
 		end
 	end)
 	player.CharacterAdded:Connect(close)
+	-- Esc перехватывает сам Roblox (клавишу нельзя привязать): закрываем магазин, когда открылось его меню
+	GuiService.MenuOpened:Connect(function()
+		if gui.Enabled then
+			close()
+		end
+	end)
+	-- подсказка у шатра: открыть можно только на B; на телефоне это кнопка
+	local hintGui = Instance.new("ScreenGui")
+	hintGui.Name = "ShopHint"
+	hintGui.ResetOnSpawn = false
+	hintGui.DisplayOrder = 6
+	hintGui.Enabled = false
+	hintGui.Parent = player:WaitForChild("PlayerGui")
+	local hint = Instance.new("TextButton")
+	hint.AnchorPoint = Vector2.new(0.5, 1)
+	hint.Position = UDim2.new(0.5, 0, 1, -150)
+	hint.Size = UDim2.fromOffset(190, 36)
+	hint.BackgroundColor3 = BG
+	hint.BackgroundTransparency = 0.15
+	hint.BorderSizePixel = 0
+	hint.Font = Enum.Font.GothamBold
+	hint.TextSize = 16
+	hint.TextColor3 = ACCENT
+	hint.Text = if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then "Open shop" else "[B] Open shop"
+	hint.Parent = hintGui
+	hint.Activated:Connect(function()
+		if not gui.Enabled then
+			open()
+		end
+	end)
+	local function updateHint()
+		hintGui.Enabled = player:GetAttribute("NearShop") == true and not gui.Enabled
+	end
+	player:GetAttributeChangedSignal("NearShop"):Connect(updateHint)
+	gui:GetPropertyChangedSignal("Enabled"):Connect(updateHint)
 	-- ушёл от палатки — меню закрывается само
 	player:GetAttributeChangedSignal("NearShop"):Connect(function()
 		if player:GetAttribute("NearShop") ~= true and gui.Enabled and vendor == nil then

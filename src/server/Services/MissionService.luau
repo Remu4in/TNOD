@@ -33,6 +33,7 @@ local BarricadeService = require(script.Parent:WaitForChild("BarricadeService"))
 local BaseBattleService = require(script.Parent:WaitForChild("BaseBattleService"))
 local VehicleService = require(script.Parent:WaitForChild("VehicleService"))
 local AmmoCrateService = require(script.Parent:WaitForChild("AmmoCrateService"))
+local SafeTeleport = require(script.Parent:WaitForChild("SafeTeleport"))
 
 local MissionService = {}
 
@@ -469,7 +470,7 @@ local function installTent(site: number, empty: boolean?)
 	table.insert(rec.instances, clone)
 	local cf, size = clone:GetBoundingBox()
 	local center = Vector3.new(cf.Position.X, cf.Position.Y - size.Y / 2, cf.Position.Z)
-	ShopService.addPoint("Military tent", center, math.max(size.X, size.Z) / 2 + 18, false, true, true)
+	ShopService.addPoint("Military tent", center, math.max(size.X, size.Z) / 2 + 18, false, true, false) -- только клавиша B
 	rec.shop = center
 	installedSites[site] = rec
 	if not empty then
@@ -1223,7 +1224,7 @@ local function buildExitDoor(state: State, metro: Instance)
 			local char = p.Character
 			local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 			if char and root and root.Position.Y < Config.Metro.InsideMaxY then
-				char:PivotTo(CFrame.new(spawn + Vector3.new(math.random(-6, 6), 3, math.random(-6, 6))))
+				SafeTeleport.move(p, CFrame.new(spawn + Vector3.new(math.random(-6, 6), 3, math.random(-6, 6))))
 			end
 		end
 		setupHub()
@@ -1556,7 +1557,7 @@ function MissionService.onEntranceTouched(player: Player)
 	if not spawn or not char or not PlayerService.isUp(player) then
 		return
 	end
-	char:PivotTo(CFrame.new(spawn.Position + Vector3.new(math.random(-6, 6), 3, math.random(-3, 3))))
+	SafeTeleport.move(player, CFrame.new(spawn.Position + Vector3.new(math.random(-6, 6), 3, math.random(-3, 3))))
 	if s.phase == "approach" then
 		s.phase = "inside"
 		local points: { Vector3 } = {}
@@ -1878,7 +1879,7 @@ local function leaveMetro()
 		local char = p.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if char and root and root.Position.Y < Config.Metro.InsideMaxY then
-			char:PivotTo(CFrame.new(top.Position + Vector3.new(math.random(-4, 4), 4, math.random(-4, 4))))
+			SafeTeleport.move(p, CFrame.new(top.Position + Vector3.new(math.random(-4, 4), 4, math.random(-4, 4))))
 		end
 	end
 end

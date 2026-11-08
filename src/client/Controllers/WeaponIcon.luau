@@ -3,6 +3,7 @@
 
 local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
 local WeaponIcon = {}
 
@@ -43,6 +44,9 @@ function WeaponIcon.make(parent: Instance, weaponId: string, position: UDim2, si
 	local up = look:Cross(long).Unit
 	if up:Dot(cf.UpVector) < 0 then
 		up = -up
+	end
+	if Config.WeaponIconFlip[weaponId] then
+		up = -up -- кадр поворачивается на 180°: рукоять вниз, дуло вправо, как у остального оружия
 	end
 	local cam = Instance.new("Camera")
 	cam.FieldOfView = 24
