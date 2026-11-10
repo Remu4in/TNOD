@@ -1657,33 +1657,45 @@ Config.Donate = {
 	Vip = { Mag = 1.2, Damage = 1.2, Stamina = 3, StartCoins = 2000 },
 	WeeklyRewardDays = 3, -- VIP топ-3 игрокам и лучшей команде прошлой недели
 	Items = {
-		{ id = "vip", perk = "vip", name = "VIP pass (7 days)", desc = "+20% magazine and damage, x3 stamina, 2000 start coins, VIP lobby zone", robux = 500, days = 7, productId = 0 },
-		{ id = "karambit", perk = "karambit", name = "Karambit", desc = "Forever: yours in every round", robux = 1000, icon = "Karambit", productId = 0 },
-		{ id = "balisong", perk = "balisong", name = "Butterfly knife", desc = "Forever: yours in every round", robux = 1000, icon = "Balisong", productId = 0 },
-		{ id = "fieldkit", perk = "fieldkit", name = "Field kit (7 days)", desc = "Carry up to 3 medkits and 3 energy drinks", robux = 150, days = 7, productId = 0 },
-		{ id = "driver", perk = "driver", name = "Driver box (7 days)", desc = "The Garage is open for your team from the start", robux = 300, days = 7, productId = 0 },
-		{ id = "commander", perk = "commander", name = "Commander box (7 days)", desc = "Armory and Turret shop open from the start, 1 free turret", robux = 500, days = 7, productId = 0 },
-		{ id = "stamina", perk = "stamina", name = "Infinite stamina", desc = "Forever: sprint without limits", robux = 1000, productId = 0 },
+		{ id = "vip", perk = "vip", name = "VIP pass (7 days)", desc = "+20% magazine and damage, x3 stamina, 2000 start coins, VIP lobby zone", robux = 360, days = 7, productId = 3730236383 },
+		{ id = "karambit", perk = "karambit", name = "Karambit", desc = "Forever: yours in every round", robux = 360, icon = "Karambit", productId = 3730236465 },
+		{ id = "balisong", perk = "balisong", name = "Butterfly knife", desc = "Forever: yours in every round", robux = 360, icon = "Balisong", productId = 3730236549 },
+		{ id = "fieldkit", perk = "fieldkit", name = "Field kit (7 days)", desc = "Carry up to 3 medkits and 3 energy drinks", robux = 145, days = 7, productId = 3730236592 },
+		{ id = "driver", perk = "driver", name = "Driver box (7 days)", desc = "The Garage is open for your team from the start", robux = 220, days = 7, productId = 3730236642 },
+		{ id = "commander", perk = "commander", name = "Commander box (7 days)", desc = "Armory and Turret shop open from the start, 1 free turret", robux = 360, days = 7, productId = 3730236684 },
+		{ id = "stamina", perk = "stamina", name = "Infinite stamina", desc = "Forever: sprint without limits", robux = 720, productId = 3730236732 },
 	} :: { any },
 	-- Кейсы (случайный предмет): w — вес выпадения, полученное исключается (Shared/CaseRules). Выпавшее навсегда и бесплатно в магазине, патроны платные.
 	Cases = {
-		{ id = "case_low", name = "Recruit case", desc = "A random weapon worth up to 1000", robux = 99, icon = "M4A1", productId = 0, pool = {
+		{ id = "case_low", name = "Recruit case", desc = "A random weapon worth up to 1000", robux = 75, icon = "M4A1", productId = 3730236050, pool = {
 			{ id = "M1911", w = 1 }, { id = "FiveSeven", w = 1 }, { id = "DesertEagle", w = 1 }, { id = "Revolver", w = 1 }, { id = "SMG", w = 1 },
 			{ id = "Uzi", w = 1 }, { id = "Thompson", w = 1 }, { id = "Shotgun", w = 1 }, { id = "Sawnoff", w = 1 }, { id = "M4A1", w = 1 },
 		} },
-		{ id = "case_mid", name = "Veteran case", desc = "A random weapon worth 1000 to 2000", robux = 249, icon = "Rifle", productId = 0, pool = {
+		{ id = "case_mid", name = "Veteran case", desc = "A random weapon worth 1000 to 2000", robux = 109, icon = "Rifle", productId = 3730236139, pool = {
 			{ id = "Rifle", w = 1 }, { id = "SKS", w = 1 }, { id = "SPAS12", w = 1 }, { id = "Sniper", w = 1 }, { id = "Vector", w = 1 }, { id = "LMG", w = 1 },
 		} },
-		{ id = "case_high", name = "Elite case", desc = "A random weapon worth over 2000", robux = 499, icon = "SCAR", productId = 0, pool = {
+		{ id = "case_high", name = "Elite case", desc = "A random weapon worth over 2000", robux = 145, icon = "SCAR", productId = 3730236227, pool = {
 			{ id = "SCAR", w = 1 }, { id = "AA12", w = 1 },
 		} },
-		{ id = "case_knife", name = "Knife case", desc = "A random knife, with a chance of Karambit or Butterfly", robux = 500, icon = "Karambit", productId = 0, pool = {
+		{ id = "case_knife", name = "Knife case", desc = "A random knife, with a chance of Karambit or Butterfly", robux = 180, icon = "Karambit", productId = 3730236311, pool = {
 			{ id = "Karambit", w = 5 }, { id = "Balisong", w = 5 }, { id = "BowieKnife", w = 15 }, { id = "KABAR", w = 15 },
 			{ id = "Tanto", w = 15 }, { id = "Stiletto", w = 15 }, { id = "M9Bayonet", w = 15 }, { id = "Kukri", w = 15 },
 		} },
 	} :: { any },
 	Featured = { "case_knife", "vip", "karambit", "fieldkit" }, -- витрина: первый товар крупно
-	Images = {} :: { [string]: string }, -- id товара → rbxassetid картинки карточки
+	Images = { -- id товара → rbxassetid картинки карточки (те же картинки, что у Developer Products; исходники — promo/products)
+		case_low = "rbxassetid://118147130936521",
+		case_mid = "rbxassetid://114741212749081",
+		case_high = "rbxassetid://92299407530964",
+		case_knife = "rbxassetid://80647976954419",
+		vip = "rbxassetid://126456654064570",
+		karambit = "rbxassetid://76606153320497",
+		balisong = "rbxassetid://113220574890456",
+		fieldkit = "rbxassetid://82465856610133",
+		driver = "rbxassetid://99656785427831",
+		commander = "rbxassetid://96265345351085",
+		stamina = "rbxassetid://129210083156850",
+	} :: { [string]: string },
 	RollSeconds = 4.5,
 }
 for _, item in Config.Donate.Items do
