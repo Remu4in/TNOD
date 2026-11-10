@@ -4,6 +4,7 @@
 
 local ContextActionService = game:GetService("ContextActionService")
 local GuiService = game:GetService("GuiService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
@@ -107,7 +108,7 @@ function StoreController.start()
 		local image = Config.Donate.Images[item.id]
 		local holder = mk("Frame", { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 1, -82), BackgroundColor3 = U.Dark, BorderSizePixel = 0 }, parent)
 		if image and image ~= "" then
-			mk("ImageLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Image = image, ScaleType = Enum.ScaleType.Crop }, holder)
+			mk("ImageLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Image = image, ScaleType = Enum.ScaleType.Fit }, holder)
 		elseif item.icon then
 			local v = WeaponIcon.make(holder, item.icon, UDim2.fromScale(0, 0), UDim2.fromScale(1, 1))
 			v.BackgroundColor3 = U.Dark
@@ -334,6 +335,23 @@ function StoreController.start()
 	end)
 	player.AttributeChanged:Connect(function(name: string)
 		if gui.Enabled and not rolling and not overlay.Visible and (string.sub(name, 1, 4) == "Has_" or name == "CasesRestricted") then
+			render()
+		end
+	end)
+
+	-- Цена на кнопках — как в окне покупки Roblox: берём её из Developer Product (цена в Config только запасная, если запрос не прошёл)
+	task.spawn(function()
+		for _, item in byId do
+			if item.productId and item.productId > 0 then
+				local ok, info = pcall(function()
+					return MarketplaceService:GetProductInfo(item.productId, Enum.InfoType.Product)
+				end)
+				if ok and type(info) == "table" and type(info.PriceInRobux) == "number" then
+					item.price = string.format("%d R$", info.PriceInRobux)
+				end
+			end
+		end
+		if gui.Enabled and not rolling and not overlay.Visible then
 			render()
 		end
 	end)
