@@ -83,6 +83,28 @@ function Custom.build(): Types.MapInfo
 		warn("[Custom] no Workspace.Markers.PlayerSpawn — players will appear at " .. tostring(playerSpawn))
 	end
 
+	-- План релиза 2026-11-11: старт матча и дневные возрождения — у военной палатки на базе (сразу закупиться).
+	-- Маркер PlayerSpawn остаётся точкой ночи (выталкивание с базы) и опорой миссий.
+	local nightSpawn = playerSpawn
+	local baseFolder = workspace:FindFirstChild("Base")
+	local tent = baseFolder and baseFolder:FindFirstChild("Tent")
+	if tent and tent:IsA("Model") then
+		local at = tent:GetPivot().Position + Config.TentSpawnOffset
+		local ground = groundNear(at)
+		playerSpawn = (ground or at) + Vector3.new(0, 4, 0)
+	end
+	-- трава «Group Of Grass» без столкновений, но лучи её видели: пули застревали. Убираем из запросов.
+	for _, d in workspace:GetDescendants() do
+		if d.Name == "Group Of Grass" then
+			for _, part in d:GetDescendants() do
+				if part:IsA("BasePart") then
+					part.CanQuery = false
+					part.CanTouch = false
+				end
+			end
+		end
+	end
+
 	local zombieSpawns: { Vector3 } = {}
 	local carSpawns: { CFrame } = {}
 	local carNames: { string } = {}
@@ -240,10 +262,10 @@ function Custom.build(): Types.MapInfo
 		buildings = buildings,
 		vendors = vendors,
 		barriers = barriers,
-		shop = { center = playerSpawn, halfX = 0, halfZ = 0 },
+		shop = { center = nightSpawn, halfX = 0, halfZ = 0 },
 		zombieSpawns = zombieSpawns,
 		playerSpawn = playerSpawn,
-		nightSpawn = playerSpawn,
+		nightSpawn = nightSpawn,
 		wallBuys = {},
 		carSpawns = carSpawns,
 		shops = shops,

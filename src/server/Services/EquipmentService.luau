@@ -413,7 +413,7 @@ local function stepTurret(p: Placed, now: number)
 	muzzle = p.model:GetPivot():PointToWorldSpace(p.muzzleOffset)
 	local spread = math.rad(def.spreadDeg or 2)
 	local dir = (CFrame.lookAt(muzzle, target) * CFrame.Angles(rng:NextNumber(-spread, spread), rng:NextNumber(-spread, spread), 0)).LookVector * (target - muzzle).Magnitude
-	ZombieService.damage(best.model, def.damage, p.owner, { dir = dir, push = 1.5, stagger = 0.05 })
+	ZombieService.damage(best.model, def.damage, p.owner, { dir = dir, push = 1.5, stagger = 0.05, noCredit = true })
 	-- трассер, вспышка у ствола, звук очереди
 	local tracer = Instance.new("Part")
 	tracer.Anchored = true
@@ -506,7 +506,7 @@ local function stepWire(p: Placed, now: number): boolean
 			end
 			ZombieService.hold(m, def.tick + 0.1)
 			burnFx(present[m])
-			ZombieService.damage(m, def.dps * def.tick, p.owner, { push = 0 })
+			ZombieService.damage(m, def.dps * def.tick, p.owner, { push = 0, noCredit = true })
 			local last = p.lastHit[m]
 			if not last or now - last >= 1 then
 				p.lastHit[m] = now
@@ -524,7 +524,7 @@ local function stepWire(p: Placed, now: number): boolean
 			local last = p.lastHit[m]
 			if not last or now - last >= def.tick then
 				p.lastHit[m] = now
-				ZombieService.damage(m, def.damage, p.owner, { push = 0 })
+				ZombieService.damage(m, def.damage, p.owner, { push = 0, noCredit = true })
 				ZombieService.suffer(m, "Barbed")
 				p.hits -= 1
 				if p.hits <= 0 then

@@ -55,6 +55,7 @@ type Rig = {
 	melee: boolean, -- холодное оружие: одна рука держит рукоять, положение берём из Tool.Grip (его двигают взмахи и осмотр, FxController)
 	drawU: number, -- прогресс доставания 0…1 (набирается по кадрам, чтобы R мог его ускорить, а не обрывать скачком)
 	drawBoost: boolean,
+	fingers: { Part }?, -- только ножи: 4 пальца по 2 фаланги и большой палец (2 фаланги), сгибаются по MeleeAnim.open
 }
 
 local rig: Rig? = nil
@@ -169,6 +170,42 @@ local function setScope(on: boolean)
 	(scopeGui :: ScreenGui).Enabled = true
 end
 
+-- Пальцы кисти ножа (система кисти): рукоять идёт по оси Y через центр кисти, поэтому ладонь — сбоку от неё (+X, PALM),
+-- четыре пальца стоят друг над другом (указательный сверху, у клинка) и обхватывают рукоять поворотом вокруг Y.
+local PALM = CFrame.new(0.17, -0.02, 0.02)
+local KNIFE_ELBOW = Vector3.new(1.0, -1.0, 0.5) -- где локоть относительно кисти ножа (в осях камеры)
+local FINGER_Y = { 0.15, 0.05, -0.05, -0.15 }
+local FINGER_LEN = { { 0.17, 0.15 }, { 0.18, 0.16 }, { 0.17, 0.15 }, { 0.14, 0.12 } } -- указательный … мизинец
+local function buildFingers(model: Model, color: Color3): { Part }
+	local list = {}
+	for i = 1, 4 do
+		table.insert(list, makePart("Finger" .. i .. "a", Vector3.new(0.09, 0.085, FINGER_LEN[i][1]), color, model))
+		table.insert(list, makePart("Finger" .. i .. "b", Vector3.new(0.085, 0.08, FINGER_LEN[i][2]), color, model))
+	end
+	table.insert(list, makePart("Thumb1", Vector3.new(0.1, 0.095, 0.17), color, model))
+	table.insert(list, makePart("Thumb2", Vector3.new(0.09, 0.085, 0.13), color, model))
+	return list
+end
+
+-- open: 0 — кулак на рукояти, 1 — пальцы раскрыты (нож крутится или лежит на ладони)
+local function placeFingers(fingers: { Part }, handCf: CFrame, open: number)
+	local c = 1 - math.clamp(open, 0, 1)
+	for i = 1, 4 do
+		local l1, l2 = FINGER_LEN[i][1], FINGER_LEN[i][2]
+		local k = 0.92 + 0.04 * i -- мизинец сгибается чуть сильнее
+		-- костяшка у переднего края ладони; палец идёт вперёд (-Z) и заворачивает к -X вокруг рукояти
+		local j0 = handCf * CFrame.new(0.13, FINGER_Y[i], -0.14) * CFrame.Angles(0, math.rad(5 + 75 * c * k), 0)
+		fingers[i * 2 - 1].CFrame = j0 * CFrame.new(0, 0, -l1 / 2)
+		local j1 = j0 * CFrame.new(0, 0, -l1) * CFrame.Angles(0, math.rad(5 + 100 * c * k), 0)
+		fingers[i * 2].CFrame = j1 * CFrame.new(0, 0, -l2 / 2)
+	end
+	-- большой палец: от верха ладони ложится поверх указательного (обхват сверху), раскрытый — отведён назад
+	local t0 = handCf * CFrame.new(0.12, 0.2, 0.06) * CFrame.Angles(math.rad(-10), math.rad(20 + 50 * c), 0)
+	fingers[9].CFrame = t0 * CFrame.new(0, 0, -0.085)
+	local t1 = t0 * CFrame.new(0, 0, -0.17) * CFrame.Angles(0, math.rad(10 + 40 * c), 0)
+	fingers[10].CFrame = t1 * CFrame.new(0, 0, -0.065)
+end
+
 local function destroyRig()
 	setScope(false)
 	if rig then
@@ -245,6 +282,11 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 	local hand = Config.WeaponHands[weaponId] or DEFAULT_HAND
 	-- доставание: стиль по классу оружия; детали затвора (Slide / ChargingHandle или Bolt / Pump) двигаются при передёргивании
 	local draw = Config.DrawAnim[Config.WeaponDraw[weaponId] or (if melee then "melee" else "rifle")]
+	local knifeDraw = if melee then MeleeAnim.DRAW[weaponId] else nil
+	if knifeDraw then
+		-- своё доставание ножа (MeleeAnim.DRAW): стойка не смещается, двигается кисть
+		draw = { time = knifeDraw.time, rise = 1, variants = { { pos = Vector3.zero, rot = Vector3.zero } } }
+	end
 	local actionKind = draw.action
 	local actionSum, actionN = Vector3.zero, 0
 	if actionKind then
@@ -294,6 +336,11 @@ local function buildRig(tool: Tool, weaponId: string, melee: boolean): Rig?
 		drawU = 0,
 		drawBoost = false,
 	}
+	if melee and MeleeAnim.DRAW[weaponId] then
+		-- нож: ладонь короче, спереди пальцы, которые обхватывают рукоять и раскрываются в осмотре
+		rig_.rHand.Size = Vector3.new(0.13, 0.36, 0.3)
+		rig_.fingers = buildFingers(model, skin)
+	end
 	return rig_
 end
 
@@ -326,6 +373,12 @@ function ViewModel.isReloading(): boolean
 end
 
 -- Идёт ли доставание (осмотр F в это время не запускается: он отдельно от доставания)
+-- Прогресс доставания 0…1 (nil — не достаётся): FxController двигает по нему части модели
+function ViewModel.drawProgress(): number?
+	local r = rig
+	return if r and r.drawU < 1 then math.clamp(r.drawU, 0, 1) else nil
+end
+
 function ViewModel.isDrawing(): boolean
 	local r = rig
 	return r ~= nil and r.drawU < 1
@@ -512,6 +565,10 @@ local function update(dt: number)
 	-- доставание: из начального положения (снизу или из-за спины) в стойку, осмотр, передёргивание (Config.DrawAnim)
 	local da = r.draw
 	r.drawU += dt / da.time * (if r.drawBoost then 5 else 1)
+	local scrub = if RunService:IsStudio() then player:GetAttribute("PoseScrub") else nil -- стоп-кадр для сравнения с референсом
+	if typeof(scrub) == "string" and string.sub(scrub, 1, 5) == "draw:" then
+		r.drawU = tonumber(string.sub(scrub, 6)) or 1
+	end
 	local du = r.drawU
 	local away = 1 - smooth(du / da.rise)
 	local variant = r.drawVariant
@@ -560,9 +617,18 @@ local function update(dt: number)
 	local weaponCf = camera.CFrame * CFrame.new(stance + pos) * CFrame.Angles(rot.X, rot.Y, rot.Z) * reloadCf
 	-- холодное оружие: «кисть» — это рамка, в которой Tool.Grip задаёт положение рукояти (хват, взмах, осмотр двигают Grip)
 	local handFrame = weaponCf
+	local drawOpen = 0
 	if r.melee then
 		handFrame = camera.CFrame * CFrame.new((if sprint then Vector3.new(0.5, -0.9, -1.1) else MELEE_HAND) + pos) * CFrame.Angles(rot.X, rot.Y, rot.Z)
-		weaponCf = handFrame * tool.Grip:Inverse()
+		local kd = MeleeAnim.DRAW[r.weaponId]
+		if kd and du < 1 then
+			local f = kd.frame(math.clamp(du, 0, 1))
+			handFrame = handFrame * f.hand
+			weaponCf = handFrame * f.spin * tool.Grip:Inverse()
+			drawOpen = f.open or 0
+		else
+			weaponCf = handFrame * tool.Grip:Inverse()
+		end
 	end
 	for _, gp in r.parts do
 		if gp.isMag and magHidden then
@@ -587,6 +653,9 @@ local function update(dt: number)
 		for _, p in { r.rForearm, r.rHand, r.lForearm, r.lHand } do
 			p.Transparency = 1
 		end
+		for _, p in r.fingers or {} do
+			p.Transparency = 1
+		end
 		return
 	end
 	r.rForearm.Transparency = 0
@@ -601,7 +670,22 @@ local function update(dt: number)
 		rightHandCf = handFrame * MeleeAnim.live * CFrame.new(0, 0, 0.1) * CFrame.Angles(math.rad(-12), 0, 0)
 		r.lForearm.Transparency = 1
 		r.lHand.Transparency = 1
-		placeArm(r.rForearm, r.rHand, camera.CFrame * CFrame.new(1.3, -3.0, 1.4), rightHandCf)
+		-- у ножей локоть идёт за кистью справа-снизу: предплечье входит в кадр из правого нижнего угла (как в CS2) и не закрывает кулак
+		local elbow = camera.CFrame * CFrame.new(1.3, -3.0, 1.4)
+		if r.fingers then
+			elbow = camera.CFrame * CFrame.new(camera.CFrame:PointToObjectSpace(rightHandCf.Position) + KNIFE_ELBOW)
+		end
+		placeArm(r.rForearm, r.rHand, elbow, rightHandCf)
+		if r.fingers then
+			r.rForearm.Size = Vector3.new(0.32, 0.32, r.rForearm.Size.Z) -- у ножей предплечье тоньше: рука ближе к кадру
+		end
+		if r.fingers then
+			for _, p in r.fingers do
+				p.Transparency = 0
+			end
+			r.rHand.CFrame = rightHandCf * PALM
+			placeFingers(r.fingers, rightHandCf, math.max(MeleeAnim.open, drawOpen))
+		end
 		return
 	end
 	r.lForearm.Transparency = 0

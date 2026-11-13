@@ -499,14 +499,21 @@ end
 
 -- Осмотр холодного оружия (клавиша F): оружие двигается по MeleeAnim.INSPECT, части модели — вокруг шарниров
 type InspectPart = { weld: Weld, base: CFrame, pivot: Vector3, key: string }
-local inspecting: { tool: Tool, rw: Rewind.State, frame: (number, Vector3?) -> MeleeAnim.InspectFrame, baseGrip: CFrame, parts: { InspectPart }, hinge: Vector3? }? = nil
+local inspecting: { tool: Tool, rw: Rewind.State, frame: (number, Vector3?) -> MeleeAnim.InspectFrame, baseGrip: CFrame, parts: { InspectPart }, hinge: Vector3?, fadeAt: number?, fadeU: number, restart: boolean }? = nil
+local collectParts: (Tool, { [string]: CFrame }?) -> ({ InspectPart }, Vector3?)
+local drawParts: { tool: Tool, parts: { InspectPart } }? = nil -- части, которые двигает доставание (MeleeAnim.DRAW[..].parts)
+local INSPECT_FADE = 0.18 -- прерванный осмотр холодного за столько секунд плавно уходит в стойку (как в CS2), а не прокручивается назад
 
 -- smooth = true (R): осмотр плавно едет назад до нейтральной позы и заканчивается (Rewind); false (смена оружия, удар): сразу в руку
 function FxController.cancelInspect(smooth: boolean?)
 	local i = inspecting
 	if i then
 		if smooth and i.tool.Parent and i.rw.active then
-			Rewind.cancel(i.rw)
+			-- плавно в стойку из текущей позы (без прокрутки назад: обороты керамбита и бабочки задом наперёд выглядели сломанными)
+			if not i.fadeAt then
+				i.fadeAt, i.fadeU = os.clock(), i.rw.u
+			end
+			i.restart = false
 			return
 		end
 		if i.tool.Parent then
@@ -531,6 +538,9 @@ end
 
 -- F: запуск осмотра; при повторных нажатиях — реверс и заново (во время возврата — разворот вперёд из текущей позы)
 function FxController.inspect()
+	if not Config.Inspect.melee then
+		return -- осмотр холодного оружия выключен (Config.Inspect.melee)
+	end
 	local tool = toolOf(player.Character)
 	if not tool or tool:GetAttribute("Melee") ~= true or swing then
 		return
@@ -545,13 +555,24 @@ function FxController.inspect()
 	end
 	local cur = inspecting
 	if cur and cur.tool == tool then
-		Rewind.press(cur.rw)
+		-- повторное F: плавно в стойку и заново с начала
+		if not cur.fadeAt then
+			cur.fadeAt, cur.fadeU = os.clock(), cur.rw.u
+		end
+		cur.restart = true
 		return
 	end
 	FxController.cancelInspect(false)
+	local parts, hinge = collectParts(tool, def.frame(0.5, nil).parts)
+	local rw = Rewind.new(def.time, Config.Inspect.reverseSpeed)
+	Rewind.press(rw)
+	inspecting = { tool = tool, rw = rw, frame = def.frame, baseGrip = tool.Grip, parts = parts, hinge = hinge, fadeAt = nil, fadeU = 0, restart = false }
+end
+
+-- Подвижные части модели (рукояти и клинок бабочки) по префиксам имён keys: сварки к рукояти и общий шарнир
+function collectParts(tool: Tool, keys: { [string]: CFrame }?): ({ InspectPart }, Vector3?)
 	local handle = handleOf(tool)
 	local parts: { InspectPart } = {}
-	local keys = def.frame(0.5, nil).parts
 	local hinge: Vector3? = nil
 	if keys and handle then
 		-- шарнир один на все части (рукояти и клинок): ось по X модели, на переднем (−Z) конце рукоятей
@@ -580,9 +601,7 @@ function FxController.inspect()
 			end
 		end
 	end
-	local rw = Rewind.new(def.time, Config.Inspect.reverseSpeed)
-	Rewind.press(rw)
-	inspecting = { tool = tool, rw = rw, frame = def.frame, baseGrip = tool.Grip, parts = parts, hinge = hinge }
+	return parts, hinge
 end
 
 -- Покадровое применение отдачи и взмаха -----------------------------------
@@ -611,6 +630,7 @@ local function refreshWelds(tool: Tool?)
 	end
 end
 
+local scrubBase: { [Tool]: CFrame } = setmetatable({}, { __mode = "k" }) :: any -- исходный Grip для стоп-кадра осмотра (PoseScrub, Studio)
 local appliedKick: CFrame? = nil -- сдвиг камеры, наложенный в прошлом кадре
 
 -- Упавший игрок (атрибут Downed) лежит лицом вниз и ползёт: к позе корневого сустава (R15 — LowerTorso.Root, R6 — HumanoidRootPart.RootJoint)
@@ -692,23 +712,73 @@ function FxController.start()
 
 		-- осмотр ближнего оружия (вперёд, повтор, пока держат F, и реверс при прерывании — Rewind)
 		local live = CFrame.identity
+		local liveOpen = 0 -- раскрытие пальцев кисти ножа (0 — кулак, 1 — ладонь раскрыта), см. MeleeAnim.open
 		local ins = inspecting
 		if ins then
 			local active = toolOf(player.Character)
-			local u = if active == ins.tool and not swing then Rewind.step(ins.rw, dt) else nil
+			local u: number? = nil
+			local w = 1 -- вес позы осмотра (затухает при прерывании)
+			if active == ins.tool and not swing then
+				if ins.fadeAt then
+					local k = math.clamp((os.clock() - ins.fadeAt) / INSPECT_FADE, 0, 1)
+					if k >= 1 then
+						ins.fadeAt = nil
+						if ins.restart then
+							ins.restart = false
+							Rewind.start(ins.rw)
+							u = 0
+						end
+					else
+						u, w = ins.fadeU, 1 - k * k * (3 - 2 * k)
+					end
+				else
+					u = Rewind.step(ins.rw, dt)
+				end
+			end
 			if not u then
 				FxController.cancelInspect(false)
 			else
 				local frame = ins.frame(u, ins.hinge)
-				live = frame.hand or frame.grip
+				local function wt(cf: CFrame?): CFrame?
+					return if cf and w < 1 then CFrame.identity:Lerp(cf, w) else cf
+				end
+				local grip, hand, model = wt(frame.grip) :: CFrame, wt(frame.hand), wt(frame.model)
+				live = hand or grip
+				liveOpen = (frame.open or 0) * w
 				-- вращение всей модели (frame.model) — в системе модели: Grip = model⁻¹ · базовый · поза⁻¹
-				ins.tool.Grip = (if frame.model then frame.model:Inverse() else CFrame.identity) * ins.baseGrip * frame.grip:Inverse()
+				ins.tool.Grip = (if model then model:Inverse() else CFrame.identity) * ins.baseGrip * grip:Inverse()
 				for _, part in ins.parts do
-					local rot = frame.parts and frame.parts[part.key]
+					local rot = wt(frame.parts and frame.parts[part.key])
 					if rot and part.weld.Parent then
 						part.weld.C0 = CFrame.new(part.pivot) * rot * CFrame.new(-part.pivot) * part.base
 					end
 				end
+			end
+		end
+
+		-- доставание: подвижные части модели (бабочка раскрывается при выходе)
+		if not ins then
+			local tool = toolOf(player.Character)
+			local d = if tool then MeleeAnim.DRAW[tostring(tool:GetAttribute("WeaponId"))] else nil
+			local du = ViewModel.drawProgress()
+			if tool and d and d.parts and du then
+				if not drawParts or drawParts.tool ~= tool then
+					drawParts = { tool = tool, parts = (collectParts(tool, d.parts(0.5))) }
+				end
+				local rots = d.parts(du)
+				for _, part in (drawParts :: any).parts do
+					local rot = rots[part.key]
+					if rot and part.weld.Parent then
+						part.weld.C0 = CFrame.new(part.pivot) * rot * CFrame.new(-part.pivot) * part.base
+					end
+				end
+			elseif drawParts then
+				for _, part in drawParts.parts do
+					if part.weld.Parent then
+						part.weld.C0 = part.base
+					end
+				end
+				drawParts = nil
 			end
 		end
 
@@ -745,7 +815,38 @@ function FxController.start()
 				end
 			end
 		end
+		-- стоп-кадр осмотра (только Studio): атрибут PoseScrub = "inspect:<0…1>"
+		local scrub = if RunService:IsStudio() then player:GetAttribute("PoseScrub") else nil
+		-- ручная поза кисти для подбора ключей (только Studio): "raw:x,y,z,rx,ry,rz,spin,open[,ось]" — как ключ MeleeAnim.wristKeys,
+		-- ось 1 — оборот вокруг X (керамбит на кольце), иначе — вокруг клинка
+		if typeof(scrub) == "string" and string.sub(scrub, 1, 4) == "raw:" and not swing then
+			local tool = toolOf(player.Character)
+			local v = {}
+			for num in string.gmatch(string.sub(scrub, 5), "[^,]+") do
+				table.insert(v, tonumber(num) or 0)
+			end
+			if tool and #v >= 8 then
+				scrubBase[tool] = scrubBase[tool] or tool.Grip
+				local axis = if v[9] == 1 then Vector3.xAxis else Config.MeleeHold.default.dir.Unit
+				local hand = CFrame.new(v[1], v[2], v[3]) * CFrame.Angles(math.rad(v[4]), math.rad(v[5]), math.rad(v[6]))
+				live = hand
+				liveOpen = v[8]
+				tool.Grip = scrubBase[tool] * (hand * CFrame.fromAxisAngle(axis, math.rad(v[7]))):Inverse()
+			end
+		end
+		if typeof(scrub) == "string" and string.sub(scrub, 1, 8) == "inspect:" and not swing then
+			local tool = toolOf(player.Character)
+			local def = if tool then MeleeAnim.INSPECT[tostring(tool:GetAttribute("WeaponId"))] else nil
+			if tool and def then
+				scrubBase[tool] = scrubBase[tool] or tool.Grip
+				local frame = def.frame(math.clamp(tonumber(string.sub(scrub, 9)) or 0, 0, 1), nil)
+				live = frame.hand or frame.grip
+				liveOpen = frame.open or 0
+				tool.Grip = (if frame.model then frame.model:Inverse() else CFrame.identity) * scrubBase[tool] * frame.grip:Inverse()
+			end
+		end
 		MeleeAnim.live = live
+		MeleeAnim.open = liveOpen
 
 		-- взмахи других игроков
 		for char, rs in remoteSwings do

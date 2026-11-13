@@ -51,6 +51,7 @@ type Zombie = {
 	slowUntil: number, -- до этого момента зомби хромает (попали в ногу)
 	vaultResetAt: number, -- не раньше этого момента зомби снова может перелезать забор
 	vaultLockUntil: number, -- до этого момента зомби в прыжке через забор и не думает
+	damageBy: { [Player]: number }?, -- урон игроков по боссу без турелей (рейтинг: босс засчитывается тому, кто нанёс больше)
 	headKill: boolean, -- убит выстрелом в голову (бонус очков и монет в RoundService)
 	pivots: { [string]: Vector3 }, -- точки вращения частей тела (шея, плечи, бёдра) в системе корня
 	hipPivot: Vector3, -- ось, вокруг которой корпус откидывается от попадания
@@ -990,6 +991,7 @@ local function resetAttack(z: Zombie)
 	z.vaultResetAt = 0
 	z.vaultLockUntil = 0
 	z.headKill = false
+	z.damageBy = nil
 	setEyes(z, false)
 end
 
@@ -2457,6 +2459,7 @@ export type Impact = {
 	heavy: boolean?, -- тяжёлый удар (дробь, кувалда, топор): смерть с оторванными конечностями
 	power: number? , -- сила удара для анимации реакции (1 — обычная)
 	melee: boolean?, -- удар холодным оружием (по боссу во второй фазе проходит только он)
+	noCredit: boolean?, -- турели и оборудование: урон не идёт в зачёт босса для рейтинга
 }
 
 -- Урон по зомби (только сервер). Возвращает: нанесён ли урон, убит ли.
@@ -2467,6 +2470,11 @@ function ZombieService.damage(model: Model, amount: number, attacker: Player?, i
 	end
 	if z.phase2 and not (impact and impact.melee) then
 		return false, false -- вторая фаза финального босса: огнестрел, турели, проволока и машины не берут
+	end
+	if attacker and not (impact and impact.noCredit) and WaveMath.isBossType(z.def.id) then
+		local by = z.damageBy or {}
+		z.damageBy = by
+		by[attacker] = (by[attacker] or 0) + math.min(amount, math.max(z.hp, 0))
 	end
 	z.hp -= amount
 	z.model:SetAttribute("Hp", math.max(0, z.hp))

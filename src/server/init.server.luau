@@ -244,7 +244,6 @@ local function startMatch()
 	if testStandsOn then
 		buildTestStands(map.playerSpawn)
 	end
-
 	print("[NightOfTheDead] server started, location: " .. first.name)
 end
 

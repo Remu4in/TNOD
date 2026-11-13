@@ -568,7 +568,7 @@ local function onTurretFire(player: Player)
 			local kind = ZombieService.partKind(result.Instance :: BasePart)
 			local mult = if isHead then Config.Economy.HeadshotMultiplier elseif kind == "Arm" or kind == "Leg" then Config.Economy.LimbMultiplier else 1
 			local dmg = cfg.damage * mult
-			local applied, killed = ZombieService.damage(zombie, dmg, player, { dir = dir, push = 3, stagger = 0.1, part = result.Instance :: BasePart, power = 0.5 })
+			local applied, killed = ZombieService.damage(zombie, dmg, player, { dir = dir, push = 3, stagger = 0.1, part = result.Instance :: BasePart, power = 0.5, noCredit = true })
 			if applied then
 				EconomyService.add(player, Config.Economy.CoinsPerHit)
 				Remotes.get("HitFeedback"):FireClient(player, result.Position, math.floor(dmg + 0.5), killed, isHead)

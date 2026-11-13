@@ -13,6 +13,9 @@ local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local Config = require(Shared:WaitForChild("Config"))
+local Loadout = require(Shared:WaitForChild("Loadout"))
+local WeaponIcon = require(script.Parent:WaitForChild("WeaponIcon"))
 
 local LobbyController = {}
 
@@ -536,11 +539,130 @@ function LobbyController.start()
 	backBtn.TextSize = 28
 	backBtn.Size, backBtn.Position = UDim2.new(1, 0, 0, 62), UDim2.new(0, 0, 1, -76)
 
+	-- ===== Стартовый набор (план релиза 2026-11-11): своё оружие и холодное; купленное и выпавшее из кейсов — навсегда =====
+	local loadWin, loadScale, loadBody = window(gui, "Loadout", 800, 500, Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.5))
+	table.insert(rescale, loadScale)
+	pad(loadBody, 18)
+	local loadTitle = label(loadBody, "STARTING LOADOUT", 30, C.gold, HEAD)
+	loadTitle.Size = UDim2.new(1, -50, 0, 36)
+	local loadHint = label(loadBody, "L / X — close · click a card to equip · weapons from cases and the store are yours forever", 15, C.dim, BODY)
+	loadHint.Size, loadHint.Position = UDim2.new(1, -50, 0, 18), UDim2.fromOffset(0, 38)
+	local loadClose = button(loadBody, "X", C.button, function()
+		loadWin.Visible = false
+	end)
+	loadClose.Size, loadClose.Position = UDim2.fromOffset(36, 36), UDim2.new(1, -36, 0, 0)
+	-- ряд карточек: 3D-иконка (как в магазине), название и плашка состояния; листается вбок
+	local function section(y: number, text: string): ScrollingFrame
+		local l = label(loadBody, text, 18, C.dim, BODY)
+		l.Size, l.Position = UDim2.new(1, 0, 0, 22), UDim2.fromOffset(0, y)
+		local list = mk("ScrollingFrame", {
+			Size = UDim2.new(1, 0, 0, 170), Position = UDim2.fromOffset(0, y + 26), BackgroundTransparency = 1, BorderSizePixel = 0,
+			ScrollBarThickness = 6, ScrollingDirection = Enum.ScrollingDirection.X, CanvasSize = UDim2.new(),
+			AutomaticCanvasSize = Enum.AutomaticSize.X,
+		}, loadBody)
+		mk("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+		mk("UIPadding", { PaddingLeft = UDim.new(0, 2), PaddingTop = UDim.new(0, 2) }, list)
+		return list
+	end
+	local gunList = section(64, "WEAPON (+ Pistol; ammo is bought in the shop)")
+	local meleeList = section(270, "MELEE (always on key 3)")
+	local function has(perk: string): boolean
+		return player:GetAttribute("Has_" .. perk) == true
+	end
+	-- state: "on" — выбрано, "pick" — можно выбрать, "locked" — нет у игрока (из кейса или магазина)
+	local function card(list: ScrollingFrame, order: number, iconId: string, name: string, state: string, onPick: () -> ())
+		local c = mk("TextButton", {
+			LayoutOrder = order, Size = UDim2.fromOffset(150, 160), BackgroundColor3 = C.panel2, AutoButtonColor = false,
+			BorderSizePixel = 0, Text = "", Active = state ~= "locked", SelectionImageObject = selection,
+		}, list)
+		corner(c, 10)
+		stroke(c, if state == "on" then C.gold else Color3.new(1, 1, 1), if state == "on" then 2 else 1, if state == "on" then 0 else 0.85)
+		local icon = WeaponIcon.make(c, iconId, UDim2.fromOffset(6, 6), UDim2.new(1, -12, 0, 92))
+		icon.BackgroundColor3 = C.row
+		icon.ImageTransparency = if state == "locked" then 0.65 else 0
+		corner(icon, 8)
+		local n = label(c, name, 16, if state == "locked" then C.dim else C.text, BODY)
+		n.Size, n.Position = UDim2.new(1, -12, 0, 20), UDim2.fromOffset(6, 102)
+		n.TextTruncate = Enum.TextTruncate.AtEnd
+		local tag = label(c, if state == "on" then "EQUIPPED" elseif state == "pick" then "SELECT" else "LOCKED", 15,
+			if state == "locked" then C.dim else C.text, BODY, Enum.TextXAlignment.Center)
+		tag.BackgroundTransparency = 0
+		tag.BackgroundColor3 = if state == "on" then C.good elseif state == "pick" then C.button else C.dark
+		tag.Size, tag.Position = UDim2.new(1, -12, 0, 26), UDim2.new(0, 6, 1, -32)
+		corner(tag, 6)
+		if state == "pick" then
+			c.Activated:Connect(onPick)
+		end
+	end
+	local function renderLoadout()
+		for _, list in { gunList, meleeList } do
+			for _, ch in list:GetChildren() do
+				if ch:IsA("GuiButton") then
+					ch:Destroy()
+				end
+			end
+		end
+		local gun = (player:GetAttribute("LoadoutGun") :: string?) or ""
+		local melee = (player:GetAttribute("LoadoutMelee") :: string?) or Loadout.DefaultMelee
+		local ownGuns, ownMelee = Loadout.guns(has), Loadout.melee(has)
+		card(gunList, 0, "Pistol", "Pistol only", if gun == "" then "on" else "pick", function()
+			Remotes.get("SetLoadout"):FireServer("", melee)
+		end)
+		card(meleeList, 0, Loadout.DefaultMelee, Config.Weapons[Loadout.DefaultMelee].name, if melee == Loadout.DefaultMelee then "on" else "pick", function()
+			Remotes.get("SetLoadout"):FireServer(gun, Loadout.DefaultMelee)
+		end)
+		-- сначала своё, потом закрытое
+		local order = 0
+		for pass = 1, 2 do
+			for _, id in Loadout.all() do
+				local def = Config.Weapons[id]
+				local isMelee = def.melee == true
+				local owned = table.find(if isMelee then ownMelee else ownGuns, id) ~= nil
+				if owned == (pass == 1) then
+					order += 1
+					local picked = if isMelee then melee == id else gun == id
+					card(if isMelee then meleeList else gunList, order, id, def.name, if not owned then "locked" elseif picked then "on" else "pick", function()
+						if isMelee then
+							Remotes.get("SetLoadout"):FireServer(gun, id)
+						else
+							Remotes.get("SetLoadout"):FireServer(id, melee)
+						end
+					end)
+				end
+			end
+		end
+	end
+	player.AttributeChanged:Connect(function(name: string)
+		if loadWin.Visible and (name == "LoadoutGun" or name == "LoadoutMelee" or string.sub(name, 1, 4) == "Has_") then
+			renderLoadout()
+		end
+	end)
+	local function toggleLoadout()
+		if loadWin.Visible then
+			loadWin.Visible = false
+			return
+		end
+		renderLoadout()
+		loadWin.Visible = true
+		popIn(loadWin, loadScale, uiScale())
+	end
+	local loadBtn = button(gui, "LOADOUT [L]", C.button, toggleLoadout)
+	loadBtn.Size, loadBtn.Position, loadBtn.TextSize = UDim2.fromOffset(160, 40), UDim2.fromOffset(12, 96), 20
+	-- в лобби мышь привязана к камере (вид от первого лица): окно открывается клавишей L, курсор освобождает Modal-кнопка ниже
+	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
+		if processed or input.KeyCode ~= Enum.KeyCode.L then
+			return
+		end
+		if ReplicatedStorage:GetAttribute("Mode") == "lobby" and gui.Enabled and loadBtn.Visible then
+			toggleLoadout()
+		end
+	end)
+
 	-- Свободная мышь: пока открыто окно, Modal-кнопка отпускает курсор (иначе в режиме от первого лица он привязан к камере)
 	local modalBtn = mk("TextButton", { Name = "ModalCursor", Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1, Text = "", Modal = false }, gui)
 	task.spawn(function()
 		while true do
-			local want = gui.Enabled and (setupWin.Visible or teamWin.Visible or results.Visible)
+			local want = gui.Enabled and (setupWin.Visible or teamWin.Visible or results.Visible or loadWin.Visible)
 			if modalBtn.Modal ~= want then
 				modalBtn.Modal = want
 			end
@@ -573,6 +695,10 @@ function LobbyController.start()
 		gui.Enabled = on or results.Visible
 		stats.Visible = on
 		tip.Visible = on
+		loadBtn.Visible = on
+		if not on then
+			loadWin.Visible = false
+		end
 		toasts.Visible = on
 		if not on then
 			hideZoneWindows()
