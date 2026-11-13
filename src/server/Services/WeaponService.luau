@@ -910,6 +910,7 @@ end
 
 local CaseRules = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("CaseRules"))
 local Loadout = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Loadout"))
+local DataService = require(script.Parent:WaitForChild("DataService"))
 
 -- Оружие, полученное за донат: взять бесплатно, с полным магазином и без запаса (патроны платные, у стартового пистолета бесконечные)
 local function ownsDonated(player: Player, weaponId: string): boolean
@@ -1105,8 +1106,15 @@ function WeaponService.init(map: Types.MapInfo)
 				end
 			end
 			if fresh then
+				-- профиль грузится параллельно со спавном: ждём его (до 10 с), иначе выбранное в лобби не попадёт в матч
+				local waitStart = os.clock()
+				while player.Parent and player:GetAttribute("ProfileReady") ~= true and os.clock() - waitStart < 10 do
+					task.wait(0.2)
+				end
+				local perks = DataService.perks(player)
+				local now = os.time()
 				local gun, melee = Loadout.pick(player:GetAttribute("LoadoutGun"), player:GetAttribute("LoadoutMelee"), function(perk: string): boolean
-					return player:GetAttribute("Has_" .. perk) == true
+					return (perks ~= nil and (perks[perk] or 0) > now) or player:GetAttribute("Has_" .. perk) == true
 				end)
 				if gun and not inv[gun] then
 					local def = Config.Weapons[gun]

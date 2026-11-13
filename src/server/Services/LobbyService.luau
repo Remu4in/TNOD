@@ -495,14 +495,15 @@ local function onCmd(player: Player, cmd: unknown, arg: unknown)
 	end
 
 	if cmd == "open" or cmd == "config" then
-		if typeof(arg) == "table" and typeof((arg :: any).cutscenes) == "boolean" then
-			zoneCutscenes[idx] = (arg :: any).cutscenes
-		end
 		local size, access = readSettings(arg)
 		local res = LobbyRules.configure(zone, uid, size, access, L.ZoneMaxSize, t)
 		if not res.ok then
 			notify(player, res.reason or "Not allowed")
 			return
+		end
+		-- катсцены меняет только хост: configure выше уже проверил, что это он
+		if typeof(arg) == "table" and typeof((arg :: any).cutscenes) == "boolean" then
+			zoneCutscenes[idx] = (arg :: any).cutscenes
 		end
 		if cmd == "open" then
 			local opened = LobbyRules.open(zone, uid, t)

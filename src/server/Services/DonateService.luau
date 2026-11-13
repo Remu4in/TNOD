@@ -115,12 +115,13 @@ local function openCase(player: Player, case: any): boolean
 end
 
 -- Платные случайные предметы запрещены части игроков; не удалось проверить — в игре кейс закрыт
-local function checkPolicy(player: Player)
+local function checkPolicy(player: Player): boolean
 	local ok, info = pcall(function()
 		return PolicyService:GetPolicyInfoForPlayerAsync(player)
 	end)
 	local blocked = if ok then info.ArePaidRandomItemsRestricted == true else not RunService:IsStudio()
 	player:SetAttribute("CasesRestricted", if blocked then true else nil)
+	return blocked
 end
 
 local function onReceipt(info: any): Enum.ProductPurchaseDecision
@@ -130,14 +131,22 @@ local function onReceipt(info: any): Enum.ProductPurchaseDecision
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	if DataService.hasReceipt(player, info.PurchaseId) then
-		return Enum.ProductPurchaseDecision.PurchaseGranted -- уже выдано, ответ потерялся
+		-- уже выдано (ответ потерялся или прошлая запись не подтвердилась): засчитываем, только когда профиль записан
+		return if DataService.flush({ player }, 8) then Enum.ProductPurchaseDecision.PurchaseGranted else Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	-- окно покупки игрок может открыть и сам, минуя кнопку: запрет платных случайных предметов проверяем здесь.
+	-- Не выдаём — Roblox не завершит покупку и вернёт робуксы
+	if item.pool and checkPolicy(player) then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	local done = if item.pool then openCase(player, item) else grant(player, item.perk, item.days)
 	if not done then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	DataService.addReceipt(player, info.PurchaseId)
-	DataService.flush({ player }, 8)
+	if not DataService.flush({ player }, 8) then
+		return Enum.ProductPurchaseDecision.NotProcessedYet -- выдано в памяти; повтор попадёт в ветку hasReceipt и дождётся записи
+	end
 	notify(player, "Thank you! Purchased: " .. item.name, 5)
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
@@ -152,7 +161,7 @@ function DonateService.buy(player: Player, id: unknown)
 		return
 	end
 	if item.pool then
-		if player:GetAttribute("CasesRestricted") == true then
+		if checkPolicy(player) then
 			notify(player, "Cases are not available in your region")
 		elseif #casePool(player, item) == 0 then
 			notify(player, "You already own everything in this case")
