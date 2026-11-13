@@ -101,13 +101,13 @@ function EffectsController.start()
 			WeaponSfx.reload(weaponId, headPosition(who))
 		end
 	end)
-	Remotes.get("HitFeedback").OnClientEvent:Connect(function(pos: Vector3?, dmg: number, killed: boolean, headshot: boolean)
+	Remotes.get("HitFeedback").OnClientEvent:Connect(function(pos: Vector3?, dmg: number, killed: boolean, headshot: boolean, shotgun: boolean?)
 		-- маркер попадания у прицела (рисует HUDController): белый — обычное, жёлтый — голова, красный — убийство
 		local kind = if killed then "kill" elseif headshot then "head" else "hit"
 		player:SetAttribute("HitMark", kind .. "|" .. tostring(os.clock()))
 		if pos then
 			damageNumber(pos, dmg, killed, headshot)
-			WeaponSfx.hit(headshot, killed)
+			WeaponSfx.hit(headshot, killed, shotgun == true)
 			FxController.onHit(pos, dmg, killed, headshot)
 		end
 	end)

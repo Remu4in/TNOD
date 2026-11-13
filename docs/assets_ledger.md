@@ -97,3 +97,5 @@
 |---|---|---|---|
 | 91717148582484 | аптечка, автор E144_Gamer | 1 `Part` со `SpecialMesh`, `Camera`; 0 скриптов, 0 Remote, 0 StringValue | Взята деталь, `Camera` убрана → `Assets.Items.Medkit` |
 | 12269531805 | энергетик, автор joaqui1803 | 1 `MeshPart`; 0 скриптов, 0 Remote, 0 StringValue. На банке марка реального напитка (Monster) | Взята → `Assets.Items.EnergyDrink`; перед релизом решить про марку |
+| 111560665479428 | звук попадания по зомби «Gun Hit», автор patoprimordial (2026-11-13) | Audio, открытый, 0,41 с; скриптов в аудио нет | `Config.Sounds.hit` |
+| 138242013444402 | звук попадания дробью «gun hit3», автор tarvoski (2026-11-13) | Audio, открытый, 1,66 с; скриптов в аудио нет | `Config.Sounds.hitShotgun` |

@@ -372,7 +372,7 @@ local Weapons: { [string]: WeaponDef } = {
 	},
 	Shotgun = {
 		id = "Shotgun", name = "Shotgun", price = 750,
-		damage = 12, pellets = 6, spreadDeg = 7, fireRate = 1.2, automatic = false,
+		damage = 12, pellets = 6, spreadDeg = 11, fireRate = 1.2, automatic = false,
 		magSize = 6, reserve = 36, reloadTime = 2.2, range = 60,
 		color = Color3.fromRGB(110, 70, 40),
 	},
@@ -639,7 +639,9 @@ Config.Animations = {
 Config.Sounds = {
 	fire = "rbxassetid://3806566911",
 	reload = "rbxassetid://3821789416",
-	hit = "rbxasset://sounds/hit.wav", -- встроенный звук клиента (прежний 1489924400 удалён из Roblox)
+	hit = "rbxassetid://111560665479428", -- попадание по зомби («Gun Hit», patoprimordial, проверен 2026-11-13)
+	hitShotgun = "rbxassetid://138242013444402", -- попадание дробью («gun hit3», tarvoski, проверен 2026-11-13)
+	ping = "rbxasset://sounds/hit.wav", -- пуля о стену и прочее (встроенный звук клиента)
 	click = "rbxassetid://3909012115", -- сухой щелчок при пустом магазине
 	swing = "rbxasset://sounds/swordslash.wav", -- взмах ближнего боя (встроенный звук Roblox)
 }
@@ -654,6 +656,11 @@ local WeaponSounds: { [string]: WeaponSound } = {
 	Sniper = { fireVolume = 1.0, firePitch = 0.55, fireTrim = 1.4, reloadVolume = 0.9, reloadPitch = 0.7 },
 }
 Config.WeaponSounds = WeaponSounds
+
+-- Дробь (WeaponService): вблизи дробинка прошивает зомби и летит дальше, поэтому выстрел задевает несколько целей в конусе.
+-- coneRange — до какой дистанции от игрока (студы) дробинка проходит насквозь, pierce — сколько зомби максимум задевает одна дробинка,
+-- pierceFactor — урон по каждому следующему зомби (доля от предыдущего). Ширина конуса — spreadDeg дробовика.
+Config.Shotgun = { coneRange = 15, pierce = 3, pierceFactor = 0.7 }
 
 -- «Сочность» выстрела (клиентский FxController): отдача ствола (вдоль -Z рукояти, град.), толчок камеры, вспышка, гильзы
 local WeaponFx: { [string]: WeaponFxDef } = {
