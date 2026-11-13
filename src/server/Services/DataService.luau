@@ -214,6 +214,15 @@ local function lockFor(s: Session): Lock
 	return { jobId = game.JobId, at = os.time(), sid = s.sid }
 end
 
+local loadedHandler: ((Player) -> ())? = nil -- профиль загружен (донат: атрибуты прав); объявлен до publish, иначе publish видит пустой глобал
+
+-- Профиль прочитан из хранилища (или в Studio без хранилища): стартовый набор ждёт этого атрибута (WeaponService)
+local function markReady(s: Session)
+	if s.player.Parent then
+		s.player:SetAttribute("ProfileReady", true)
+	end
+end
+
 -- Атрибуты для HUD/лидерборда
 local function publish(s: Session)
 	if s.player.Parent then
@@ -227,8 +236,6 @@ local function publish(s: Session)
 		end
 	end
 end
-
-local loadedHandler: ((Player) -> ())? = nil -- профиль загружен (донат: атрибуты прав)
 
 local kick: (s: Session) -> ()
 
@@ -286,6 +293,7 @@ local function acquire(s: Session)
 	if not ok then
 		if RunService:IsStudio() then
 			warn("[DataService] profile not loaded, playing without saving: " .. s.player.Name)
+			markReady(s)
 		else
 			warn("[DataService] profile not loaded, retry in " .. LOCK_RETRY .. " s: " .. s.player.Name)
 			scheduleRetry(s)
@@ -300,11 +308,13 @@ local function acquire(s: Session)
 		s.canSave = true
 		s.retryCount = 0
 		publish(s)
+		markReady(s)
 	elseif seen then
 		-- занято (быстрый перезаход или краш сервера): показываем сохранённое + прибавку сессии, не пишем
 		s.profile = mergeSession(seen, s.profile, s.base)
 		s.base = seen
 		publish(s)
+		markReady(s)
 		scheduleRetry(s)
 	end
 end
@@ -420,17 +430,23 @@ end
 
 -- Записать профили игроков и дождаться конца записи (перед телепортом: новый сервер получит свежие данные, а блокировку
 -- снимет PlayerRemoving уже на уходе). Не ждёт дольше timeout секунд; без блокировки (профиль занят) просто не пишет.
-function DataService.flush(players: { Player }, timeout: number)
+-- Возвращает true, если у всех запись подтверждена (донат: без подтверждения покупка не засчитывается).
+function DataService.flush(players: { Player }, timeout: number): boolean
 	local deadline = os.clock() + timeout
 	for _, p in players do
 		requestSave(p)
 	end
+	local saved = true
 	for _, p in players do
 		local s = sessions[p]
 		while s and (s.busy or s.wantSave or s.wantAcquire) and os.clock() < deadline do
 			task.wait(0.1)
 		end
+		if not s or not s.canSave or s.busy or s.wantSave then
+			saved = false
+		end
 	end
+	return saved
 end
 
 function DataService.setLoadedHandler(handler: (Player) -> ())
