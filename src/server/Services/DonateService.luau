@@ -14,6 +14,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RateLimit = require(Shared:WaitForChild("RateLimit"))
 local CaseRules = require(Shared:WaitForChild("CaseRules"))
+local Loadout = require(Shared:WaitForChild("Loadout"))
 local DataService = require(script.Parent:WaitForChild("DataService"))
 local RatingService = require(script.Parent:WaitForChild("RatingService"))
 
@@ -203,6 +204,19 @@ function DonateService.init()
 	require(script.Parent:WaitForChild("WeaponIconService")).init()
 	MarketplaceService.ProcessReceipt = onReceipt
 	Remotes.get("DonateBuy").OnServerEvent:Connect(DonateService.buy)
+	-- стартовый набор: только в лобби, только своё (Shared/Loadout)
+	Remotes.get("SetLoadout").OnServerEvent:Connect(function(player: Player, gun: unknown, melee: unknown)
+		if game:GetService("ReplicatedStorage"):GetAttribute("Mode") ~= "lobby" or not RateLimit.allow(player, "SetLoadout", 0.3) then
+			return
+		end
+		local function has(perk: string): boolean
+			return player:GetAttribute("Has_" .. perk) == true
+		end
+		if typeof(gun) ~= "string" or typeof(melee) ~= "string" or not Loadout.validGun(gun, has) or not Loadout.validMelee(melee, has) then
+			return
+		end
+		DataService.setLoadout(player, gun, melee)
+	end)
 	DataService.setLoadedHandler(function(player: Player)
 		publish(player)
 		task.spawn(checkPolicy, player)

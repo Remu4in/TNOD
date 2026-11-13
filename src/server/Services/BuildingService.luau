@@ -102,7 +102,8 @@ local function applyBonus(id: string)
 	end
 end
 
-local onUnlocked: ((Player, string) -> ())? = nil -- кто внёс последний взнос (для рейтинга)
+local onUnlocked: ((Player, string) -> ())? = nil -- кто внёс последний взнос
+local onContributed: ((Player, number, number) -> ())? = nil -- каждый взнос: игрок, сумма, стоимость здания (для рейтинга)
 
 local function unlock(id: string)
 	local def = defs[id]
@@ -128,6 +129,9 @@ local function contribute(player: Player, id: string)
 		return
 	end
 	funded[id] = (funded[id] or 0) + amount
+	if onContributed then
+		(onContributed :: (Player, number, number) -> ())(player, amount, def.cost)
+	end
 	if funded[id] >= def.cost then
 		unlock(id)
 		if onUnlocked then
@@ -168,6 +172,10 @@ local function onSpot(player: Player, id: string, spot: Types.Spot)
 end
 
 -- Новый раунд (и новая локация): всё закрыто, кроме бесплатных зданий
+function BuildingService.setContributeHandler(handler: (Player, number, number) -> ())
+	onContributed = handler
+end
+
 function BuildingService.setUnlockHandler(handler: (Player, string) -> ())
 	onUnlocked = handler
 end

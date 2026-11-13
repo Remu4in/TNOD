@@ -221,18 +221,76 @@ local function compactBackpack(player: Player)
 	table.sort(tools, function(a: Tool, b: Tool)
 		return (a:GetAttribute("Order") :: number) < (b:GetAttribute("Order") :: number)
 	end)
+	-- холодное оружие всегда в слоте MeleeSlot (план релиза 2026-11-11): до него — огнестрел и прочее по порядку, пустые места
+	-- держат временные заглушки (хотбар Roblox оставляет слот пустым, когда инструмент убран), после — остальное
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local held = char and char:FindFirstChildOfClass("Tool")
+	local heldId = if held then held:GetAttribute("WeaponId") else nil
+	if held and hum then
+		hum:UnequipTools()
+		stampTool(held)
+		table.insert(tools, held)
+		table.sort(tools, function(a: Tool, b: Tool)
+			return (a:GetAttribute("Order") :: number) < (b:GetAttribute("Order") :: number)
+		end)
+	end
+	local melee: Tool? = nil
+	local others: { Tool } = {}
+	for _, t in tools do
+		local id = t:GetAttribute("WeaponId")
+		local def = if typeof(id) == "string" then Config.Weapons[id] else nil
+		if def and def.melee and not melee then
+			melee = t
+		else
+			table.insert(others, t)
+		end
+	end
+	local layout: { Tool } = {}
+	local fillers: { Tool } = {}
+	if melee then
+		for i = 1, Config.Inventory.MeleeSlot - 1 do
+			local t = others[i]
+			if not t then
+				t = Instance.new("Tool")
+				t.Name = " "
+				t.RequiresHandle = false
+				t.CanBeDropped = false
+				t:SetAttribute("Filler", true)
+				table.insert(fillers, t)
+			end
+			table.insert(layout, t)
+		end
+		table.insert(layout, melee)
+		for i = Config.Inventory.MeleeSlot, #others do
+			table.insert(layout, others[i])
+		end
+	else
+		layout = others
+	end
 	for _, t in tools do
 		t.Parent = nil
 	end
 	-- хотбар убирает слоты не мгновенно, а добавляемые одним пакетом инструменты занимают слоты в произвольном порядке (проверено в Studio):
 	-- поэтому пауза после снятия и возврат по одному
 	task.wait(0.4)
-	for _, t in tools do
+	for _, t in layout do
 		if not backpack.Parent then
 			break
 		end
 		t.Parent = backpack
 		task.wait(0.1)
+	end
+	for _, f in fillers do
+		f:Destroy()
+	end
+	if heldId and hum and hum.Parent then
+		for _, t in backpack:GetChildren() do
+			if t:IsA("Tool") and t:GetAttribute("WeaponId") == heldId then
+				hum:EquipTool(t)
+				break
+			end
+		end
 	end
 	compacting[player] = nil
 	if compactAgain[player] then
@@ -292,6 +350,61 @@ local function grant(player: Player, weaponId: string)
 	end
 	inv[weaponId] = { mag = magCap(def, player), reserve = reserveCap(def), lastShot = 0, reloadingUntil = 0, burst = 0 }
 	giveTool(player, weaponId)
+end
+
+-- Холодное оружие (план релиза 2026-11-11): у игрока всегда одно, в слоте MeleeSlot. Новое заменяет старое, старое до конца раунда
+-- бесплатно в магазине (атрибут FreeMelee — id через запятую, его читает ShopController)
+local freeMelee: { [Player]: { [string]: boolean } } = {}
+
+local function publishFreeMelee(player: Player)
+	local list: { string } = {}
+	for id in freeMelee[player] or {} do
+		table.insert(list, id)
+	end
+	table.sort(list)
+	player:SetAttribute("FreeMelee", table.concat(list, ","))
+end
+
+local function meleeOf(player: Player): string?
+	for id in owned[player] or {} do
+		local def = Config.Weapons[id]
+		if def and def.melee then
+			return id
+		end
+	end
+	return nil
+end
+
+local function removeTools(player: Player, weaponId: string)
+	for _, container in { player:FindFirstChildOfClass("Backpack"), player.Character } do
+		if container then
+			for _, t in (container :: Instance):GetChildren() do
+				if t:IsA("Tool") and t:GetAttribute("WeaponId") == weaponId then
+					t:Destroy()
+				end
+			end
+		end
+	end
+end
+
+local function replaceMelee(player: Player, weaponId: string)
+	local old = meleeOf(player)
+	if old == weaponId then
+		return
+	end
+	if old then
+		(owned[player] :: any)[old] = nil
+		removeTools(player, old)
+		local free = freeMelee[player] or {}
+		freeMelee[player] = free
+		free[old] = true
+	end
+	if freeMelee[player] then
+		(freeMelee[player] :: any)[weaponId] = nil
+	end
+	publishFreeMelee(player)
+	grant(player, weaponId)
+	task.defer(compactBackpack, player)
 end
 
 local function equippedWeapon(player: Player): (string?, Tool?)
@@ -585,6 +698,17 @@ local function onWallBuy(player: Player, weaponId: string)
 		Remotes.get("Notify"):FireClient(player, "Already owned", 1.5)
 		return
 	end
+	if def.melee then
+		-- холодное заменяет то, что в руках на слоте MeleeSlot; места в инвентаре не занимает. Прежнее — бесплатно до конца раунда
+		local free = freeMelee[player] ~= nil and (freeMelee[player] :: any)[weaponId] == true
+		if free or EconomyService.trySpend(player, def.price) then
+			replaceMelee(player, weaponId)
+			Remotes.get("Notify"):FireClient(player, (if free then "Taken: " else "Purchased: ") .. def.name, 1.5)
+		else
+			Remotes.get("Notify"):FireClient(player, "Not enough coins", 1.5)
+		end
+		return
+	end
 	if inv and inv[weaponId] then
 		-- уже есть — пополнение патронов за часть цены
 		local price = math.floor(def.price * Config.Economy.RefillPriceFactor)
@@ -750,6 +874,10 @@ local function onDrop(player: Player)
 	if not weaponId or not tool or not inv or not inv[weaponId] or not head then
 		return
 	end
+	if Config.Weapons[weaponId].melee then
+		Remotes.get("Notify"):FireClient(player, "Melee weapons can't be dropped: swap them in the shop or your loadout", 2)
+		return
+	end
 	local st = inv[weaponId]
 	inv[weaponId] = nil
 	tool:Destroy()
@@ -759,6 +887,7 @@ local function onDrop(player: Player)
 end
 
 local CaseRules = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("CaseRules"))
+local Loadout = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Loadout"))
 
 -- Оружие, полученное за донат: взять бесплатно, с полным магазином и без запаса (патроны платные, у стартового пистолета бесконечные)
 local function ownsDonated(player: Player, weaponId: string): boolean
@@ -774,11 +903,16 @@ local function onFreeTake(player: Player, weaponId: string)
 		Remotes.get("Notify"):FireClient(player, "The shop is closed at night", 1.5)
 		return
 	end
+	local def = Config.Weapons[weaponId]
+	if def.melee then
+		replaceMelee(player, weaponId)
+		Remotes.get("Notify"):FireClient(player, "Taken: " .. def.name, 1.5)
+		return
+	end
 	if InventoryService.isFull(player) then
 		Remotes.get("Notify"):FireClient(player, string.format("Inventory full (%d items): drop something first", Config.Inventory.MaxItems), 2)
 		return
 	end
-	local def = Config.Weapons[weaponId]
 	giveWithAmmo(player, weaponId, magCap(def, player), if def.reserve < 0 then def.reserve else 0)
 	Remotes.get("Notify"):FireClient(player, "Taken: " .. def.name, 1.5)
 end
@@ -806,7 +940,9 @@ local function onShopBuy(player: Player, weaponId: unknown)
 	if Config.DonateOnly[weaponId] and not donated and not Config.Explore and not point.free then
 		return -- донатное оружие выдаётся только получившим его
 	end
-	if Config.Explore or point.free then
+	if (Config.Explore or point.free) and Config.Weapons[weaponId].melee then
+		replaceMelee(player, weaponId)
+	elseif Config.Explore or point.free then
 		grant(player, weaponId)
 	elseif donated then
 		onFreeTake(player, weaponId)
@@ -878,7 +1014,10 @@ function WeaponService.refillAll(player: Player): boolean
 end
 
 function WeaponService.give(player: Player, weaponId: string)
-	if Config.Weapons[weaponId] then
+	local def = Config.Weapons[weaponId]
+	if def and def.melee then
+		replaceMelee(player, weaponId)
+	elseif def then
 		grant(player, weaponId)
 	end
 end
@@ -887,6 +1026,8 @@ end
 function WeaponService.resetRound(players: { Player })
 	for _, p in players do
 		owned[p] = {}
+		freeMelee[p] = {}
+		publishFreeMelee(p)
 	end
 end
 
@@ -932,14 +1073,33 @@ function WeaponService.init(map: Types.MapInfo)
 				inv = {}
 				owned[player] = inv
 			end
+			-- стартовый набор (план релиза 2026-11-11): пистолет, оружие из набора (своё навсегда — полный магазин, запас платный)
+			-- и выбранное холодное. Набор выбирается в лобби и лежит в профиле (атрибуты LoadoutGun, LoadoutMelee)
+			local fresh = next(inv) == nil
 			for _, weaponId in Config.StartWeapons do
-				if not inv[weaponId] then
+				local def = Config.Weapons[weaponId]
+				if def and not def.melee and not inv[weaponId] then
 					grant(player, weaponId)
 				end
+			end
+			if fresh then
+				local gun, melee = Loadout.pick(player:GetAttribute("LoadoutGun"), player:GetAttribute("LoadoutMelee"), function(perk: string): boolean
+					return player:GetAttribute("Has_" .. perk) == true
+				end)
+				if gun and not inv[gun] then
+					local def = Config.Weapons[gun]
+					giveWithAmmo(player, gun, magCap(def, player), if def.reserve < 0 then def.reserve else 0)
+				end
+				if not meleeOf(player) then
+					grant(player, melee)
+				end
+			elseif not meleeOf(player) then
+				grant(player, "Knife")
 			end
 			for weaponId in inv do
 				giveTool(player, weaponId)
 			end
+			compactBackpack(player)
 		end)
 	end
 	local function hook(player: Player)

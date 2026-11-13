@@ -60,12 +60,7 @@ local function applyDonate(p: Player)
 	once("vip", function()
 		EconomyService.applyStartCoins(p, Config.Donate.Vip.StartCoins)
 	end)
-	once("karambit", function()
-		WeaponService.give(p, "Karambit")
-	end)
-	once("balisong", function()
-		WeaponService.give(p, "Balisong")
-	end)
+	-- Karambit и Balisong больше не выдаются сами: их ставят в стартовый набор в лобби или берут бесплатно в магазине (план релиза 2026-11-11)
 	once("driver", function()
 		BuildingService.unlockFree("Garage")
 	end)
@@ -433,7 +428,7 @@ local function night()
 	MissionService.finish()
 	if not gameOver then
 		local cleared = missionDone or ZombieService.remaining() == 0
-		RatingService.onNightEnd(wave, cleared, (os.clock() - nightStart) / nightLength)
+		RatingService.onNightEnd(wave, cleared, missionDone == true, (os.clock() - nightStart) / nightLength)
 		-- награда за миссию (единственный доход монет): личная часть каждому + командная поровну (WaveMath.playerReward); стоящему на ногах — целиком,
 		-- лежащему — DownedRewardFactor от неё; провал миссии — доля MissionFailShare; штраф за каждую потерю — доля того, что каждый заработал за волну
 		local E = Config.Economy
@@ -574,12 +569,13 @@ function RoundService.onZombieKilled(player: Player?, zombie: any)
 		ScoreService.recordKill(player, zombie.def.points + bonusPoints)
 		RatingService.onKill(player, zombie)
 	end
+	RatingService.onBossKill(player, zombie)
 end
 
 function RoundService.start(map: Types.MapInfo)
 	currentMap = map
-	BuildingService.setUnlockHandler(function(player: Player, _id: string)
-		RatingService.onBuildingOpened(player)
+	BuildingService.setContributeHandler(function(player: Player, amount: number, cost: number)
+		RatingService.onContribute(player, amount, cost)
 	end)
 	Remotes.get("VoteDay").OnServerEvent:Connect(function(player: Player)
 		if ReplicatedStorage:GetAttribute("Phase") ~= "Day" or not RateLimit.allow(player, "VoteDay", 0.4) then

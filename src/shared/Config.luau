@@ -136,10 +136,10 @@ Config.Round = {
 	-- и с уровнем угрозы (Config.Threat.Tiers[].alive на игрока), затем с каждой минутой ночи на AliveStep, но не выше AliveCaps; всего ≤ AliveHardCap.
 	-- плейтест на 4 игроках (2026-11-05): 60–80 живых уже на 1-й минуте — база в 1,5 раза меньше, рост по минутам в 2 раза меньше и только с 3-й минуты (121 с),
 	-- потолок команды — по 15 на игрока и не выше ни на каких ночах (конвой тоже)
-	AliveBase = { 7, 10, 15, 20, 27, 33 } :: { number },
+	AliveBase = { 8, 11, 17, 22, 30, 36 } :: { number }, -- +10 % (план релиза 2026-11-11; было 7, 10, 15, 20, 27, 33)
 	AliveStep = { 2.5, 3, 4, 5, 5, 5 } :: { number },
 	AliveStepFrom = 3, -- с этой минуты ночи начинается рост
-	AliveCaps = { 15, 30, 45, 60, 75, 90 } :: { number },
+	AliveCaps = { 17, 33, 50, 66, 83, 99 } :: { number }, -- +10 % (было 15, 30, 45, 60, 75, 90)
 	AliveNightGrowth = 0.6,
 	ConvoyAliveMul = 1.3, -- на конвойных ночах (escort) живых зомби больше: колонна из нескольких машин
 	AliveWaves = 20,
@@ -160,6 +160,7 @@ Config.LocationNights = 10
 -- на базе стоят телепорт-площадки к каждой локации. Выключить (false) — обычная игра на карте City.
 Config.Explore = false -- true: режим осмотра без раундов
 Config.TestStands = false -- стенды у спавна (только Studio): тестовое оружие, выбор и пропуск ночи, +10 000 монет; в релизе false
+Config.KnifeStand = true -- тумба «KNIVES» у спавна: каждое нажатие даёт следующее холодное оружие (проверка анимаций, план релиза A11). Только Studio
 -- Донатный магазин на базе (Services/BaseShopService): центр на базе между «Military Carport Garage Building House» (89, 498) и APC (78, 393), Rot — поворот (180: прилавки смотрят на запад, внутрь базы)
 Config.BaseShop = { Center = Vector3.new(78, 0, 432), Rot = 180 }
 Config.TentMarkRadius = 250 -- метки на военные палатки каждое утро в этом радиусе, студов (1 стад ≈ 0,28 м)
@@ -336,8 +337,8 @@ Config.Economy = {
 	-- Цель на игрока (вдвоём): к 15-й ночи около 6500 монет с учётом стартовых 500 (до 7200 с перками «Looter» на максимуме), к 20-й около 9700 (до 11 300).
 	-- Провал миссии — доля MissionFailShare (0: награды нет). Лежащему на конец ночи — DownedRewardFactor от награды.
 	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту ночь.
-	MissionPersonalTotal = 14500, -- ×2 по плейтесту 2026-11-05: «ни на что почти не хватило»
-	MissionTeamTotal = 12000,
+	MissionPersonalTotal = 11600, -- −20 % (план релиза 2026-11-11; было 14500); ×2 по плейтесту 2026-11-05: «ни на что почти не хватило»
+	MissionTeamTotal = 9600, -- −20 % (было 12000)
 	MissionGrowth = 0.10,
 	MissionRewardWaves = 20,
 	TeamShareMinPlayers = 1, -- командная часть делится на число игроков (соло получает всю)
@@ -839,6 +840,17 @@ Config.MeleeCombo = {
 	Katana = { window = 0.9, steps = { { style = "katana", time = 0.3 }, { style = "katanaL", time = 0.3 }, { style = "katanaUp", time = 0.34 } } },
 	Bat = { window = 1.3, steps = { { style = "side", time = 0.5 }, { style = "sideL", time = 0.5 } } },
 } :: { [string]: { window: number, steps: { ComboStep } } }
+-- Ножи (2026-11-11, как в CS2): быстрые серии из разных ударов, чтобы нож не повторял одно движение. Темп (fireRate) прежний.
+do
+	local KNIFE = { window = 0.9, steps = { { style = "knifeR", time = 0.24 }, { style = "knifeL", time = 0.24 }, { style = "knifeStab", time = 0.24 } } }
+	for _, id in { "Knife", "BowieKnife", "KABAR", "Tanto", "M9Bayonet" } do
+		Config.MeleeCombo[id] = KNIFE
+	end
+	Config.MeleeCombo.Stiletto = { window = 0.8, steps = { { style = "jab", time = 0.2 }, { style = "jabL", time = 0.2 } } }
+	Config.MeleeCombo.Kukri = { window = 1.0, steps = { { style = "chop", time = 0.3 }, { style = "knifeL", time = 0.26 } } }
+	Config.MeleeCombo.Karambit = { window = 0.8, steps = { { style = "swipe", time = 0.2 }, { style = "swipeL", time = 0.2 } } }
+	Config.MeleeCombo.Balisong = { window = 0.9, steps = { { style = "knifeStab", time = 0.22 }, { style = "knifeR", time = 0.24 } } }
+end
 
 if Config.WeaponModels.Karambit then
 	Config.WeaponModels.Karambit.grip = Vector3.new(0, -0.47, 0.78) * (MELEE_LENGTH.Karambit / 1.13) + Vector3.new(0, 0.1, -0.5) -- кольцо у кисти, но лезвие выдвинуто вперёд, чтобы не пряталось за кулаком
@@ -1114,7 +1126,7 @@ Config.Waves = {
 	JitterPct = 10,
 	CapSolo = 80,
 	CapPerExtraPlayer = 0.45,
-	CountMul = 1 / 1.5, -- всего зомби за ночь в 1,5 раза меньше кривой выше (плейтест 2026-11-05)
+	CountMul = 1.1 / 1.5, -- +10 % (план релиза 2026-11-11); всего зомби за ночь в 1,5 раза меньше кривой выше (плейтест 2026-11-05)
 	HpGrowthPerWave = 0, -- было 0,12: здоровье не растёт, прогрессия — числом зомби
 	DamageGrowthPerWave = 0.02, -- было 0,03: при плоском здоровье урон к 20-й ночи ×1,38
 	SpeedGrowthPerWave = 0.01,
@@ -1357,6 +1369,7 @@ Config.MissionKillsFloor = 5 -- нижняя граница убийств по�
 Config.MissionReturnTeam = false -- true: с рассветом команду переносит к магазину (по решению Руслана 2026-10-26 — выключено: не телепортировать на рассвете)
 -- Военная база (Workspace.Base: стены x −159…107, ворота у z = 300, дальняя стена z ≈ 580): с началом ночи всех, кто внутри, выталкивает к точке сбора
 -- игроков (BuildingService.expelFromBase, по образцу магазина). locationId — локация, для которой верны границы; maxY — выше (вышки, вертолёты) не считаем
+Config.TentSpawnOffset = Vector3.new(0, 0, -22) -- старт игроков: от военной палатки на базе к воротам (Locations/Custom, план релиза 2026-11-11)
 Config.BaseZone = { locationId = "Custom", minX = -161, maxX = 109, minZ = 300, maxZ = 580, maxY = 60 }
 -- Метки миссий (MissionService.makeBeacon): светящийся полупрозрачный круг на земле + метка в HUD с расстоянием (столбы убраны по просьбе Руслана 2026-10-26).
 -- ScoutPointRadius — радиус круга контрольной точки = радиус засчитывания; PlaceBeacon — круг места миссии (подпись зависит от типа миссии)
@@ -1468,13 +1481,16 @@ Config.Missions = {
 } :: { [number]: MissionDef }
 
 -- Рейтинговые очки (не монеты): копятся за раунд, идут в профиль и в глобальный лидерборд (RatingService)
+-- План релиза 2026-11-11: убийство 10 (было 5), за миссию, лежащему на рассвете — доля DownedFactor, здание — за каждый взнос, босс — по урону
 Config.Rating = {
-	Kill = 5,
+	Kill = 10,
 	HeadshotKill = 5, -- добавка за убийство выстрелом в голову
-	BossKill = 100,
-	BuildingOpened = 50, -- тому, кто внёс последний взнос
+	BossKill = 100, -- тому, кто нанёс боссу больше урона (турели и оборудование не считаются); нет урона игроков — тому, кто добил
+	BuildingPool = 60, -- за здание всего: каждый взнос даёт долю по сумме взноса (взнос 25 % стоимости — 15 очков)
 	NightSurvived = 30, -- × номер волны, каждому, кто дожил до конца ночи
-	ClearBonus = 20, -- × номер волны × (1 − доля ночи, которая ушла на зачистку): быстрая зачистка
+	MissionDone = 20, -- × номер волны, каждому за выполненную миссию ночи
+	DownedFactor = 0.5, -- лежащему на конец ночи — эта доля от NightSurvived и MissionDone
+	ClearBonus = 20, -- × номер волны × (1 − доля ночи, которая ушла на зачистку): быстрая зачистка (только стоящим)
 }
 
 -- НПС-продавцы в зданиях (VendorService): появляются только днём в открытом за монеты здании.
@@ -1646,7 +1662,7 @@ Config.Lobby = {
 }
 
 -- Инвентарь (Services/InventoryService): всего предметов и расходников одного вида (Field kit — больше)
-Config.Inventory = { MaxItems = 7, ItemMax = 1, FieldKitMax = 3 }
+Config.Inventory = { MaxItems = 7, ItemMax = 1, FieldKitMax = 3, MeleeSlot = 3 } -- MeleeSlot: холодное оружие всегда на этой клавише (план релиза 2026-11-11)
 
 -- Машины-декор, у которых столкновения только на мелких деталях: при старте получают невидимую коробку (VehicleService), чтобы сквозь них нельзя было пройти
 Config.VehicleColliders = { "CrashFire", "HumveeArmored", "HumveeMedic", "Sprinter", "X6M", "APC", "Abrams", "MilitaryCar", "MiningDasa", "Cargo", "Fish and Game Truck.", "Swat Van" }

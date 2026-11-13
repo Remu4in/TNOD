@@ -27,6 +27,8 @@ export type Profile = {
 	perks: { [string]: number }, -- донат: право → до какого времени (os.time)
 	receipts: { string }, -- последние обработанные покупки (ProcessReceipt не выдаёт дважды)
 	weekClaim: number, -- за какую неделю уже выдана награда топа
+	gun: string, -- стартовый набор (план релиза 2026-11-11): своё оружие ("" — только пистолет)
+	melee: string, -- стартовое холодное ("" — обычный нож)
 	lock: Lock?,
 }
 
@@ -64,7 +66,7 @@ local inFlight = 0 -- сколько очередей сейчас работа�
 -- ===== Чистые функции (без Roblox API) =====
 
 local function default(): Profile
-	return { version = VERSION, bestWave = 0, kills = 0, rounds = 0, revives = 0, rating = 0, bestRoundRating = 0, perks = {}, receipts = {}, weekClaim = 0, lock = nil }
+	return { version = VERSION, bestWave = 0, kills = 0, rounds = 0, revives = 0, rating = 0, bestRoundRating = 0, perks = {}, receipts = {}, weekClaim = 0, gun = "", melee = "", lock = nil }
 end
 
 -- Приводим сохранённое к актуальной схеме (миграции по version)
@@ -102,6 +104,12 @@ local function sanitize(raw: any): Profile
 	if typeof(raw.weekClaim) == "number" then
 		p.weekClaim = raw.weekClaim
 	end
+	if typeof(raw.gun) == "string" and #raw.gun <= 40 then
+		p.gun = raw.gun
+	end
+	if typeof(raw.melee) == "string" and #raw.melee <= 40 then
+		p.melee = raw.melee
+	end
 	local lock = raw.lock
 	if typeof(lock) == "table" and typeof(lock.jobId) == "string" and typeof(lock.at) == "number" then
 		p.lock = { jobId = lock.jobId, at = lock.at, sid = if typeof(lock.sid) == "string" then lock.sid else nil }
@@ -121,6 +129,8 @@ local function clone(p: Profile): Profile
 	out.perks = table.clone(p.perks)
 	out.receipts = table.clone(p.receipts)
 	out.weekClaim = p.weekClaim
+	out.gun = p.gun
+	out.melee = p.melee
 	return out
 end
 
@@ -162,6 +172,11 @@ local function mergeSession(fresh: Profile, live: Profile, base: Profile): Profi
 		(out :: any)[k] = math.max((fresh :: any)[k], (live :: any)[k])
 	end
 	mergeDonate(out, live)
+	-- набор: выбор этой сессии, если он был; иначе — из хранилища
+	if live.gun ~= base.gun or live.melee ~= base.melee then
+		out.gun = live.gun
+		out.melee = live.melee
+	end
 	return out
 end
 
@@ -204,6 +219,8 @@ local function publish(s: Session)
 	if s.player.Parent then
 		s.player:SetAttribute("BestWave", s.profile.bestWave)
 		s.player:SetAttribute("RatingTotal", s.profile.rating)
+		s.player:SetAttribute("LoadoutGun", s.profile.gun)
+		s.player:SetAttribute("LoadoutMelee", if s.profile.melee == "" then "Knife" else s.profile.melee)
 		local h = loadedHandler
 		if h then
 			task.spawn(h, s.player)
@@ -446,6 +463,19 @@ end
 function DataService.weekClaim(player: Player): number
 	local s = sessions[player]
 	return if s then s.profile.weekClaim else 0
+end
+
+-- Стартовый набор (проверку «своё ли» делает вызывающий): сохраняем и ставим атрибуты
+function DataService.setLoadout(player: Player, gun: string, melee: string)
+	local s = sessions[player]
+	if not s or s.closing then
+		return
+	end
+	s.profile.gun = gun
+	s.profile.melee = melee
+	player:SetAttribute("LoadoutGun", gun)
+	player:SetAttribute("LoadoutMelee", melee)
+	requestSave(player)
 end
 
 function DataService.setWeekClaim(player: Player, week: number)

@@ -181,25 +181,43 @@ function RatingService.onKill(player: Player, zombie: any)
 	if zombie.headKill == true then
 		points += R.HeadshotKill
 	end
-	if WaveMath.isBossType(zombie.def.id) then
-		points += R.BossKill
-	end
 	RatingService.add(player, points)
 end
 
-function RatingService.onBuildingOpened(player: Player)
-	RatingService.add(player, Config.Rating.BuildingOpened)
+-- Босс убит: очки тому, кто нанёс больше урона (zombie.damageBy, без турелей), иначе — добившему
+function RatingService.onBossKill(killer: Player?, zombie: any)
+	if not WaveMath.isBossType(zombie.def.id) then
+		return
+	end
+	local best: Player? = nil
+	local bestDmg = 0
+	for p, dmg in (zombie.damageBy or {}) :: { [Player]: number } do
+		if p.Parent and dmg > bestDmg then
+			best, bestDmg = p, dmg
+		end
+	end
+	local who = best or killer
+	if who and who.Parent then
+		RatingService.add(who, Config.Rating.BossKill)
+	end
+end
+
+-- Взнос на здание: доля BuildingPool по сумме взноса
+function RatingService.onContribute(player: Player, amount: number, cost: number)
+	if cost > 0 and amount > 0 then
+		RatingService.add(player, Config.Rating.BuildingPool * math.min(amount / cost, 1))
+	end
 end
 
 -- Конец ночи: выжившим — за номер волны; если мутантов не осталось — бонус за скорость (доля ночи, которую сэкономили)
-function RatingService.onNightEnd(wave: number, cleared: boolean, timeUsedFraction: number)
+function RatingService.onNightEnd(wave: number, cleared: boolean, missionDone: boolean, timeUsedFraction: number)
 	local R = Config.Rating
 	for _, p in Players:GetPlayers() do
-		if p:GetAttribute("Downed") ~= true then
-			RatingService.add(p, R.NightSurvived * wave)
-			if cleared then
-				RatingService.add(p, R.ClearBonus * wave * (1 - math.clamp(timeUsedFraction, 0, 1)))
-			end
+		local up = p:GetAttribute("Downed") ~= true
+		local base = R.NightSurvived * wave + (if missionDone then R.MissionDone * wave else 0)
+		RatingService.add(p, if up then base else base * R.DownedFactor)
+		if up and cleared then
+			RatingService.add(p, R.ClearBonus * wave * (1 - math.clamp(timeUsedFraction, 0, 1)))
 		end
 	end
 end

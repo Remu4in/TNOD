@@ -288,8 +288,14 @@ function ShopController.start()
 		return player:GetAttribute("Has_" .. CaseRules.perkFor(id)) == true
 	end
 
+	-- холодное, которое игрок сменил в этом раунде: бесплатно вернуть (атрибут FreeMelee, ставит WeaponService)
+	local function freeMelee(id: string): boolean
+		local list = player:GetAttribute("FreeMelee")
+		return typeof(list) == "string" and table.find(string.split(list, ","), id) ~= nil
+	end
+
 	local function priceText(def: Config.WeaponDef): string
-		if player:GetAttribute("ShopFree") == true or ownedFree(def.id) or def.price == 0 then
+		if player:GetAttribute("ShopFree") == true or ownedFree(def.id) or freeMelee(def.id) or def.price == 0 then
 			return "FREE"
 		end
 		return "$" .. def.price
@@ -540,10 +546,11 @@ function ShopController.start()
 		end
 	end)
 	markerGui.Parent = player:WaitForChild("PlayerGui")
-	local markers: { { part: Part, label: TextLabel, name: string } } = {}
+	local markers: { { part: Part, gui: BillboardGui, label: TextLabel, name: string } } = {}
 	local function clearMarkers()
 		for _, m in markers do
 			m.part:Destroy()
+			m.gui:Destroy() -- табличка живёт в markerGui, а не в детали: без этого «снятая» метка оставалась висеть ночью
 		end
 		table.clear(markers)
 	end
@@ -575,7 +582,7 @@ function ShopController.start()
 			label.TextSize = 15
 			label.Text = item.name
 			label.Parent = bb
-			table.insert(markers, { part = part, label = label, name = item.name })
+			table.insert(markers, { part = part, gui = bb, label = label, name = item.name })
 		end
 	end)
 	task.spawn(function()
