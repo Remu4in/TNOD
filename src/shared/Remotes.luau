@@ -12,7 +12,7 @@ local NAMES = {
 	"Sprint", -- клиент → сервер: (on: boolean) — хочу спринтовать (энергию считает сервер)
 	"Dodge", -- клиент → сервер: (kind: "slide" | "roll") — подкат или кувырок (энергию, паузу и неуязвимость считает сервер)
 	"MeleeFx", -- сервер → всем: (attacker: Player, weaponId: string, comboIndex: number) — звук и анимация взмаха, номер удара серии
-	"HitFeedback", -- сервер → стрелку: (position: Vector3, damage: number, killed: boolean, headshot: boolean)
+	"HitFeedback", -- сервер → стрелку: (position: Vector3, damage: number, killed: boolean, headshot: boolean, shotgun: boolean?)
 	"ShotFx", -- сервер → всем: (shooter: Player, origin: Vector3, hits: {Vector3}, weaponId: string)
 	"ReloadFx", -- сервер → всем: (player: Player, weaponId: string) — звук перезарядки
 	"BuyWeapon", -- клиент → сервер: (weaponId: string) — купить/взять оружие из меню (в режиме осмотра бесплатно)

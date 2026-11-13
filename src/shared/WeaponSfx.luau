@@ -89,13 +89,14 @@ function WeaponSfx.swing(position: Vector3?)
 end
 
 -- Попадание по зомби: выше тон при хедшоте, тише при обычном
-function WeaponSfx.hit(headshot: boolean, killed: boolean)
-	emit(Config.Sounds.hit, if killed then 0.7 else 0.45, if headshot then 1.5 else 0.85, nil, 0.3)
+function WeaponSfx.hit(headshot: boolean, killed: boolean, shotgun: boolean?)
+	local id = if shotgun then Config.Sounds.hitShotgun else Config.Sounds.hit
+	emit(id, if killed then 0.75 else 0.55, if headshot then 1.15 else 1, nil, if shotgun then 0.6 else 0.4)
 end
 
 -- «Пинг» пули о поверхность в точке попадания
 function WeaponSfx.ping(position: Vector3)
-	emit(Config.Sounds.hit, 0.22, 1.9 + math.random() * 0.3, position, 0.25)
+	emit(Config.Sounds.ping, 0.22, 1.9 + math.random() * 0.3, position, 0.25)
 end
 
 -- Сухой щелчок при пустом магазине (не чаще раза в 0,35 с)

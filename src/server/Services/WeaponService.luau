@@ -529,15 +529,23 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 		local ox, oy = Ballistics.pelletOffset(pellet, st.burst, def.pellets)
 		local spread = math.rad(spreadDeg)
 		local dir = (CFrame.lookAt(Vector3.zero, d) * CFrame.Angles(oy * spread, ox * spread, 0)).LookVector
+		-- дробь вблизи (Config.Shotgun.coneRange) прошивает зомби: задетый исключаем и пускаем луч дальше, урон по следующему ниже
+		local pierceLeft = if def.pellets > 1 then Config.Shotgun.pierce else 1
+		local factor = 1
+		local passed: { Instance } = {}
+		params.FilterDescendantsInstances = exclude
 		local result = workspace:Raycast(head.Position, dir * def.range, params)
-		if result then
+		while result do
 			table.insert(hits, result.Position)
 			local hitPart = result.Instance :: BasePart
 			local model, isHead = ZombieService.isZombiePart(hitPart)
-			if model then
+			if not model then
+				break
+			end
+			do
 				local kind = ZombieService.partKind(hitPart)
 				local mult = if isHead then Config.Economy.HeadshotMultiplier elseif kind == "Arm" or kind == "Leg" then Config.Economy.LimbMultiplier else 1
-				local dmg = def.damage * mult * Perks.mult("power") * vipDamage(player)
+				local dmg = def.damage * mult * factor * Perks.mult("power") * vipDamage(player)
 				local applied, killed = ZombieService.damage(model, dmg, player, {
 					dir = dir,
 					push = if aim then aim.push * 1.2 / def.pellets else 5, -- дробь: суммарный толчок по всем дробинкам ≈ aim.push
@@ -553,13 +561,27 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 					lastHitPos = result.Position
 				end
 			end
-		else
+			pierceLeft -= 1
+			if pierceLeft <= 0 or (result.Position - head.Position).Magnitude > Config.Shotgun.coneRange then
+				break
+			end
+			factor *= Config.Shotgun.pierceFactor
+			table.insert(passed, model)
+			local list = table.clone(exclude)
+			for _, m in passed do
+				table.insert(list, m)
+			end
+			params.FilterDescendantsInstances = list
+			result = workspace:Raycast(head.Position, dir * def.range, params)
+		end
+		if not result then
 			table.insert(hits, head.Position + dir * def.range)
 		end
 	end
+	params.FilterDescendantsInstances = exclude
 	if totalDamage > 0 then
 		EconomyService.add(player, Config.Economy.CoinsPerHit)
-		Remotes.get("HitFeedback"):FireClient(player, lastHitPos, math.floor(totalDamage + 0.5), killedAny, headshotAny)
+		Remotes.get("HitFeedback"):FireClient(player, lastHitPos, math.floor(totalDamage + 0.5), killedAny, headshotAny, def.pellets > 1)
 	end
 	Remotes.get("ShotFx"):FireAllClients(player, head.Position, hits, weaponId)
 	syncAmmo(player, weaponId)
