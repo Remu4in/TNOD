@@ -538,6 +538,9 @@ end
 
 -- F: запуск осмотра; при повторных нажатиях — реверс и заново (во время возврата — разворот вперёд из текущей позы)
 function FxController.inspect()
+	if not Config.Inspect.melee then
+		return -- осмотр холодного оружия выключен (Config.Inspect.melee)
+	end
 	local tool = toolOf(player.Character)
 	if not tool or tool:GetAttribute("Melee") ~= true or swing then
 		return

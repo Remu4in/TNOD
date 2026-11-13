@@ -160,7 +160,6 @@ Config.LocationNights = 10
 -- на базе стоят телепорт-площадки к каждой локации. Выключить (false) — обычная игра на карте City.
 Config.Explore = false -- true: режим осмотра без раундов
 Config.TestStands = false -- стенды у спавна (только Studio): тестовое оружие, выбор и пропуск ночи, +10 000 монет; в релизе false
-Config.KnifeStand = true -- тумба «KNIVES» у спавна: каждое нажатие даёт следующее холодное оружие (проверка анимаций, план релиза A11). Только Studio
 -- Донатный магазин на базе (Services/BaseShopService): центр на базе между «Military Carport Garage Building House» (89, 498) и APC (78, 393), Rot — поворот (180: прилавки смотрят на запад, внутрь базы)
 Config.BaseShop = { Center = Vector3.new(78, 0, 432), Rot = 180 }
 Config.TentMarkRadius = 250 -- метки на военные палатки каждое утро в этом радиусе, студов (1 стад ≈ 0,28 м)
@@ -819,6 +818,7 @@ Config.DrawAnim = {
 -- Холодное оружие осматривается по MeleeAnim.INSPECT (флипы ножей), здесь для него только скорость возврата.
 Config.Inspect = {
 	reverseSpeed = 4,
+	melee = false, -- осмотр холодного оружия выключен на релиз (2026-11-13): анимации закажем аниматору, потом включить
 	gun = { time = 1.3, pos = Vector3.new(-0.12, 0.08, 0.22), rot = Vector3.new(8, -42, 38), sway = Vector3.new(10, 14, 0.04), inRatio = 0.25, outRatio = 0.25 },
 }
 

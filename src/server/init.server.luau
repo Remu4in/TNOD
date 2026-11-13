@@ -244,53 +244,6 @@ local function startMatch()
 	if testStandsOn then
 		buildTestStands(map.playerSpawn)
 	end
-	-- тумба со всеми ножами (только Studio, решение Руслана): нажатие — следующее холодное оружие по кругу
-	if Config.KnifeStand and RunService:IsStudio() then
-		local knives: { string } = {}
-		for id, def in Config.Weapons do
-			if def.melee then
-				table.insert(knives, id)
-			end
-		end
-		table.sort(knives)
-		local sp = map.playerSpawn
-		local stand = Instance.new("Part")
-		stand.Name = "KnifeStand"
-		stand.Anchored = true
-		stand.Size = Vector3.new(3, 4, 3)
-		stand.Position = Vector3.new(sp.X + 6, sp.Y, sp.Z)
-		stand.Color = Color3.fromRGB(200, 200, 210)
-		stand.Material = Enum.Material.Neon
-		stand.Parent = workspace
-		local prompt = Instance.new("ProximityPrompt")
-		prompt.ActionText = "Next knife"
-		prompt.ObjectText = "KNIVES (Studio)"
-		prompt.HoldDuration = 0
-		prompt.RequiresLineOfSight = false
-		prompt.Parent = stand
-		local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
-		local nextIdx: { [Player]: number } = {}
-		prompt.Triggered:Connect(function(player: Player)
-			local i = (nextIdx[player] or 0) % #knives + 1
-			nextIdx[player] = i
-			WeaponService.give(player, knives[i])
-			Remotes.get("Notify"):FireClient(player, string.format("%s (%d/%d)", knives[i], i, #knives), 2)
-		end)
-		-- для съёмки поз: атрибут игрока GiveKnife = id ножа выдаёт его (ставится из консоли/MCP)
-		task.spawn(function()
-			while true do
-				for _, pl in game:GetService("Players"):GetPlayers() do
-					local k = pl:GetAttribute("GiveKnife")
-					if typeof(k) == "string" then
-						pl:SetAttribute("GiveKnife", nil)
-						WeaponService.give(pl, k)
-					end
-				end
-				task.wait(0.3)
-			end
-		end)
-	end
-
 	print("[NightOfTheDead] server started, location: " .. first.name)
 end
 
