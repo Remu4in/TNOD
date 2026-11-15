@@ -29,7 +29,7 @@ local KEYS: { { key: string, text: string } } = {
 	{ key = "E", text = "Use (hold: supplies)" },
 	{ key = "B", text = "Weapon shop (tent)" },
 	{ key = "Shift", text = "Sprint" },
-	{ key = "Q", text = "Slide (sprinting)" },
+	{ key = "Shift+Ctrl", text = "Slide (while sprinting)" },
 	{ key = "C", text = "Roll" },
 	{ key = "G", text = "Drop weapon" },
 	{ key = "Z/X/T", text = "Emote: wave/cheer/dance" },

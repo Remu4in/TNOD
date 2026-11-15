@@ -986,33 +986,56 @@ local function onShopBuy(player: Player, weaponId: unknown)
 	end
 end
 
--- Выдать оружие (покупка, награда, отладка); только из серверного кода
--- Патроны к оружию в руках (автомат): (можно ли, сообщение) — проверка до списания монет
-function WeaponService.canRefillHeld(player: Player): (boolean, string?)
-	local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
-	local id = if tool then tool:GetAttribute("WeaponId") else nil
-	local def = if typeof(id) == "string" then Config.Weapons[id] else nil
+-- Патроны к выбранному оружию игрока (продавец: игрок выбирает ствол в меню, брать в руки не нужно): (можно ли, сообщение) — проверка до списания монет
+function WeaponService.canRefill(player: Player, weaponId: string): (boolean, string?)
+	local def = Config.Weapons[weaponId]
 	if not def or def.melee then
-		return false, "Equip a firearm"
+		return false, "Pick a firearm"
 	end
 	if def.reserve < 0 then
 		return false, "This weapon doesn't need ammo"
 	end
-	local st = owned[player] and owned[player][def.id]
-	if st and st.reserve >= reserveCap(def) and st.mag >= magCap(def, player) then
+	local st = owned[player] and owned[player][weaponId]
+	if not st then
+		return false, "You don't have this weapon"
+	end
+	if st.reserve >= reserveCap(def) and st.mag >= magCap(def, player) then
 		return false, "Ammo is full"
 	end
 	return true, nil
 end
 
-function WeaponService.refillHeld(player: Player): boolean
-	local can = WeaponService.canRefillHeld(player)
-	if not can then
+function WeaponService.refill(player: Player, weaponId: string): boolean
+	if not WeaponService.canRefill(player, weaponId) then
 		return false
 	end
-	local tool = (player.Character :: Model):FindFirstChildOfClass("Tool") :: Tool
-	grant(player, tool:GetAttribute("WeaponId") :: string)
+	local def = Config.Weapons[weaponId]
+	local st = owned[player][weaponId]
+	st.mag = magCap(def, player)
+	st.reserve = reserveCap(def)
+	syncAmmo(player, weaponId)
 	return true
+end
+
+-- Оружие в руках (ящик с припасами): id или nil
+local function heldId(player: Player): string?
+	local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
+	local id = if tool then tool:GetAttribute("WeaponId") else nil
+	return if typeof(id) == "string" then id else nil
+end
+
+-- Патроны к оружию в руках (ящик с припасами): (можно ли, сообщение) — проверка до списания
+function WeaponService.canRefillHeld(player: Player): (boolean, string?)
+	local id = heldId(player)
+	if not id then
+		return false, "Equip a firearm"
+	end
+	return WeaponService.canRefill(player, id)
+end
+
+function WeaponService.refillHeld(player: Player): boolean
+	local id = heldId(player)
+	return id ~= nil and WeaponService.refill(player, id)
 end
 
 -- Пополнить патроны всего огнестрела игрока (ящики с патронами): true — что-то изменилось

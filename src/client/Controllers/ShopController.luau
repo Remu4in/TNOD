@@ -191,7 +191,101 @@ function ShopController.start()
 	-- режим продавца (НПС): вместо оружия по категориям — список товаров продавца за монеты
 	local vendor: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string, requires: string? } }, store: boolean? }? = nil
 
+	-- Патроны: вместо списка товаров — огнестрел игрока, на какой ствол взять (брать в руки не нужно)
+	local ammoPick: { id: string, price: number }? = nil
+	local populate: () -> ()
+	local function firearms(): { Tool }
+		local out: { Tool } = {}
+		for _, c in { player.Character, player:FindFirstChildOfClass("Backpack") } do
+			if c then
+				for _, t in c:GetChildren() do
+					local id = t:GetAttribute("WeaponId")
+					local def = if t:IsA("Tool") and typeof(id) == "string" then Config.Weapons[id] else nil
+					if def and not def.melee and def.reserve >= 0 then
+						table.insert(out, t :: Tool)
+					end
+				end
+			end
+		end
+		return out
+	end
+	local function ammoText(t: Tool): string
+		return string.format("Mag %d · Reserve %d", (t:GetAttribute("Mag") :: number?) or 0, (t:GetAttribute("Reserve") :: number?) or 0)
+	end
+	local function populateAmmo(v: { vendorId: string }, pick: { id: string, price: number })
+		title.Text = "AMMO"
+		hint.Text = "Pick a weapon to refill  ·  Esc — close"
+		local back = Instance.new("TextButton")
+		back.Size = UDim2.new(1, 0, 0, 40)
+		back.LayoutOrder = 0
+		back.BackgroundColor3 = U.Header
+		back.BorderSizePixel = 0
+		back.Font = Enum.Font.GothamBold
+		back.TextSize = 16
+		back.TextColor3 = U.Text
+		back.Text = "← Back"
+		back.Parent = list
+		back.Activated:Connect(function()
+			ammoPick = nil
+			populate()
+		end)
+		for order, t in firearms() do
+			local id = t:GetAttribute("WeaponId") :: string
+			local row = Instance.new("TextButton")
+			row.Size = UDim2.new(1, 0, 0, 70)
+			row.LayoutOrder = order
+			row.BackgroundColor3 = U.Card
+			row.Text = ""
+			row.Parent = list
+			WeaponIcon.make(row, id, UDim2.fromOffset(6, 5), UDim2.fromOffset(100, 60))
+			local name = Instance.new("TextLabel")
+			name.Position = UDim2.fromOffset(116, 10)
+			name.Size = UDim2.new(1, -260, 0, 24)
+			name.BackgroundTransparency = 1
+			name.Font = Enum.Font.GothamBold
+			name.TextSize = 18
+			name.TextColor3 = Color3.new(1, 1, 1)
+			name.TextXAlignment = Enum.TextXAlignment.Left
+			name.Text = Config.Weapons[id].name
+			name.Parent = row
+			local ammo = Instance.new("TextLabel")
+			ammo.Position = UDim2.fromOffset(116, 38)
+			ammo.Size = UDim2.new(1, -260, 0, 20)
+			ammo.BackgroundTransparency = 1
+			ammo.Font = Enum.Font.Gotham
+			ammo.TextSize = 14
+			ammo.TextColor3 = U.Dim
+			ammo.TextXAlignment = Enum.TextXAlignment.Left
+			ammo.Text = ammoText(t)
+			ammo.Parent = row
+			local price = Instance.new("TextLabel")
+			price.AnchorPoint = Vector2.new(1, 0.5)
+			price.Position = UDim2.new(1, -12, 0.5, 0)
+			price.Size = UDim2.fromOffset(120, 24)
+			price.BackgroundTransparency = 1
+			price.Font = Enum.Font.GothamBold
+			price.TextSize = 18
+			price.TextColor3 = ACCENT
+			price.TextXAlignment = Enum.TextXAlignment.Right
+			price.Text = "$" .. pick.price
+			price.Parent = row
+			row.Activated:Connect(function()
+				Remotes.get("VendorBuy"):FireServer(v.vendorId, pick.id, id)
+				-- сервер обновит Mag/Reserve на стволе: показываем новые цифры
+				task.delay(0.4, function()
+					if row.Parent then
+						ammo.Text = ammoText(t)
+					end
+				end)
+			end)
+		end
+	end
+
 	local function populateVendor(v: { vendorId: string, title: string, greeting: string, items: { { id: string, name: string, desc: string, price: number, kind: string, requires: string? } }, store: boolean? })
+		if ammoPick then
+			populateAmmo(v, ammoPick)
+			return
+		end
 		title.Text = v.title
 		hint.Text = v.greeting .. "  ·  Esc — close"
 		for order, item in v.items do
@@ -257,6 +351,18 @@ function ShopController.start()
 			end
 			row.Activated:Connect(function()
 				if lockedBy then
+					return
+				end
+				if item.kind == "ammo" then
+					local guns = firearms()
+					if #guns == 1 then
+						Remotes.get("VendorBuy"):FireServer(v.vendorId, item.id, guns[1]:GetAttribute("WeaponId"))
+					elseif #guns > 1 then
+						ammoPick = { id = item.id, price = item.price }
+						populate()
+					else
+						Remotes.get("VendorBuy"):FireServer(v.vendorId, item.id) -- сервер ответит, что огнестрела нет
+					end
 					return
 				end
 				Remotes.get("VendorBuy"):FireServer(v.vendorId, item.id)
@@ -340,7 +446,7 @@ function ShopController.start()
 		end
 	end)
 
-	local function populate()
+	function populate()
 		for _, c in list:GetChildren() do
 			if c:IsA("TextButton") or c:IsA("Frame") or c:IsA("TextLabel") then
 				c:Destroy()
@@ -440,6 +546,7 @@ function ShopController.start()
 	local function close()
 		gui.Enabled = false
 		vendor = nil
+		ammoPick = nil
 		ContextActionService:UnbindAction(ACTION)
 	end
 	local function open()
