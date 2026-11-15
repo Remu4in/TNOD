@@ -99,3 +99,24 @@
 | 12269531805 | энергетик, автор joaqui1803 | 1 `MeshPart`; 0 скриптов, 0 Remote, 0 StringValue. На банке марка реального напитка (Monster) | Взята → `Assets.Items.EnergyDrink`; перед релизом решить про марку |
 | 111560665479428 | звук попадания по зомби «Gun Hit», автор patoprimordial (2026-11-13) | Audio, открытый, 0,41 с; скриптов в аудио нет | `Config.Sounds.hit` |
 | 138242013444402 | звук попадания дробью «gun hit3», автор tarvoski (2026-11-13) | Audio, открытый, 1,66 с; скриптов в аудио нет | `Config.Sounds.hitShotgun` |
+| 9112770701 | «Distant City Traffic 1», ProSoundEffects (2026-11-15) | Audio, загружается в Studio, 46 с; скриптов в аудио нет | музыка лобби (`Soundtrack.Music.lobby`) |
+| 124458362283935 | «Dark Suspense Texture», DistrokidOfficial (2026-11-15) | Audio, загружается в Studio, 288 с; скриптов в аудио нет | музыка дня |
+| 138890398994853 | «Horror Cinematic Dark Scary Ambience», DistrokidOfficial (2026-11-15) | Audio, загружается в Studio, 200 с; скриптов в аудио нет | музыка ночи (первая в списке) |
+| 121788528439681 | «Zombie Chase», DistrokidOfficial (2026-11-15) | Audio, загружается в Studio, 150 с; скриптов в аудио нет | музыка босса |
+| 1842956488 | «Final Chase», APMOfficial (2026-11-15) | Audio, загружается в Studio, 99 с; скриптов в аудио нет | музыка катсцен |
+| 1837777133 | «A Military Action», APMOfficial (2026-11-15) | Audio, загружается в Studio, 126 с; скриптов в аудио нет | музыка экрана итогов |
+| 104131914354223 | «horror-stinger», zwezyx (2026-11-15) | Audio, загружается в Studio, 2,9 с; скриптов в аудио нет | сигнал: наступила ночь |
+| 99856221174802 | «Mine craft Battle Minigame Victory Sound», kellyyisparanoid895 (2026-11-15) | Audio, загружается в Studio, 3,2 с; скриптов в аудио нет | сигнал: рассвет. В названии чужая марка — по звуку проверить, не узнаваемый ли это звук из той игры |
+| 130316465772004 | «deep-sea-monster-roar», AntiiWxve (2026-11-15) | Audio, загружается в Studio, 6,5 с; скриптов в аудио нет | сигнал: появился босс |
+| 133327229475545 | «Cinematic Whoosh Sounds», Not0Fave (2026-11-15) | Audio, загружается в Studio, 2,9 с; скриптов в аудио нет | сигнал: начало катсцены |
+| 135454814111440 | «heartbeat», MrPikaChunkV2 (2026-11-15) | Audio, загружается в Studio, 1,0 с; скриптов в аудио нет | сердцебиение, пока игрок упал |
+| 9118747853 | «Rumble Ambience Interior Wind», ProSoundEffects (2026-11-15) | Audio, загружается в Studio, 40 с; скриптов в аудио нет | фон дня: ветер |
+| 9114892930 | «Jungle Birds Ambience 3», ProSoundEffects (2026-11-15) | Audio, загружается в Studio, 36 с; скриптов в аудио нет | фон дня: птицы |
+| 7225461356 | «Vietnam War Radio Chatter - Briefing», 3r5x4 (2026-11-15) | Audio, загружается в Studio, 40 с; скриптов в аудио нет | фон базы: рация |
+| 143973639 | «Generator Hum», Zephyred (2026-11-15) | Audio, загружается в Studio, 55 с; скриптов в аудио нет | фон базы: генератор |
+| 106856187646399 | «Radio Chatter - Airstrike», BoggyWorm (2026-11-15) | Audio, загружается в Studio, 5,4 с; скриптов в аудио нет | база: случайные переговоры |
+| 179507208 | «Night Ambience», Soybeen (2026-11-15) | Audio, загружается в Studio, 120 с; скриптов в аудио нет | фон ночи |
+| 9043359885 | «DARK DRONE 13», APMOfficial (2026-11-15) | Audio, загружается в Studio, 49 с; скриптов в аудио нет | фон ночи: гул |
+| 76595101129625 | «Island scream distant», VosDisciple (2026-11-15) | Audio, загружается в Studio, 8,8 с; скриптов в аудио нет | ночь: далёкий крик |
+| 107961477441523 | «metalhit_far6», Concoerror (2026-11-15) | Audio, загружается в Studio, 3,7 с; скриптов в аудио нет | ночь: удар по металлу |
+| 9114009761 | «Crow Caw Distant Circling», ProSoundEffects (2026-11-15) | Audio, загружается в Studio, 55 с (обрезаем на 12 с); скриптов в аудио нет | ночь: вороны |
