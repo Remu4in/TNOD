@@ -235,7 +235,7 @@ function WeaponController.start()
 		if player:GetAttribute("AdsFov") ~= fov then
 			player:SetAttribute("AdsFov", fov)
 		end
-		UserInputService.MouseDeltaSensitivity = if ads and aim then math.clamp(aim.adsFov / 70, 0.3, 1) else 1
+		UserInputService.MouseDeltaSensitivity = if ads and aim then (aim.adsSens or math.clamp(aim.adsFov / 70, 0.3, 1)) else 1
 
 		local spread = 0
 		if firearm and aim and typeof(weaponId) == "string" then
