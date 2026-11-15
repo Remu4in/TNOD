@@ -529,8 +529,9 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 		local ox, oy = Ballistics.pelletOffset(pellet, st.burst, def.pellets)
 		local spread = math.rad(spreadDeg)
 		local dir = (CFrame.lookAt(Vector3.zero, d) * CFrame.Angles(oy * spread, ox * spread, 0)).LookVector
-		-- дробь вблизи (Config.Shotgun.coneRange) прошивает зомби: задетый исключаем и пускаем луч дальше, урон по следующему ниже
-		local pierceLeft = if def.pellets > 1 then Config.Shotgun.pierce else 1
+		-- пробитие (Config.Pierce): задетого зомби исключаем и пускаем луч дальше, урон по следующему ниже
+		local pierce = Config.Pierce[weaponId] or Config.Pierce.Default
+		local pierceLeft = pierce.count
 		local factor = 1
 		local passed: { Instance } = {}
 		params.FilterDescendantsInstances = exclude
@@ -562,10 +563,10 @@ local function onFire(player: Player, origin: unknown, direction: unknown, adsFl
 				end
 			end
 			pierceLeft -= 1
-			if pierceLeft <= 0 or (result.Position - head.Position).Magnitude > Config.Shotgun.coneRange then
+			if pierceLeft <= 0 or (result.Position - head.Position).Magnitude > (pierce.range or def.range) then
 				break
 			end
-			factor *= Config.Shotgun.pierceFactor
+			factor *= pierce.factor
 			table.insert(passed, model)
 			local list = table.clone(exclude)
 			for _, m in passed do
