@@ -661,10 +661,37 @@ Config.WeaponSounds = WeaponSounds
 -- Позиции присылает сервер (атрибут LastZombies), потому что дальние зомби у клиента не загружены стримингом.
 Config.ZombieMarkAt = 10
 
--- Дробь (WeaponService): вблизи дробинка прошивает зомби и летит дальше, поэтому выстрел задевает несколько целей в конусе.
--- coneRange — до какой дистанции от игрока (студы) дробинка проходит насквозь, pierce — сколько зомби максимум задевает одна дробинка,
--- pierceFactor — урон по каждому следующему зомби (доля от предыдущего). Ширина конуса — spreadDeg дробовика.
-Config.Shotgun = { coneRange = 15, pierce = 3, pierceFactor = 0.7 }
+-- Пробитие (WeaponService): пуля (у дробовика — каждая дробинка) прошивает зомби и летит дальше. count — сколько зомби максимум задевает
+-- одна пуля (1 — без пробития), factor — урон по каждому следующему (доля от предыдущего), range — до какой дистанции от игрока пуля
+-- проходит насквозь (нет — на всю дальность оружия). Сильное оружие прошивает больше (решение Руслана 2026-11-15); нет записи — Default.
+export type PierceDef = { count: number, factor: number, range: number? }
+local SHOTGUN_PIERCE: PierceDef = { count = 4, factor = 0.75, range = 22 }
+Config.Pierce = {
+	Default = { count = 2, factor = 0.5 },
+	-- пистолеты и лёгкие ПП
+	Pistol = { count = 2, factor = 0.5 },
+	FiveSeven = { count = 2, factor = 0.5 },
+	Uzi = { count = 2, factor = 0.5 },
+	SMG = { count = 2, factor = 0.5 },
+	Vector = { count = 2, factor = 0.5 },
+	M1911 = { count = 2, factor = 0.6 },
+	Thompson = { count = 2, factor = 0.6 },
+	M4A1 = { count = 2, factor = 0.6 },
+	-- крупный калибр
+	Revolver = { count = 3, factor = 0.7 },
+	Model29 = { count = 3, factor = 0.7 },
+	DesertEagle = { count = 3, factor = 0.7 },
+	Rifle = { count = 3, factor = 0.7 },
+	SKS = { count = 3, factor = 0.7 },
+	SCAR = { count = 4, factor = 0.75 },
+	LMG = { count = 4, factor = 0.75 },
+	Sniper = { count = 5, factor = 0.85 },
+	-- дробовики: каждая дробинка, только вблизи
+	Shotgun = SHOTGUN_PIERCE,
+	Sawnoff = SHOTGUN_PIERCE,
+	SPAS12 = SHOTGUN_PIERCE,
+	AA12 = SHOTGUN_PIERCE,
+} :: { [string]: PierceDef }
 
 -- «Сочность» выстрела (клиентский FxController): отдача ствола (вдоль -Z рукояти, град.), толчок камеры, вспышка, гильзы
 local WeaponFx: { [string]: WeaponFxDef } = {
@@ -749,6 +776,13 @@ for _, d in Config.WeaponDraft do
 	end
 end
 Config.ShopCategories = SHOP_CATEGORIES
+
+-- Ширина конуса дроби (град., до поправок на движение и прицел): шире прежних 11° (решение Руслана 2026-11-15); обрез — шире всех
+for id, deg in { Shotgun = 15, SPAS12 = 15, AA12 = 16, Sawnoff = 19 } do
+	if Weapons[id] then
+		Weapons[id].spreadDeg = deg
+	end
+end
 
 -- Класс оружия для прогрессии (Config.ThreatClasses): по папке модели; пулемёт и снайперка без модели — по id
 local THREAT_BY_CLASS = { SMG = "SMG", Shotguns = "Shotgun", Rifles = "Rifle", Carbines = "Rifle" }
