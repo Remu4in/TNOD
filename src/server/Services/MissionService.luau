@@ -428,7 +428,7 @@ local function moveTeam(anchor: Vector3)
 			local radius = 8 + rng:NextNumber() * 8
 			local x, z = anchor.X + math.cos(angle) * radius, anchor.Z + math.sin(angle) * radius
 			local ground = groundAt(x, z) or anchor
-			char:PivotTo(CFrame.new(ground + Vector3.new(0, 4, 0)))
+			SafeTeleport.move(p, CFrame.new(ground + Vector3.new(0, 4, 0))) -- точка далеко: ждём подгрузки пола (стриминг)
 		end
 	end
 end
@@ -1946,7 +1946,7 @@ function MissionService.returnTeam(spawn: Vector3)
 	for _, p in Players:GetPlayers() do
 		local char = p.Character
 		if char then
-			char:PivotTo(CFrame.new(spawn + Vector3.new(math.random(-6, 6), 3, math.random(-4, 4))))
+			SafeTeleport.move(p, CFrame.new(spawn + Vector3.new(math.random(-6, 6), 3, math.random(-4, 4))))
 		end
 	end
 end

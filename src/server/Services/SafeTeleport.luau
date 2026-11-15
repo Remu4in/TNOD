@@ -22,6 +22,16 @@ function SafeTeleport.move(player: Player, target: CFrame)
 	if not character or not root then
 		return
 	end
+	-- сидящего в машине сначала снимаем с сиденья, иначе перенос потащит машину за ним
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	local seat = hum and hum.SeatPart
+	if hum and seat then
+		local weld = seat:FindFirstChild("SeatWeld")
+		if weld then
+			weld:Destroy()
+		end
+		hum.Sit = false
+	end
 	local C = Config.SafeTeleport
 	local token = (tokens[player] or 0) + 1
 	tokens[player] = token
