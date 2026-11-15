@@ -216,6 +216,7 @@ local function startMatch()
 		RatingService.init()
 		require(Services:WaitForChild("DonateService")).init()
 	end
+	require(Services:WaitForChild("VipService")).init() -- аура VIP (повторный вызов из лобби ничего не делает)
 	PerkService.init()
 	GeneralService.init()
 	require(Services:WaitForChild("AmmoCrateService")).init()
@@ -254,6 +255,7 @@ if mode == "lobby" then
 	ScoreService.init()
 	RatingService.init()
 	require(Services:WaitForChild("DonateService")).init()
+	require(Services:WaitForChild("VipService")).init() -- аура и надпись VIP
 	sharedReady = true
 	LobbyService.initLobby({
 		onStudioStart = function(_players, _data)

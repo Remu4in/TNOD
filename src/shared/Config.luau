@@ -1711,13 +1711,29 @@ Config.Inventory = { MaxItems = 7, ItemMax = 1, FieldKitMax = 3, MeleeSlot = 3 }
 -- Машины-декор, у которых столкновения только на мелких деталях: при старте получают невидимую коробку (VehicleService), чтобы сквозь них нельзя было пройти
 Config.VehicleColliders = { "CrashFire", "HumveeArmored", "HumveeMedic", "Sprinter", "X6M", "APC", "Abrams", "MilitaryCar", "MiningDasa", "Cargo", "Fish and Game Truck.", "Swat Van" }
 
+-- Вид VIP-игрока (Services/VipService): золотая аура всегда (лобби и матч) — контур с подсветкой по силуэту, искры вокруг тела и свечение;
+-- надпись VIP над головой — только в лобби
+Config.VipLook = {
+	Color = Color3.fromRGB(255, 205, 70),
+	Label = "VIP",
+	LabelOffset = 2.7, -- студов над головой
+	LabelMaxDistance = 150,
+	FillTransparency = 0.82, -- подсветка силуэта (Highlight); контур — OutlineTransparency
+	OutlineTransparency = 0.15,
+	AuraRate = 20, -- искр в секунду
+	AuraSpeed = 1, -- скорость разлёта от тела: при жизни искры ~0,7 с аура ≈ 0,5–0,7 стада
+	AuraLifetime = 0.9,
+	LightRange = 7,
+	LightBrightness = 0.7,
+}
+
 -- Донат (Services/DonateService). perk — право в профиле (атрибут Has_<perk>), days — срок (нет — навсегда), robux — цена, productId — id Developer Product
 -- из Creator Dashboard (0 — ещё не создан: в Studio выдаётся сразу, в игре «Coming soon»).
 Config.Donate = {
 	Vip = { Mag = 1.2, Damage = 1.2, Stamina = 3, StartCoins = 1000 },
 	WeeklyRewardDays = 3, -- VIP топ-3 игрокам и лучшей команде прошлой недели
 	Items = {
-		{ id = "vip", perk = "vip", name = "VIP pass (7 days)", desc = "+20% magazine and damage, x3 stamina, 1000 start coins, VIP lobby zone", robux = 360, days = 7, productId = 3730236383 },
+		{ id = "vip", perk = "vip", name = "VIP pass (7 days)", desc = "+20% magazine and damage, x3 stamina, 1000 start coins, VIP lobby zone, golden aura", robux = 360, days = 7, productId = 3730236383 },
 		{ id = "karambit", perk = "karambit", name = "Karambit", desc = "Forever: yours in every round", robux = 360, icon = "Karambit", productId = 3730236465 },
 		{ id = "balisong", perk = "balisong", name = "Butterfly knife", desc = "Forever: yours in every round", robux = 360, icon = "Balisong", productId = 3730236549 },
 		{ id = "fieldkit", perk = "fieldkit", name = "Field kit (7 days)", desc = "Carry up to 3 medkits and 3 energy drinks", robux = 145, days = 7, productId = 3730236592 },
