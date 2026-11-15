@@ -2565,6 +2565,20 @@ function ZombieService.hold(model: Model, seconds: number, factor: number?)
 	end
 end
 
+-- Позиции живых зомби (не больше max): метки на последних зомби (RoundService)
+function ZombieService.positions(max: number): { Vector3 }
+	local out: { Vector3 } = {}
+	for _, z in active do
+		if z.alive then
+			table.insert(out, z.root.Position)
+			if #out >= max then
+				break
+			end
+		end
+	end
+	return out
+end
+
 function ZombieService.queryNear(pos: Vector3, radius: number): { { model: Model, root: BasePart } }
 	local result: { { model: Model, root: BasePart } } = {}
 	for model, z in active do

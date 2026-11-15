@@ -306,6 +306,21 @@ function InfoController.start()
 		marks[key] = { part = part, gui = bb, label = label, base = text }
 	end
 
+	-- вендинговые автоматы: список ведём по событиям (обход всей карты раз в 2 с давал рывок кадра)
+	local vending: { [Instance]: boolean } = {}
+	local function trackVending(d: Instance)
+		if d:IsA("Model") and string.sub(d.Name, 1, 8) == "Vending_" then
+			vending[d] = true
+		end
+	end
+	for _, d in workspace:GetDescendants() do
+		trackVending(d)
+	end
+	workspace.DescendantAdded:Connect(trackVending)
+	workspace.DescendantRemoving:Connect(function(d: Instance)
+		vending[d] = nil
+	end)
+
 	local function scan()
 		local seen: { [Instance]: boolean } = {}
 		local function mark(key: Instance, pos: Vector3, text: string, color: Color3)
@@ -322,8 +337,8 @@ function InfoController.start()
 			end
 		end
 		-- магазины припасов: вендинговые автоматы (модели Vending_<n>)
-		for _, d in workspace:GetDescendants() do
-			if d:IsA("Model") and string.sub(d.Name, 1, 8) == "Vending_" then
+		for d in vending do
+			if d.Parent and d:IsA("Model") then
 				mark(d, d:GetPivot().Position, "SUPPLIES (hold E)", Color3.fromRGB(120, 210, 255))
 			end
 		end

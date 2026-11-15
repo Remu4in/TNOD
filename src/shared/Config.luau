@@ -136,7 +136,7 @@ Config.Round = {
 	-- и с уровнем угрозы (Config.Threat.Tiers[].alive на игрока), затем с каждой минутой ночи на AliveStep, но не выше AliveCaps; всего ≤ AliveHardCap.
 	-- плейтест на 4 игроках (2026-11-05): 60–80 живых уже на 1-й минуте — база в 1,5 раза меньше, рост по минутам в 2 раза меньше и только с 3-й минуты (121 с),
 	-- потолок команды — по 15 на игрока и не выше ни на каких ночах (конвой тоже)
-	AliveBase = { 8, 11, 17, 22, 30, 36 } :: { number }, -- +10 % (план релиза 2026-11-11; было 7, 10, 15, 20, 27, 33)
+	AliveBase = { 7, 11, 17, 22, 30, 36 } :: { number }, -- +10 % (план релиза 2026-11-11; было 7, 10, 15, 20, 27, 33); соло 7: поднять его некому (2026-11-15)
 	AliveStep = { 2.5, 3, 4, 5, 5, 5 } :: { number },
 	AliveStepFrom = 3, -- с этой минуты ночи начинается рост
 	AliveCaps = { 17, 33, 50, 66, 83, 99 } :: { number }, -- +10 % (было 15, 30, 45, 60, 75, 90)
@@ -591,7 +591,7 @@ Config.WeaponDraft = {
 	{ id = "Shotgun", name = "Mossberg 500", ref = "Shotguns/Mossberg500", tier = "wall", slot = 5, price = 750, damage = 12, pellets = 6, fireRate = 1.2, magSize = 6, reserve = 36, reloadTime = 2.2, note = "as it is now" },
 	{ id = "Sawnoff", name = "Sawed-off", ref = "Shotguns/SawnOffShotgun", tier = "wall", slot = 2, price = 350, damage = 14, pellets = 7, fireRate = 0.9, magSize = 2, reserve = 24, reloadTime = 1.8, note = "cheap, 2 shots, range 40" },
 	{ id = "SPAS12", name = "SPAS-12", ref = "Shotguns/SPAS12", tier = "wall", slot = 8, price = 1400, damage = 11, pellets = 7, fireRate = 2.0, magSize = 8, reserve = 48, reloadTime = 2.8, note = "semi-auto" },
-	{ id = "AA12", name = "AA-12", ref = "Shotguns/AA12", tier = "late", price = 2800, damage = 10, pellets = 7, fireRate = 5.0, magSize = 20, reserve = 120, reloadTime = 3.4, note = "automatic" },
+	{ id = "AA12", name = "AA-12", ref = "Shotguns/AA12", tier = "late", price = 2800, damage = 10, pellets = 7, fireRate = 3.5, magSize = 20, reserve = 120, reloadTime = 3.4, note = "automatic" },
 	-- Винтовки / карабины
 	{ id = "Rifle", name = "AK-12", ref = "Rifles/AK12", tier = "wall", slot = 7, price = 1200, damage = 45, fireRate = 3, magSize = 20, reserve = 120, reloadTime = 2.0, note = "as it is now" },
 	{ id = "M4A1", name = "M4A1", ref = "Carbines/M4A1", tier = "wall", slot = 6, price = 1000, damage = 36, fireRate = 4.2, magSize = 30, reserve = 180, reloadTime = 2.0 },
@@ -656,6 +656,10 @@ local WeaponSounds: { [string]: WeaponSound } = {
 	Sniper = { fireVolume = 1.0, firePitch = 0.55, fireTrim = 1.4, reloadVolume = 0.9, reloadPitch = 0.7 },
 }
 Config.WeaponSounds = WeaponSounds
+
+-- Метки на последних зомби (ZombieMarkerController): видны сквозь стены, когда в ночь осталось столько или меньше.
+-- Позиции присылает сервер (атрибут LastZombies), потому что дальние зомби у клиента не загружены стримингом.
+Config.ZombieMarkAt = 10
 
 -- Дробь (WeaponService): вблизи дробинка прошивает зомби и летит дальше, поэтому выстрел задевает несколько целей в конусе.
 -- coneRange — до какой дистанции от игрока (студы) дробинка проходит насквозь, pierce — сколько зомби максимум задевает одна дробинка,
@@ -1393,7 +1397,7 @@ Config.PlaceBeacon = { Radius = 16, Color = Color3.fromRGB(255, 200, 60) }
 -- Defenders живых солдат (HP из DefenderHp, урон DefenderDps, шаг DefenderInterval, дальность DefenderRange) — зомби их атакуют и могут убить;
 -- по базе Debris.Clusters куч мусора (Wrecks из них — с остовами машин).
 Config.BaseBattle = {
-	Total = 150, AliveCap = 45, SpawnPoints = 14, DeadFraction = 1 / 3, -- AliveCap — минимум: если ночной потолок (Config.Round.Alive*) выше, берётся он
+	Total = 120, AliveCap = 28, SpawnPoints = 14, DeadFraction = 1 / 3, -- AliveCap — минимум: если ночной потолок (Config.Round.Alive*) выше, берётся он
 	Defenders = 10, DefenderHp = { 200, 250 }, DefenderDps = 30, DefenderInterval = 0.4, DefenderRange = 55, PostRadius = 14,
 	Debris = { Clusters = 16, Radius = 11, Chunks = 16, Crates = 3, Planks = 6, Barrels = 2, Tires = 2, Cloth = 3, Wrecks = 3 },
 }
@@ -1472,7 +1476,7 @@ Config.Missions = {
 	[7] = { type = "build", title = "Clear-out and tent setup", anchor = 2, kills = 20, hint = "Clear the zone and set up the tent at the marked spot" },
 	[8] = { type = "escort", title = "Convoy escort", anchor = 2, points = 3, convoySpeed = 13, column = "Heavy", hint = "Don't let the truck be destroyed" },
 	[9] = { type = "scout", title = "Recon of the third tent's territory", anchor = 3, points = 3 },
-	[10] = { type = "classic", title = "Boss: zombies vs plants", anchor = 2, planned = "boss", bossAfterKills = 30, hint = "Kill 30 mutants — then the boss comes. Kill the boss and the wave" },
+	[10] = { type = "classic", title = "Boss: zombies vs plants", anchor = 2, planned = "boss", bossAfterKills = 25, hint = "Kill 25 mutants — then the boss comes. Kill the boss and the wave" },
 	[11] = { type = "scout", title = "Surveying the locations around the tents", anchor = 2, points = 4, radius = { 100, 200 } },
 	[12] = { type = "escort", title = "Convoy to the third tent", anchor = 3, points = 3, dropFirstPoint = true, endAtLastPoint = true, convoySpeed = 13, column = "Heavy", hint = "Escort the convoy to the last route point: the tent is set up on arrival" },
 	[13] = { type = "defend", title = "Anomalies and attacks on shops", anchor = 1, seconds = 35, planned = "anomaly" },
@@ -1493,8 +1497,8 @@ Config.Rating = {
 	Kill = 10,
 	HeadshotKill = 5, -- добавка за убийство выстрелом в голову
 	BossKill = 100, -- тому, кто нанёс боссу больше урона (турели и оборудование не считаются); нет урона игроков — тому, кто добил
-	BuildingPool = 60, -- за здание всего: каждый взнос даёт долю по сумме взноса (взнос 25 % стоимости — 15 очков)
-	NightSurvived = 30, -- × номер волны, каждому, кто дожил до конца ночи
+	BuildingPool = 150, -- за здание всего: каждый взнос даёт долю по сумме взноса (взнос 25 % стоимости — 37,5 очка)
+	NightSurvived = 15, -- × номер волны, каждому, кто дожил до конца ночи
 	MissionDone = 20, -- × номер волны, каждому за выполненную миссию ночи
 	DownedFactor = 0.5, -- лежащему на конец ночи — эта доля от NightSurvived и MissionDone
 	ClearBonus = 20, -- × номер волны × (1 − доля ночи, которая ушла на зачистку): быстрая зачистка (только стоящим)
@@ -1677,10 +1681,10 @@ Config.VehicleColliders = { "CrashFire", "HumveeArmored", "HumveeMedic", "Sprint
 -- Донат (Services/DonateService). perk — право в профиле (атрибут Has_<perk>), days — срок (нет — навсегда), robux — цена, productId — id Developer Product
 -- из Creator Dashboard (0 — ещё не создан: в Studio выдаётся сразу, в игре «Coming soon»).
 Config.Donate = {
-	Vip = { Mag = 1.2, Damage = 1.2, Stamina = 3, StartCoins = 2000 },
+	Vip = { Mag = 1.2, Damage = 1.2, Stamina = 3, StartCoins = 1000 },
 	WeeklyRewardDays = 3, -- VIP топ-3 игрокам и лучшей команде прошлой недели
 	Items = {
-		{ id = "vip", perk = "vip", name = "VIP pass (7 days)", desc = "+20% magazine and damage, x3 stamina, 2000 start coins, VIP lobby zone", robux = 360, days = 7, productId = 3730236383 },
+		{ id = "vip", perk = "vip", name = "VIP pass (7 days)", desc = "+20% magazine and damage, x3 stamina, 1000 start coins, VIP lobby zone", robux = 360, days = 7, productId = 3730236383 },
 		{ id = "karambit", perk = "karambit", name = "Karambit", desc = "Forever: yours in every round", robux = 360, icon = "Karambit", productId = 3730236465 },
 		{ id = "balisong", perk = "balisong", name = "Butterfly knife", desc = "Forever: yours in every round", robux = 360, icon = "Balisong", productId = 3730236549 },
 		{ id = "fieldkit", perk = "fieldkit", name = "Field kit (7 days)", desc = "Carry up to 3 medkits and 3 energy drinks", robux = 145, days = 7, productId = 3730236592 },
@@ -1761,7 +1765,7 @@ Config.Cutscene = {
 	Say = {
 		[3] = "Supplies are coming. Get the convoy to the tent site.",
 		[5] = "Kill thirty of them and the big one will show up.",
-		[10] = "Same again: thirty mutants, then the boss.",
+		[10] = "Same again: twenty-five mutants, then the boss.",
 		[16] = "Something is wrong near the ruins. Scout the approaches.",
 		[17] = "Go inside the ruins. Find the way down.",
 		[18] = "Start four generators, plant ten charges. Then blow it.",

@@ -29,6 +29,7 @@ local PerkService = require(script.Parent:WaitForChild("PerkService"))
 local Perks = require(Shared:WaitForChild("Perks"))
 local RatingService = require(script.Parent:WaitForChild("RatingService"))
 local VehicleService = require(script.Parent:WaitForChild("VehicleService"))
+local SafeTeleport = require(script.Parent:WaitForChild("SafeTeleport"))
 local Types = require(script.Parent.Parent:WaitForChild("Types"))
 
 local RoundService = {}
@@ -110,6 +111,28 @@ local function setPhase(phase: string, duration: number?)
 	ReplicatedStorage:SetAttribute("PhaseEndsAt", if duration then workspace:GetServerTimeNow() + duration else 0)
 end
 
+-- Позиции последних живых зомби для меток (ZombieMarkerController): строка "x,y,z;x,y,z", не чаще раза в секунду и только когда их мало.
+-- Клиент не видит дальних зомби (стриминг), поэтому позиции присылает сервер.
+local lastZombiesAt = 0
+local function publishLastZombies(left: number)
+	local now = os.clock()
+	if now - lastZombiesAt < 1 then
+		return
+	end
+	lastZombiesAt = now
+	local text = ""
+	if left > 0 and left <= Config.ZombieMarkAt then
+		local parts: { string } = {}
+		for _, pos in ZombieService.positions(Config.ZombieMarkAt) do
+			table.insert(parts, string.format("%d,%d,%d", math.floor(pos.X + 0.5), math.floor(pos.Y + 0.5), math.floor(pos.Z + 0.5)))
+		end
+		text = table.concat(parts, ";")
+	end
+	if ReplicatedStorage:GetAttribute("LastZombies") ~= text then
+		ReplicatedStorage:SetAttribute("LastZombies", text)
+	end
+end
+
 local function notifyAll(text: string, seconds: number)
 	Remotes.get("Notify"):FireAllClients(text, seconds)
 end
@@ -164,7 +187,7 @@ local function loadLocation(idx: number)
 	for _, p in Players:GetPlayers() do
 		local char = p.Character
 		if char then
-			char:PivotTo(CFrame.new(map.playerSpawn + Vector3.new(math.random(-6, 6), 0, math.random(-4, 4))))
+			SafeTeleport.move(p, CFrame.new(map.playerSpawn + Vector3.new(math.random(-6, 6), 3, math.random(-4, 4))))
 		end
 	end
 	notifyAll("New location: " .. loc.name, 5)
@@ -187,6 +210,7 @@ local function intermission()
 	setNight(false)
 	ReplicatedStorage:SetAttribute("Wave", 0)
 	ReplicatedStorage:SetAttribute("ZombiesLeft", 0)
+	ReplicatedStorage:SetAttribute("LastZombies", "")
 	while #Players:GetPlayers() == 0 do
 		task.wait(1)
 	end
@@ -400,6 +424,7 @@ local function night()
 	while not gameOver do
 		local left = ZombieService.remaining()
 		ReplicatedStorage:SetAttribute("ZombiesLeft", left)
+		publishLastZombies(left)
 		-- с каждой минутой ночи предел живых растёт (давление на тех, кто тянет время)
 		local minute = math.floor((os.clock() - nightStart) / 60) + 1
 		if minute ~= aliveMinute then

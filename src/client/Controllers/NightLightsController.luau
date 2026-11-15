@@ -118,10 +118,6 @@ local function build()
 	if not base then
 		return
 	end
-	built = true
-	local f = Instance.new("Folder")
-	f.Name = "NightLights"
-	folder = f
 	local roofs: { BasePart } = {}
 	for _, tower in base:GetChildren() do
 		if tower.Name == "WatchTower" then
@@ -131,6 +127,13 @@ local function build()
 			end
 		end
 	end
+	if #roofs == 0 then
+		return -- башни ещё не подгружены стримингом (игрок далеко от базы): start повторит попытку
+	end
+	built = true
+	local f = Instance.new("Folder")
+	f.Name = "NightLights"
+	folder = f
 	if #roofs > 0 then
 		local center = Vector3.zero
 		for _, r in roofs do
@@ -185,6 +188,18 @@ function NightLightsController.start()
 		setHeadlight(inst, night)
 	end)
 	setNight(LookController.isNight())
+	-- игрок далеко от базы (метро, миссия): башни подгрузятся позже, пробуем построить снова
+	task.spawn(function()
+		while true do
+			task.wait(2)
+			if night and not built then
+				build()
+				if folder then
+					folder.Parent = workspace.CurrentCamera
+				end
+			end
+		end
+	end)
 	ReplicatedStorage:GetAttributeChangedSignal("Look"):Connect(function()
 		local on = LookController.isNight()
 		if on ~= night then
