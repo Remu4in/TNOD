@@ -57,10 +57,16 @@ local function playAt(parent: Instance, id: string, volume: number, maxDistance:
 end
 
 function SfxController.start()
-	group = Instance.new("SoundGroup")
-	group.Name = "NotdAmbience"
-	group.Volume = Config.AmbienceVolume
-	group.Parent = SoundService
+	-- группа общая с SoundtrackController (он стартует раньше, ещё в лобби)
+	local existing = SoundService:FindFirstChild("NotdAmbience")
+	if existing and existing:IsA("SoundGroup") then
+		group = existing
+	else
+		group = Instance.new("SoundGroup")
+		group.Name = "NotdAmbience"
+		group.Volume = Config.AmbienceVolume
+		group.Parent = SoundService
+	end
 	local camera = workspace.CurrentCamera
 
 	-- Зомби: удар (по счётчику SwingAt), голос по очереди у ближайших

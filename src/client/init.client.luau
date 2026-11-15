@@ -7,6 +7,7 @@ require(Controllers:WaitForChild("LookController")).start() -- свет и цв�
 require(Controllers:WaitForChild("CursorController")).start() -- убирает значок мыши из центра экрана (и в лобби, и в матче)
 require(Controllers:WaitForChild("LobbyController")).start() -- лобби и экран итогов
 require(Controllers:WaitForChild("StoreController")).start() -- донатный магазин: и в лобби, и в матче
+require(Controllers:WaitForChild("SoundtrackController")).start() -- музыка, фон и сигналы (и в лобби, и в матче)
 
 local started = false
 local function startGame()
@@ -35,7 +36,6 @@ local function startGame()
 	require(Controllers:WaitForChild("DayBriefController")).start()
 	require(Controllers:WaitForChild("StatusController")).start()
 	require(Controllers:WaitForChild("MetroAmbienceController")).start()
-	require(Controllers:WaitForChild("NightMusicController")).start()
 	require(Controllers:WaitForChild("MetroLightController")).start()
 	require(Controllers:WaitForChild("NightLightsController")).start()
 	require(Controllers:WaitForChild("SfxController")).start()

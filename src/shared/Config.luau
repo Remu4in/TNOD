@@ -1364,11 +1364,44 @@ Config.DayBrief = {
 	Boss = "A boss comes tonight: {name}.",
 	Here = "at the base",
 } :: { ShowSeconds: number, RemindBefore: number, RemindSeconds: number, Task: { [string]: string }, Tip: { [string]: string }, Boss: string, Here: string }
-Config.NightMusic = { -- фон ночи: одна дорожка на ночь по кругу, идёт через ту же группу громкости
-	Tracks = { "rbxassetid://9114244977", "rbxassetid://9114244841", "rbxassetid://9118069484" },
-	Volume = 0.55,
-	FadeIn = 4,
-	FadeOut = 3,
+-- Звуковое сопровождение (SoundtrackController, клиент): музыка по состоянию игры, фоновые звуки, случайные звуки ночи, сигналы событий.
+-- Всё идёт через SoundGroup «NotdAmbience» (Config.AmbienceVolume). ID выбрал Руслан 2026-11-15, проверены: загружаются (docs/assets_ledger.md).
+local function snd(id: number): string
+	return "rbxassetid://" .. id
+end
+Config.Soundtrack = {
+	Fade = 3, -- секунды перехода между дорожками
+	-- Музыка: одна дорожка на состояние; у ночи список — по номеру ночи по кругу
+	Music = {
+		lobby = { ids = { snd(9112770701) }, volume = 0.35 }, -- далёкий город (SFX вместо музыки)
+		day = { ids = { snd(124458362283935) }, volume = 0.35 }, -- Dark Suspense Texture
+		night = { ids = { snd(138890398994853), snd(9114244977), snd(9114244841), snd(9118069484) }, volume = 0.5 },
+		boss = { ids = { snd(121788528439681) }, volume = 0.55 }, -- Zombie Chase
+		cutscene = { ids = { snd(1842956488) }, volume = 0.45 }, -- Final Chase (APM)
+		results = { ids = { snd(1837777133) }, volume = 0.45 }, -- A Military Action (APM)
+	},
+	-- Фоновые звуки по кругу (поверх музыки, тихо)
+	Beds = {
+		day = { { id = snd(9118747853), volume = 0.12 }, { id = snd(9114892930), volume = 0.1 } }, -- ветер, птицы
+		base = { { id = snd(7225461356), volume = 0.12 }, { id = snd(143973639), volume = 0.1 } }, -- рация, генератор (внутри Config.BaseZone)
+		night = { { id = snd(179507208), volume = 0.16 }, { id = snd(9043359885), volume = 0.1 } }, -- ночь, тёмный гул
+	},
+	-- Случайные звуки ночи: из точки в 60–140 студах от игрока, раз в Every секунд
+	NightOneShots = {
+		{ id = snd(76595101129625), volume = 0.5 }, -- далёкий крик
+		{ id = snd(107961477441523), volume = 0.6 }, -- удар по металлу вдали
+		{ id = snd(9114009761), volume = 0.4, cut = 12 }, -- вороны (дорожка длинная: обрываем с затуханием)
+	},
+	NightOneShotEvery = { 18, 40 },
+	BaseOneShot = { id = snd(106856187646399), volume = 0.2, every = { 25, 50 } }, -- переговоры по рации на базе (день)
+	-- Сигналы событий (один раз)
+	Stingers = {
+		night = { id = snd(104131914354223), volume = 0.5 }, -- наступила ночь
+		dawn = { id = snd(99856221174802), volume = 0.4 }, -- рассвет: ночь пережита
+		boss = { id = snd(130316465772004), volume = 0.55 }, -- появился босс
+		cutscene = { id = snd(133327229475545), volume = 0.4 }, -- начало катсцены
+	},
+	Downed = { id = snd(135454814111440), volume = 0.5 }, -- сердцебиение, пока игрок упал (по кругу)
 }
 Config.AmbienceVolume = 0.7 -- общая громкость звуков окружения (зомби, машины); по слуху держим тихо
 Config.DebugStartNight = 1 -- для проверок: с какой ночи начинается раунд (в релизе всегда 1)
