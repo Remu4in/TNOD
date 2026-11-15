@@ -732,17 +732,40 @@ function VehicleService.init()
 		end)
 	end
 	PhysicsService:CollisionGroupSetCollidable("Vehicle", "Curb", false)
+	-- где искать: папка Roads и модели дорог/тротуаров в других папках (кусок «Basic T road» лежит в Buildings, «Sidewalks» — в чужой карте)
+	local sources: { Instance } = {}
 	local roads = workspace:FindFirstChild("Roads")
 	if roads then
-		local tagged = 0
-		for _, d in roads:GetDescendants() do
-			if d:IsA("BasePart") and d.Name ~= "Road" and d.CanCollide and d.Material == Enum.Material.Concrete and d.Size.Y >= 0.35 and d.Size.Y <= 1.6 then
+		table.insert(sources, roads)
+	end
+	for _, d in workspace:GetDescendants() do
+		if (d:IsA("Model") or d:IsA("Folder")) and d ~= roads and not (roads and d:IsDescendantOf(roads)) then
+			local n = string.lower(d.Name)
+			if string.find(n, "road", 1, true) or string.find(n, "sidewalk", 1, true) then
+				table.insert(sources, d)
+			end
+		end
+	end
+	-- бордюр/тротуар: низкая (0,35–2 стада) деталь из «уличного» материала; клинья — съезды с тротуара
+	local curbMaterials = {
+		[Enum.Material.Concrete] = true,
+		[Enum.Material.Pavement] = true,
+		[Enum.Material.Cobblestone] = true,
+		[Enum.Material.Slate] = true,
+		[Enum.Material.Asphalt] = true,
+		[Enum.Material.Grass] = true, -- газоны-разделители вдоль дорог
+	}
+	local tagged = 0
+	for _, src in sources do
+		for _, d in src:GetDescendants() do
+			if d:IsA("BasePart") and d.Name ~= "Road" and d.Anchored and d.CanCollide and d.CollisionGroup == "Default" and curbMaterials[d.Material]
+				and d.Size.Y >= 0.35 and d.Size.Y <= 2 then
 				d.CollisionGroup = "Curb"
 				tagged += 1
 			end
 		end
-		print("[VehicleService] curbs/sidewalks marked: " .. tagged)
 	end
+	print("[VehicleService] curbs/sidewalks marked: " .. tagged)
 	Remotes.get("SwitchSeat").OnServerEvent:Connect(onSwitchSeat)
 	Remotes.get("TurretAim").OnServerEvent:Connect(onTurretAim)
 	Remotes.get("TurretFire").OnServerEvent:Connect(onTurretFire)
