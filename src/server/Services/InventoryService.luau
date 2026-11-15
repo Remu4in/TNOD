@@ -42,8 +42,33 @@ function InventoryService.itemLimit(player: Player): number
 	return if player:GetAttribute("Has_fieldkit") == true then Config.Inventory.FieldKitMax else Config.Inventory.ItemMax
 end
 
+-- Инструмент предмета в рюкзаке или в руках (для стопки гранат)
+function InventoryService.itemTool(player: Player, itemId: string): Tool?
+	for _, t in tools(player) do
+		if t:GetAttribute("ItemId") == itemId then
+			return t
+		end
+	end
+	return nil
+end
+
 -- Можно ли взять расходник; nil — можно, иначе текст для игрока
 function InventoryService.itemDenied(player: Player, itemId: string): string?
+	local def = Config.Items[itemId]
+	if def and def.stack then
+		-- стопка (граната): одна ячейка на все штуки
+		local t = InventoryService.itemTool(player, itemId)
+		if t then
+			if ((t:GetAttribute("Count") :: number?) or 1) >= def.stack then
+				return string.format("You can carry %d: %s", def.stack, def.name)
+			end
+			return nil
+		end
+		if InventoryService.isFull(player) then
+			return string.format("Inventory full (%d items)", Config.Inventory.MaxItems)
+		end
+		return nil
+	end
 	if InventoryService.isFull(player) then
 		return string.format("Inventory full (%d items)", Config.Inventory.MaxItems)
 	end

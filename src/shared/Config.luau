@@ -297,7 +297,7 @@ local Buildings: { BuildingDef } = {
 	{ id = "Cafe", name = "Cafe", cost = 0, info = "Starting shelter" },
 	-- Открытие здания за монеты (вывеска) даёт доступ к НПС-продавцу внутри: он торгует только днём (Config.Vendors)
 	{ id = "Pharmacy", name = "Medical post", cost = 500, info = "Vendor: medkits and energy drinks", desc = "Heal up between nights. Medkits restore 60 health, energy drinks give unlimited sprint for a wave." },
-	{ id = "Armory", name = "Armory", cost = 1000, info = "Vendor: melee weapons", desc = "Melee weapons never run out of ammo: bat, crowbar, machete, fire axe, sledgehammer and katana." },
+	{ id = "Armory", name = "Armory", cost = 1000, info = "Vendor: melee weapons and grenades", desc = "Melee weapons never run out of ammo: bat, crowbar, machete, fire axe, sledgehammer and katana. Grenades go on sale here and in vending machines." },
 	{ id = "Garage", name = "Garage", cost = 2000, info = "Vendor: barbed and electric wire", desc = "Wire slows and hurts mutants at the barricades. Electric wire burns up to 5 mutants at once, but works only until dawn." },
 	{ id = "GunShop", name = "Turret shop", cost = 3000, info = "Vendor: turrets", desc = "Automatic turrets hold a chokepoint while you reload or rescue a teammate." },
 	{ id = "Shelter", name = "Shelter", cost = 4000, bonus = "teamLife", info = "Team extra life and vendor", desc = "Buy an extra team life: if everyone goes down, the squad gets back up once." },
@@ -310,12 +310,18 @@ export type ItemDef = {
 	name: string,
 	heal: number?, -- здоровье
 	energy: number?, -- энергия спринта
+	infiniteWaves: number?, -- бесконечная энергия на столько ночей
+	stack: number?, -- сколько штук лежит в одной ячейке (граната); нет — по одной на ячейку
+	grenade: { damage: number, radius: number, fuse: number, speed: number, lift: number, cooldown: number }?, -- бросаемая граната (ItemService)
 	color: Color3,
 }
 
 local Items: { [string]: ItemDef } = {
 	Medkit = { name = "Medkit", heal = 80, color = Color3.fromRGB(235, 235, 235) },
 	EnergyDrink = { name = "Energy drink", infiniteWaves = 1, color = Color3.fromRGB(60, 190, 255) },
+	-- Граната (модель — ассет 6393767252, Assets.Items.Grenade): бросок по взгляду камеры, взрыв через fuse с; урон damage в центре, к краю радиуса
+	-- radius — 40 %; игроков не ранит. lift — подброс вверх (доля скорости), cooldown — пауза между бросками. Продаётся после открытия Armory.
+	Grenade = { name = "Grenade", stack = 3, grenade = { damage = 150, radius = 14, fuse = 2.2, speed = 80, lift = 0.25, cooldown = 0.8 }, color = Color3.fromRGB(40, 70, 45) },
 }
 Config.Items = Items
 
@@ -336,8 +342,8 @@ Config.Economy = {
 	-- Цель на игрока (вдвоём): к 15-й ночи около 6500 монет с учётом стартовых 500 (до 7200 с перками «Looter» на максимуме), к 20-й около 9700 (до 11 300).
 	-- Провал миссии — доля MissionFailShare (0: награды нет). Лежащему на конец ночи — DownedRewardFactor от награды.
 	-- Штраф: каждая потеря игрока (упал и не был поднят) отнимает LossPenalty от монет, заработанных за эту ночь.
-	MissionPersonalTotal = 12760, -- +10 % (Руслан 2026-11-15; было 11600); −20 % по плану релиза 2026-11-11 (было 14500); ×2 по плейтесту 2026-11-05
-	MissionTeamTotal = 10560, -- +10 % (было 9600)
+	MissionPersonalTotal = 14036, -- +10 % и ещё +10 % (Руслан 2026-11-15; было 11600 → 12760 → 14036); −20 % по плану релиза 2026-11-11 (было 14500); ×2 по плейтесту 2026-11-05
+	MissionTeamTotal = 11616, -- +10 % и ещё +10 % (было 9600 → 10560 → 11616)
 	MissionGrowth = 0.10,
 	MissionRewardWaves = 20,
 	TeamShareMinPlayers = 1, -- командная часть делится на число игроков (соло получает всю)
@@ -1447,6 +1453,7 @@ Config.MissionKillsFloor = 5 -- нижняя граница убийств по�
 Config.MissionReturnTeam = false -- true: с рассветом команду переносит к магазину (по решению Руслана 2026-10-26 — выключено: не телепортировать на рассвете)
 -- Военная база (Workspace.Base: стены x −159…107, ворота у z = 300, дальняя стена z ≈ 580): с началом ночи всех, кто внутри, выталкивает к точке сбора
 -- игроков (BuildingService.expelFromBase, по образцу магазина). locationId — локация, для которой верны границы; maxY — выше (вышки, вертолёты) не считаем
+Config.PlayerSpawnFallback = Vector3.new(37, 0.7, 266) -- где ставится Markers.PlayerSpawn, если метки нет в месте (у ворот базы, прежняя точка)
 Config.TentSpawnOffset = Vector3.new(0, 0, -22) -- старт игроков: от военной палатки на базе к воротам (Locations/Custom, план релиза 2026-11-11)
 Config.BaseZone = { locationId = "Custom", minX = -161, maxX = 109, minZ = 300, maxZ = 580, maxY = 60 }
 -- Метки миссий (MissionService.makeBeacon): светящийся полупрозрачный круг на земле + метка в HUD с расстоянием (столбы убраны по просьбе Руслана 2026-10-26).
@@ -1541,7 +1548,7 @@ Config.Missions = {
 	[5] = { type = "classic", title = "Defend the tent from the boss", anchor = 1, planned = "defend-boss", bossAfterKills = 30, hint = "Kill 30 mutants — then the boss comes. Kill the boss and the wave" },
 	[6] = { type = "scout", title = "Recon of the second district", anchor = 2, points = 3, hint = "Visit the checkpoints around the tent" },
 	[7] = { type = "build", title = "Clear-out and tent setup", anchor = 2, kills = 20, hint = "Clear the zone and set up the tent at the marked spot" },
-	[8] = { type = "escort", title = "Convoy escort", anchor = 2, points = 3, convoySpeed = 13, column = "Heavy", hint = "Don't let the truck be destroyed" },
+	[8] = { type = "escort", title = "Convoy escort", anchor = 2, points = 2, endAtLastPoint = true, convoySpeed = 13, column = "Heavy", hint = "Escort the convoy through points 1 and 2. Don't let the truck be destroyed" },
 	[9] = { type = "scout", title = "Recon of the third tent's territory", anchor = 3, points = 3 },
 	[10] = { type = "classic", title = "Boss: zombies vs plants", anchor = 2, planned = "boss", bossAfterKills = 25, hint = "Kill 25 mutants — then the boss comes. Kill the boss and the wave" },
 	[11] = { type = "scout", title = "Surveying the locations around the tents", anchor = 2, points = 4, radius = { 100, 200 } },
@@ -1593,6 +1600,7 @@ Config.Vendors = {
 		items = {
 			{ id = "Medkit", name = "Medkit", desc = "+80 health", price = 150, kind = "item", robux = 25, requires = "Pharmacy" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite energy for 1 wave", price = 100, kind = "item", robux = 20 },
+			{ id = "Grenade", name = "Grenade", desc = "Throw where you look: blast hurts every mutant nearby (carry up to 3)", price = 300, kind = "item", requires = "Armory" },
 			{ id = "Ammo", name = "Ammo", desc = "full ammo for a weapon of your choice", price = 150, kind = "ammo", robux = 15 },
 			-- оборудование: как аптечка — купить можно только после открытия своего здания (Garage — проволока, Turret shop — турель)
 			{ id = "BarbedWire", name = "Barbed wire", desc = "Traps the first 2 mutants, slows the next 2", price = 250, kind = "equip", requires = "Garage" },
@@ -1629,7 +1637,11 @@ Config.Vendors = {
 	},
 	Armory = {
 		name = "Armorer", greeting = "Melee weapons never run out, unlike ammo.",
-		items = weaponItems({ "Bat", "Crowbar", "Machete", "FireAxe", "Sledge", "Katana" }),
+		items = (function(): { VendorItem }
+			local list = weaponItems({ "Bat", "Crowbar", "Machete", "FireAxe", "Sledge", "Katana" })
+			table.insert(list, 1, { id = "Grenade", name = "Grenade", desc = "Throw where you look: blast hurts every mutant nearby (carry up to 3)", price = 300, kind = "item" })
+			return list
+		end)(),
 	},
 	Garage = {
 		name = "Mechanic", greeting = "Wire holds them at the wall. Place it wisely.",

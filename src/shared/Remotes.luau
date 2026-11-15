@@ -38,6 +38,7 @@ local NAMES = {
 	"StoreOpen", -- сервер → клиенту: () — открыть донатный магазин (StoreController)
 	"CaseResult", -- сервер → клиенту: (caseId: string, weaponId: string) — что выпало из кейса
 	"BackToLobby", -- клиент → сервер (матч): () — вернуться в лобби (после конца раунда или по кнопке)
+	"ThrowGrenade", -- клиент → сервер: (direction: Vector3) — бросить гранату из рук по взгляду камеры (наличие, паузу и урон считает сервер)
 	"SetLoadout", -- клиент → сервер (лобби): (gun: string, melee: string) — стартовый набор; сервер проверяет, что оружие своё
 	"DonateBuy", -- клиент → сервер: (id: string) — купить товар Config.Donate (цену и выдачу решает сервер и Marketplace)
 	"Cutscene", -- сервер → клиенту/всем: ({ { from, fromEnd, look, lookEnd, seconds, speaker, text } }) — катсцена

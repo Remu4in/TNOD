@@ -780,6 +780,10 @@ function MissionService.begin(night: number, comp: WaveMath.Composition, hpMult:
 	if def.baseBattle then
 		setupBaseBattle(night, comp, hpMult)
 	end
+	if kind == "escort" then
+		-- конвой (решение Руслана 2026-11-15): проехал точки маршрута — миссия выполнена сразу, без минимума убийств (лимит ночи остаётся)
+		state.minKills = 0
+	end
 	if kind == "bossfight" then
 		-- финальный босс-файт: вместо состава волны — только боссы из def.bosses по очереди, обычных зомби нет, минимума убийств нет
 		state.minKills = 0

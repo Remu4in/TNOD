@@ -71,6 +71,29 @@ end
 
 function Custom.build(): Types.MapInfo
 	local spawnMarker = marker("PlayerSpawn")
+	if not spawnMarker then
+		-- метки нет в месте (удалили при правке карты): ставим её в прежнюю точку у ворот базы — от неё стартуют конвои, катсцены и генерал
+		local at = Config.PlayerSpawnFallback
+		local ground = groundNear(at)
+		local folder = workspace:FindFirstChild("Markers")
+		if not folder then
+			folder = Instance.new("Folder")
+			folder.Name = "Markers"
+			folder.Parent = workspace
+		end
+		local p = Instance.new("Part")
+		p.Name = "PlayerSpawn"
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.Transparency = 1
+		p.Size = Vector3.new(4, 1, 4)
+		p.Position = Vector3.new(at.X, (if ground then ground.Y else at.Y) + 0.5, at.Z)
+		p.Parent = folder
+		spawnMarker = p
+		print("[Custom] Markers.PlayerSpawn recreated at " .. tostring(p.Position))
+	end
 	local playerSpawn: Vector3
 	if spawnMarker then
 		playerSpawn = spawnMarker.Position + Vector3.new(0, 3, 0)

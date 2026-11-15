@@ -120,3 +120,4 @@
 | 76595101129625 | «Island scream distant», VosDisciple (2026-11-15) | Audio, загружается в Studio, 8,8 с; скриптов в аудио нет | ночь: далёкий крик |
 | 107961477441523 | «metalhit_far6», Concoerror (2026-11-15) | Audio, загружается в Studio, 3,7 с; скриптов в аудио нет | ночь: удар по металлу |
 | 9114009761 | «Crow Caw Distant Circling», ProSoundEffects (2026-11-15) | Audio, загружается в Studio, 55 с (обрезаем на 12 с); скриптов в аудио нет | ночь: вороны |
+| 6393767252 | граната «Grenade», автор Sub2HTR (2026-11-15) | Tool: Part `Handle` с `SpecialMesh` (меш 431532852, текстура 431532899), звук взрыва 470060466 (0,7 с, автор JaysonJeanChannel, загружается); 2 скрипта (учебный бросок: Activated → BodyVelocity → Explosion; LocalScript шлёт mouse.Hit), `RemoteEvent`, анимация чужого автора. Вредоносных сигнатур нет | Взята только деталь с мешем и звуком → `Assets.Items.Grenade`; скрипты, RemoteEvent и анимация удалены, сырая копия из `AssetStaging` удалена |
