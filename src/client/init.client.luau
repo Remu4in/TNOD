@@ -28,6 +28,7 @@ local function startGame()
 	require(Controllers:WaitForChild("InfoController")).start()
 	require(Controllers:WaitForChild("EmoteController")).start()
 	require(Controllers:WaitForChild("EquipController")).start()
+	require(Controllers:WaitForChild("GrenadeController")).start() -- бросок гранаты по взгляду
 	require(Controllers:WaitForChild("TurretController")).start()
 	require(Controllers:WaitForChild("PerkController")).start()
 	require(Controllers:WaitForChild("ZombieMarkerController")).start()
