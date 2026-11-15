@@ -158,7 +158,7 @@ local function tryDodge(want: string?)
 	-- подкат — только на бегу (атрибут Sprinting приходит с сервера с задержкой, поэтому смотрим и на скорость)
 	local flatSpeed = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude
 	local running = player:GetAttribute("Sprinting") == true or flatSpeed > P.SprintSpeed - 3
-	-- want: "slide" (Q) | "roll" (C) | nil (кнопка телефона и автотесты: на бегу подкат, иначе кувырок)
+	-- want: "slide" (Shift + Ctrl) | "roll" (C) | nil (кнопка телефона и автотесты: на бегу подкат, иначе кувырок)
 	local slide = if want == "slide" then true elseif want == "roll" then false else running
 	if slide and not running then
 		deny("Slide — only while sprinting")
@@ -183,7 +183,7 @@ end
 function MovementController.start()
 	local touchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
-	-- Q — подкат (только на бегу), C — кувырок
+	-- Ctrl на бегу (Shift + Ctrl) — подкат, C — кувырок
 	ContextActionService:BindAction("NotdDodge", function(_, state)
 		if state == Enum.UserInputState.Begin then
 			player:SetAttribute("DodgeKeyPresses", ((player:GetAttribute("DodgeKeyPresses") :: number?) or 0) + 1) -- диагностика: дошла ли клавиша
@@ -197,7 +197,7 @@ function MovementController.start()
 			tryDodge("slide")
 		end
 		return Enum.ContextActionResult.Pass
-	end, false, Enum.KeyCode.Q)
+	end, false, Enum.KeyCode.LeftControl, Enum.KeyCode.RightControl)
 	ContextActionService:BindAction("NotdRoll", function(_, state)
 		if state == Enum.UserInputState.Begin then
 			tryDodge("roll")

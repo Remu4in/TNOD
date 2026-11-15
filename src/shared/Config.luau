@@ -1553,13 +1553,13 @@ local function weaponItems(ids: { string }): { VendorItem }
 end
 Config.Vendors = {
 	-- Вендинговые автоматы (маркеры Vending_<n>: кафе, военная база, палатки): работают днём и ночью, не зависят от зданий.
-	-- kind "ammo" — патроны к оружию в руках. Монеты общие, как везде; донатные цены (robux) добавим вместе с магазином за робуксы.
+	-- kind "ammo" — патроны к оружию на выбор (ShopController показывает огнестрел игрока). Монеты общие, как везде; донатные цены (robux) добавим вместе с магазином за робуксы.
 	Vending = {
 		name = "Rifle", greeting = "Runs on backup power. No change given.",
 		items = {
 			{ id = "Medkit", name = "Medkit", desc = "+80 health", price = 150, kind = "item", robux = 25, requires = "Pharmacy" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite energy for 1 wave", price = 100, kind = "item", robux = 20 },
-			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo", robux = 15 },
+			{ id = "Ammo", name = "Ammo", desc = "full ammo for a weapon of your choice", price = 150, kind = "ammo", robux = 15 },
 			-- оборудование: как аптечка — купить можно только после открытия своего здания (Garage — проволока, Turret shop — турель)
 			{ id = "BarbedWire", name = "Barbed wire", desc = "Traps the first 2 mutants, slows the next 2", price = 250, kind = "equip", requires = "Garage" },
 			{ id = "ElectricWire", name = "Electric wire", desc = "Burns up to 5 mutants at 50 damage/s; lasts until dawn", price = 600, kind = "equip", requires = "Garage" },
@@ -1578,14 +1578,14 @@ Config.Vendors = {
 		name = "Quartermaster", greeting = "Down there you're on your own. Take a gun you trust — and fill it up.",
 		items = (function(): { VendorItem }
 			local list = weaponItems({ "SMG", "Shotgun", "Rifle", "Revolver", "LMG", "Sniper" })
-			table.insert(list, 1, { id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo" })
+			table.insert(list, 1, { id = "Ammo", name = "Ammo", desc = "full ammo for a weapon of your choice", price = 150, kind = "ammo" })
 			return list
 		end)(),
 	},
 	MetroSupply = {
 		name = "Supply sergeant", greeting = "Medkits, energy, wire, a turret. Whatever keeps you breathing in the tunnels.",
 		items = {
-			{ id = "Ammo", name = "Ammo", desc = "full ammo for the weapon in your hands", price = 150, kind = "ammo" },
+			{ id = "Ammo", name = "Ammo", desc = "full ammo for a weapon of your choice", price = 150, kind = "ammo" },
 			{ id = "Medkit", name = "Medkit", desc = "+80 health", price = 150, kind = "item" },
 			{ id = "EnergyDrink", name = "Energy drink", desc = "infinite sprint energy for 1 wave", price = 100, kind = "item" },
 			{ id = "BarbedWire", name = "Barbed wire", desc = "Traps the first 2 mutants, slows the next 2", price = 250, kind = "equip" },

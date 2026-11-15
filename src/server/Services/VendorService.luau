@@ -138,10 +138,15 @@ local function refresh()
 	end
 end
 
-local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
+local function onBuy(player: Player, vendorId: unknown, itemId: unknown, weaponId: unknown)
 	if typeof(vendorId) ~= "string" or typeof(itemId) ~= "string" or not RateLimit.allow(player, "VendorBuy", 0.3) then
 		return
 	end
+	-- патроны: ствол выбирает игрок в меню (ShopController); без выбора — оружие в руках
+	if weaponId ~= nil and (typeof(weaponId) ~= "string" or not Config.Weapons[weaponId :: string]) then
+		return
+	end
+	local ammoFor: string? = weaponId :: string?
 	local v = vendors[vendorId]
 	local def = Config.Vendors[if string.sub(vendorId, 1, 8) == "Vending_" then "Vending" else vendorId]
 	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -193,7 +198,12 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 		end
 	end
 	if item.kind == "ammo" then
-		local can, why = WeaponService.canRefillHeld(player)
+		local can, why
+		if ammoFor then
+			can, why = WeaponService.canRefill(player, ammoFor)
+		else
+			can, why = WeaponService.canRefillHeld(player)
+		end
 		if not can then
 			notify:FireClient(player, why or "Not allowed", 2)
 			return
@@ -216,7 +226,7 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 	end
 	local ok = true
 	if item.kind == "ammo" then
-		ok = WeaponService.refillHeld(player)
+		ok = if ammoFor then WeaponService.refill(player, ammoFor) else WeaponService.refillHeld(player)
 	elseif item.kind == "item" then
 		ItemService.give(player, item.id)
 	elseif item.kind == "weapon" then
@@ -229,7 +239,7 @@ local function onBuy(player: Player, vendorId: unknown, itemId: unknown)
 		ok = false
 	end
 	if ok then
-		notify:FireClient(player, "Purchased: " .. item.name, 1.5)
+		notify:FireClient(player, "Purchased: " .. item.name .. (if ammoFor then " for " .. Config.Weapons[ammoFor].name else ""), 1.5)
 	else
 		EconomyService.add(player, item.price) -- возврат монет
 		notify:FireClient(player, "Not allowed: limit reached", 2)
